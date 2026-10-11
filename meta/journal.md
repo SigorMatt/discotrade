@@ -13,3 +13,4 @@
 2026-10-11T23:01:27.884Z  consult 0mv4fez5h-u50k (architect done) on aux.done of aux job 0mv4feosk-pfit: VERDICT: escalate hands: kit check passes but `hands kit file` cannot run, because the guard refuses `--project` and the role's environment has no project set
 2026-10-11T23:05:40.443Z  consult 0mv4fkngb-ar5u (architect done) on aux.done of aux job 0mv4fkd55-29gj: VERDICT: next kit mission-2-kit
 - 2026-10-12 mission 2 U0 plan written (plan.md, CHECKPOINT.md, journal.md, FINDINGS.md: D-001/D-002 answered, D-003 filed).
+- 2026-10-12 mission 2 U1 done f3f8c2d: store recovery with store_recovered notice, non-finite refusal/drop, gap check bounded at D, window fraction to end of D, atomic gaps.jsonl, bars gaps default D; 28 tests. Note: bars fetch default day still UTC-date based.

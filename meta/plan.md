@@ -5,7 +5,7 @@ Brief: `meta/BUILDER-2-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-
 Roadmap step: S0.2 (milestone M0, not closed by this mission).
 
 - [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (D-001/D-002 answered, D-003 filed). — 87d4a23
-- [ ] U1 Store and gap-check repairs (REVIEW-1 should-fix 1, 4; decisions 2-6, 16; DESIGN §5.1, §5.2, §5.4, §15.2).
+- [x] U1 Store and gap-check repairs (REVIEW-1 should-fix 1, 4; decisions 2-6, 16; DESIGN §5.1, §5.2, §5.4, §15.2). — f3f8c2d
 - [ ] U2 Command-line, config-check and gate-script repairs (REVIEW-1 should-fix 3, 6, 7; decisions 7-9; DESIGN §3, §4.3, §18.1, §18.2).
 - [ ] U3 Synthetic market with contracts and configured generator settings (REVIEW-1 should-fix 2; decision 10; DESIGN §4.2, §5.1, §5.5, §17.1).
 - [ ] U4 Rolls and the adjusted series (DESIGN §5.6, §5.5; decision 16).
