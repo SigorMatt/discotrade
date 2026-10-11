@@ -134,3 +134,85 @@ def test_version(capsys):
         main(["--version"])
     assert exc.value.code == 0
     assert capsys.readouterr().out.strip() == f"discotrade {__version__}"
+
+
+# --- decision 7 (REVIEW-1 should-fix 3): the refusal does not depend on the install
+
+
+def _code_repository(root: Path) -> Path:
+    """A directory laid out as a discotrade code repository."""
+    (root / "src" / "discotrade").mkdir(parents=True)
+    (root / "pyproject.toml").write_text('[project]\nname = "discotrade"\n')
+    return root
+
+
+@pytest.mark.parametrize("inside", [".", "state", "meta/state/deep", "src/discotrade"])
+def test_state_inside_any_code_repository_is_refused(inside, tmp_path, monkeypatch, capsys):
+    monkeypatch.delenv("DISCOTRADE_STATE", raising=False)
+    other = _code_repository(tmp_path / "checkout")
+    before = REPO_ROOT
+    with pytest.raises(SystemExit) as exc:
+        parse(["--state", str(other / inside)])
+    assert exc.value.code == 2
+    err = capsys.readouterr().err
+    assert "I-14" in err and "code repository" in err
+    # The refusal comes from the layout, not from where the package lives.
+    from discotrade import cli
+    assert cli.REPO_ROOT == before
+    assert not _inside(other.resolve(), REPO_ROOT)
+
+
+def _inside(path: Path, root: Path) -> bool:
+    return path == root or root in path.parents
+
+
+def test_state_inside_code_repository_from_environment_is_refused(tmp_path, monkeypatch, capsys):
+    other = _code_repository(tmp_path / "checkout")
+    monkeypatch.setenv("DISCOTRADE_STATE", str(other / "state"))
+    with pytest.raises(SystemExit) as exc:
+        parse([])
+    assert exc.value.code == 2
+    assert "I-14" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("partial", ["pyproject.toml", "src/discotrade"])
+def test_half_a_code_repository_is_not_one(partial, tmp_path, monkeypatch):
+    monkeypatch.delenv("DISCOTRADE_STATE", raising=False)
+    root = tmp_path / "half"
+    if partial == "pyproject.toml":
+        root.mkdir()
+        (root / "pyproject.toml").write_text("")
+    else:
+        (root / "src" / "discotrade").mkdir(parents=True)
+    ctx, _ = parse(["--state", str(root / "state")])
+    assert ctx.state == (root / "state").resolve()
+
+
+@pytest.mark.parametrize("text", ["", "  ", "\t"])
+def test_blank_state_is_a_usage_error(text, tmp_path, monkeypatch, capsys):
+    # Outside any code repository, so that only the blank value can be refused.
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.delenv("DISCOTRADE_STATE", raising=False)
+    with pytest.raises(SystemExit) as exc:
+        parse(["--state", text])
+    assert exc.value.code == 2
+    assert "--state is empty" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("text", ["", " "])
+def test_empty_state_environment_is_a_usage_error(text, tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("DISCOTRADE_STATE", text)
+    with pytest.raises(SystemExit) as exc:
+        parse([])
+    assert exc.value.code == 2
+    assert "DISCOTRADE_STATE is empty" in capsys.readouterr().err
+
+
+def test_blank_state_from_the_console_script_exits_2(tmp_path):
+    proc = subprocess.run(
+        [str(DISCOTRADE), "--state", "", "config", "check"],
+        capture_output=True, text=True, cwd=tmp_path, timeout=60,
+    )
+    assert proc.returncode == 2
+    assert "--state is empty" in proc.stderr

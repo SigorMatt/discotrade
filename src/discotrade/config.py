@@ -18,7 +18,7 @@ import re
 import tomllib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -752,8 +752,44 @@ def load_changes(path: Path) -> tuple[Change, ...]:
     return tuple(changes)
 
 
+def frozen_value(value: Any) -> Any:
+    """A TOML value as the frozen map (JSON) stores it, keeping its TOML type.
+
+    Booleans, integers, floats and strings are themselves; a date, a time or a
+    date-time becomes ``{"date": iso}``, ``{"time": iso}`` or ``{"datetime": iso}``
+    so that it never equals the string it prints as; arrays and tables are
+    converted element by element.
+    """
+    if isinstance(value, datetime):
+        return {"datetime": value.isoformat()}
+    if isinstance(value, date):
+        return {"date": value.isoformat()}
+    if isinstance(value, time):
+        return {"time": value.isoformat()}
+    if isinstance(value, list | tuple):
+        return [frozen_value(v) for v in value]
+    if isinstance(value, dict):
+        return {k: frozen_value(v) for k, v in value.items()}
+    return value
+
+
+def same_value(a: Any, b: Any) -> bool:
+    """Type-strict equality: same TOML type and same value (decision 8, 2026-10-12).
+
+    ``5`` is not ``5.0``, ``true`` is not ``1`` and ``"1"`` is not ``1``; arrays
+    and tables compare element by element under the same rule.
+    """
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, list):
+        return len(a) == len(b) and all(same_value(x, y) for x, y in zip(a, b, strict=True))
+    if isinstance(a, dict):
+        return a.keys() == b.keys() and all(same_value(a[k], b[k]) for k in a)
+    return bool(a == b)
+
+
 def flatten(data: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:
-    """Dotted keys to values; an array of tables is indexed (``closure.0.start``)."""
+    """Dotted keys to frozen values; an array of tables is indexed (``closure.0.start``)."""
     out: dict[str, Any] = {}
     for key, value in data.items():
         name = f"{prefix}{key}"
@@ -762,10 +798,8 @@ def flatten(data: Mapping[str, Any], prefix: str = "") -> dict[str, Any]:
         elif isinstance(value, list) and value and all(isinstance(v, dict) for v in value):
             for i, item in enumerate(value):
                 out.update(flatten(item, f"{name}.{i}."))
-        elif isinstance(value, date):
-            out[name] = value.isoformat()
         else:
-            out[name] = value
+            out[name] = frozen_value(value)
     return out
 
 
@@ -787,10 +821,11 @@ def frozen_drift(
 ) -> list[str]:
     """Frozen values, and frozen files, that changed without an approved change entry.
 
-    A changed or added key needs a last change entry for (file, key) giving the
-    current value as ``new``; a removed key needs one with no ``new``; a new file
-    needs an entry for (file, ``*``). Each such entry must name a decisions file
-    under ``meta/decisions/`` that exists.
+    Values compare type-strictly (``same_value``). A changed or added key needs a
+    last change entry for (file, key) giving the current value as ``new``; a
+    removed key needs one with no ``new``; a new file needs an entry for (file,
+    ``*``). Each such entry must name a decisions file under ``meta/decisions/``
+    that exists.
     """
     root = Path(root)
     current = frozen_snapshot(root)
@@ -801,7 +836,7 @@ def frozen_drift(
         if not entries:
             return "no change entry"
         last = entries[-1]
-        if last.new != value:
+        if not same_value(frozen_value(last.new), value):
             return f"the last change entry gives new = {last.new!r}"
         if not last.decision.startswith(DECISIONS_DIR) or not (root / last.decision).is_file():
             return f"decision {last.decision!r} is not a file under {DECISIONS_DIR}"
@@ -819,7 +854,7 @@ def frozen_drift(
         now, then = current[file], frozen[file]
         for key in sorted(set(now) | set(then)):
             value = now.get(key)
-            if key in now and key in then and value == then[key]:
+            if key in now and key in then and same_value(value, then[key]):
                 continue
             why = approved(file, key, value)
             if why:

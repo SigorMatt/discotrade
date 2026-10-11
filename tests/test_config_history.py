@@ -295,3 +295,68 @@ def test_history_file_refusals(tmp_path, text, match):
     path = write(tmp_path / "HISTORY.toml", text)
     with pytest.raises(ConfigError, match=match):
         load_changes(path)
+
+
+# --- decision 8 (REVIEW-1 should-fix 6): the comparison is type-strict --------
+
+
+def test_frozen_float_to_integer_is_a_change(repo):
+    root, frozen = repo
+    path = root / "config" / "instruments" / "MES.toml"
+    path.write_text(path.read_text().replace("multiplier = 5.0", "multiplier = 5"))
+    problems = frozen_drift(root, frozen, ())
+    assert len(problems) == 1 and MES in problems[0] and "multiplier" in problems[0]
+
+
+TYPED = 'f = 5.0\ni = 1\ns = "1"\nd = 2026-10-12\na = [1, 6]\n[t]\nx = 2\n'
+
+
+@pytest.fixture
+def typed(tmp_path):
+    """A constructed frozen file holding one value of each TOML type, and its map."""
+    write(tmp_path / "config" / "tracks" / "typed.toml", TYPED)
+    (tmp_path / "meta" / "decisions").mkdir(parents=True)
+    write(tmp_path / "meta" / "decisions" / "2026-11-01-typed.md", "approved\n")
+    frozen = json.loads(json.dumps(frozen_snapshot(tmp_path)))  # as the JSON map stores it
+    assert frozen_drift(tmp_path, frozen, ()) == []
+    return tmp_path, frozen
+
+
+TYPED_FILE = "config/tracks/typed.toml"
+
+
+@pytest.mark.parametrize(
+    "old, new, key",
+    [
+        ("f = 5.0", "f = 5", "f"),
+        ("i = 1", "i = true", "i"),
+        ("i = 1", "i = 1.0", "i"),
+        ('s = "1"', "s = 1", "s"),
+        ("d = 2026-10-12", 'd = "2026-10-12"', "d"),
+        ("a = [1, 6]", "a = [1.0, 6]", "a"),
+        ("x = 2", "x = 2.0", "t.x"),
+    ],
+)
+def test_frozen_type_change_is_a_change(typed, old, new, key):
+    root, frozen = typed
+    path = root / TYPED_FILE
+    path.write_text(path.read_text().replace(old, new))
+    problems = frozen_drift(root, frozen, ())
+    assert len(problems) == 1, problems
+    assert TYPED_FILE in problems[0] and f" {key} is " in problems[0]
+
+
+@pytest.mark.parametrize(
+    "new_line, ok",
+    [("new = 5", True), ("new = 5.0", False), ('new = "5"', False)],
+)
+def test_frozen_change_entry_is_type_strict(typed, new_line, ok):
+    root, frozen = typed
+    path = root / TYPED_FILE
+    path.write_text(path.read_text().replace("f = 5.0", "f = 5"))
+    history = write(
+        root / "config" / "HISTORY.toml",
+        f'[[change]]\ndate = "2026-11-01"\nfile = "{TYPED_FILE}"\nkey = "f"\nold = 5.0\n'
+        f'{new_line}\nreason = "r"\ndecision = "meta/decisions/2026-11-01-typed.md"\n',
+    )
+    assert (frozen_drift(root, frozen, load_changes(history)) == []) is ok

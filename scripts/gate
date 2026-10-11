@@ -8,7 +8,10 @@ The tests of item G<m>.<n> are the files tests/gates/test_g<m>_<n>_*.py.
 Each item runs `pytest -m gate_m<m>` over its files with DISCOTRADE_GATE=1,
 under which a skip is a failure. An item with no test file, or whose files
 select no test, fails. Prints one line per item, then `gate M<m>: PASS` or
-`gate M<m>: FAIL`; exits 0 only on PASS, 1 on FAIL, 2 on a usage error.
+`gate M<m>: FAIL`; a one-item run ends instead with `gate M<m> <item>: PASS`
+or `gate M<m> <item>: FAIL` and never prints the milestone's verdict
+(decision 9 of meta/decisions/decisions-2026-10-12.md). Exits 0 only on PASS,
+1 on FAIL, 2 on a usage error.
 """
 
 import os
@@ -65,16 +68,18 @@ def main(argv: list[str]) -> int:
         usage(f"unknown milestone {argv[0]!r}")
     number = milestone[1:]
     items = [f"G{number}.{i}" for i in range(1, ITEMS[milestone] + 1)]
+    verdict = f"gate {milestone}"
     if len(argv) == 2:
         if argv[1].upper() not in items:
             usage(f"{argv[1]!r} is not an item of {milestone} ({', '.join(items)})")
         items = [argv[1].upper()]
+        verdict = f"gate {milestone} {items[0]}"
     passed = True
     for item in items:
         ok, detail = run_item(milestone, item)
         passed = passed and ok
         print(f"{item} {'PASS' if ok else 'FAIL'} {detail}", flush=True)
-    print(f"gate {milestone}: {'PASS' if passed else 'FAIL'}")
+    print(f"{verdict}: {'PASS' if passed else 'FAIL'}")
     return 0 if passed else 1
 
 

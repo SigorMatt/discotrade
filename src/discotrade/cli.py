@@ -88,15 +88,43 @@ def _inside(path: Path, root: Path) -> bool:
     return path == root or root in path.parents
 
 
+def _code_repository(path: Path) -> Path | None:
+    """The discotrade code repository that holds ``path``, if any.
+
+    A code repository is a directory with both ``pyproject.toml`` and
+    ``src/discotrade/`` (decision 7 of meta/decisions/decisions-2026-10-12.md);
+    ``path`` itself and every directory above it are examined.
+    """
+    for directory in (path, *path.parents):
+        if (directory / "pyproject.toml").is_file() and (directory / "src" / "discotrade").is_dir():
+            return directory
+    return None
+
+
+def _state(parser: argparse.ArgumentParser, args: argparse.Namespace) -> Path | None:
+    if args.state is not None:
+        if not args.state.strip():
+            parser.error("--state is empty; give a state directory outside the code repository")
+        state_text = args.state
+    else:
+        state_text = os.environ.get(STATE_ENV)
+        if state_text is None:
+            return None
+        if not state_text.strip():
+            parser.error(f"{STATE_ENV} is empty; unset it or give a state directory")
+    state = Path(state_text).expanduser().resolve()
+    # I-14: refused inside this package's repository, and inside any directory
+    # laid out as a discotrade code repository, however the package is installed.
+    repository = REPO_ROOT if _inside(state, REPO_ROOT) else _code_repository(state)
+    if repository is not None:
+        parser.error(
+            f"state directory {state} is inside the code repository {repository} (I-14)"
+        )
+    return state
+
+
 def _context(parser: argparse.ArgumentParser, args: argparse.Namespace) -> Context:
-    state_text = args.state if args.state is not None else os.environ.get(STATE_ENV) or None
-    state: Path | None = None
-    if state_text is not None:
-        state = Path(state_text).expanduser().resolve()
-        if _inside(state, REPO_ROOT):
-            parser.error(
-                f"state directory {state} is inside the code repository {REPO_ROOT} (I-14)"
-            )
+    state = _state(parser, args)
 
     clock: Clock = SystemClock()
     if args.as_of is not None:
