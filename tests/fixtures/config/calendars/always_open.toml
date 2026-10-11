@@ -1,0 +1,4 @@
+# Fixture calendar (DESIGN 5.3): always open, for the crypto-like test instrument.
+# Its trading day is the UTC date.
+name = "always_open"
+always_open = true

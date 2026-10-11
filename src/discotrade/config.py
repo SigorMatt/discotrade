@@ -18,9 +18,10 @@ import re
 import tomllib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 COMPANIONS = ("checked", "source", "verified")
 
@@ -488,6 +489,128 @@ def load_track_config(config_dir: Path, track_name: str) -> TrackConfig:
     return _check_track(track, path, instruments)
 
 
+# --- calendars (DESIGN 5.3) ----------------------------------------------------
+
+WEEKDAYS = ("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
+#: Calendar values that come from outside the project; their companions are the
+#: record's top-level ``checked``, ``source`` and ``verified``.
+CALENDAR_SOURCED = ("week_open", "week_close", "daily_break", "day_rolls_at")
+_CALENDAR_KEYS = ("name", "tz", *CALENDAR_SOURCED, "closure", *COMPANIONS)
+_LOCAL_MINUTE = "%Y-%m-%d %H:%M"
+
+
+@dataclass(frozen=True)
+class Closure:
+    """The market is shut for the local wall-clock interval [start, end)."""
+
+    start: datetime   # naive, in the calendar's time zone
+    end: datetime
+    note: str
+    provenance: Provenance | None
+
+    def show(self) -> str:
+        return f"{self.start.strftime(_LOCAL_MINUTE)} to {self.end.strftime(_LOCAL_MINUTE)}"
+
+
+@dataclass(frozen=True)
+class Calendar:
+    """A trading calendar record. ``always_open`` records carry nothing else."""
+
+    name: str
+    always_open: bool
+    tz: str | None = None
+    week_open: tuple[str, str] | None = None     # (weekday, "HH:MM") local
+    week_close: tuple[str, str] | None = None
+    daily_break: tuple[str, str] | None = None   # ("HH:MM", "HH:MM") local
+    day_rolls_at: str | None = None              # "HH:MM" local
+    closures: tuple[Closure, ...] = ()
+    provenance: Provenance | None = None
+
+    def unverified(self) -> list[tuple[str, Any, Provenance]]:
+        """Each sourced value whose companions say ``verified = false``."""
+        out: list[tuple[str, Any, Provenance]] = []
+        if self.provenance is not None and not self.provenance.verified:
+            out += [(k, getattr(self, k), self.provenance) for k in CALENDAR_SOURCED]
+        for i, c in enumerate(self.closures):
+            if c.provenance is not None and not c.provenance.verified:
+                out.append((f"closure.{i}", c.show(), c.provenance))
+        return out
+
+
+def _weekly(t: _Table, key: str) -> tuple[str, str]:
+    value = t.raw(key)
+    if (
+        not isinstance(value, list) or len(value) != 2
+        or not all(isinstance(v, str) for v in value)
+        or value[0] not in WEEKDAYS or not _HHMM.match(value[1])
+    ):
+        t.fail(key, f'must be ["Day", "HH:MM"] with Day one of {", ".join(WEEKDAYS)}')
+    return (value[0], value[1])
+
+
+def _local_minute(t: _Table, key: str) -> datetime:
+    value = t.raw(key)
+    try:
+        if isinstance(value, str) and len(value) == 16:
+            return datetime.strptime(value, _LOCAL_MINUTE)
+    except ValueError:
+        pass
+    t.fail(key, f'must be a local time "YYYY-MM-DD HH:MM", not {value!r}')
+    raise AssertionError  # unreachable
+
+
+def load_calendar(path: Path) -> Calendar:
+    """Load one calendar record; the file is named after the calendar."""
+    path = Path(path)
+    data = read_toml(path)
+    if "always_open" in data:
+        t = _Table(path, data, "", ("name", "always_open"))
+        if t.boolean("always_open") is not True:
+            t.fail("always_open", "must be true when present (omit it otherwise)")
+        extra = [k for k in data if k not in ("name", "always_open")]
+        if extra:
+            t.fail("always_open", "allows no other key")
+    else:
+        t = _Table(path, data, "", _CALENDAR_KEYS)
+    name = t.text("name")
+    if path.stem != name:
+        t.fail("name", f"is {name!r} but the file name says {path.stem!r}")
+    if "always_open" in data:
+        return Calendar(name=name, always_open=True)
+
+    tz = t.text("tz")
+    try:
+        ZoneInfo(tz)
+    except (ZoneInfoNotFoundError, ValueError):
+        t.fail("tz", f"names no known time zone: {tz!r}")
+    day_rolls_at = t.text("day_rolls_at")
+    if not _HHMM.match(day_rolls_at):
+        t.fail("day_rolls_at", f'must be "HH:MM", not {day_rolls_at!r}')
+    raw_closures = t.raw("closure", [])
+    if not isinstance(raw_closures, list):
+        t.fail("closure", "must be an array of tables ([[closure]])")
+    closures = []
+    for entry in raw_closures:
+        c = _Table(path, entry, "closure.", ("start", "end", "note", *COMPANIONS))
+        start, end = _local_minute(c, "start"), _local_minute(c, "end")
+        if end <= start:
+            c.fail("end", "must be later than start")
+        closures.append(Closure(
+            start=start, end=end, note=c.text("note"), provenance=c.provenance(required=False),
+        ))
+    return Calendar(
+        name=name,
+        always_open=False,
+        tz=tz,
+        week_open=_weekly(t, "week_open"),
+        week_close=_weekly(t, "week_close"),
+        daily_break=_session(t, "daily_break"),
+        day_rolls_at=day_rolls_at,
+        closures=tuple(closures),
+        provenance=t.provenance(required=False),
+    )
+
+
 # --- thresholds (DESIGN 4.3) ---------------------------------------------------
 
 #: Every threshold's table, name and type. Values live in the TOML only (I-10).
@@ -729,9 +852,34 @@ def check(config_dir: Path, track_name: str) -> CheckReport:
     lines: list[str] = []
     unverified: list[str] = []
 
+    calendars: dict[str, Calendar] = {}
+    for path in sorted((config_dir / "calendars").glob("*.toml")):
+        cal = load_calendar(path)
+        calendars[cal.name] = cal
+        if cal.always_open:
+            lines.append(f"calendar {cal.name}: always open")
+        else:
+            span = (f", {cal.closures[0].start.date()} to {cal.closures[-1].end.date()}"
+                    if cal.closures else "")
+            lines.append(
+                f"calendar {cal.name}: tz {cal.tz}, week {' '.join(cal.week_open or ())} to "
+                f"{' '.join(cal.week_close or ())}, break {'-'.join(cal.daily_break or ())}, "
+                f"{len(cal.closures)} closures{span}"
+            )
+        for key, value, prov in cal.unverified():
+            unverified.append(
+                f"unverified calendars/{path.name} {key} = {_show(value)} "
+                f"(checked {prov.checked.isoformat()}; source: {prov.source})"
+            )
+
     instruments: dict[str, Instrument] = {}
     for path in sorted((config_dir / "instruments").glob("*.toml")):
         inst = load_instrument(path)
+        if inst.calendar not in calendars:
+            raise ConfigError(
+                f"{path}: 'calendar' names {inst.calendar!r}, which has no record "
+                f"under {config_dir / 'calendars'}"
+            )
         instruments[inst.symbol] = inst
         fee = (f"fee {inst.cost.fee_per_side}/side" if inst.cost.fee_per_side is not None
                else f"fee {inst.cost.fee_bps} bps")

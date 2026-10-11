@@ -191,6 +191,9 @@ def test_frozen_map_covers_track_and_instruments():
     for symbol in ("MES", "MNQ", "MYM", "M2K", "MGC", "SIL", "MCL", "M6E"):
         assert frozen[f"config/instruments/{symbol}.toml"]["cost.fee_per_side"] > 0
     assert frozen["config/tracks/hourly.toml"]["horizons.short"] == [1, 6]
+    globex = frozen["config/calendars/cme_globex.toml"]
+    assert globex["week_open"] == ["Sun", "18:00"]
+    assert globex["closure.0.verified"] is False
 
 
 def test_frozen_config_matches_map_and_history():

@@ -1,0 +1,13 @@
+# Fixture calendar (DESIGN 5.3, 18.2): the synthetic instruments' week. Every
+# value is invented by the project, so no companions are needed. One closure.
+name = "synth_week"
+tz = "America/New_York"
+week_open = ["Sun", "18:00"]
+week_close = ["Fri", "17:00"]
+daily_break = ["17:00", "18:00"]
+day_rolls_at = "17:00"
+
+[[closure]]
+start = "2019-07-03 13:00"
+end = "2019-07-04 18:00"
+note = "invented closure: early halt on the 3rd, closed on the 4th"

@@ -1,0 +1,819 @@
+# The exchange's Globex calendar (DESIGN 5.3). Frozen once created (DESIGN 4.3, I-10).
+# All times are exchange-local wall-clock times in `tz`. The week runs from
+# week_open to week_close with a daily break; a closure shuts the market for a
+# local interval [start, end) and its `end` is the instant trading resumes.
+# The weekly schedule, the daily break and the day roll come from the exchange's
+# public trading hours; their companions are the top-level checked, source and
+# verified. Each closure carries its own. None is verified: every date and time
+# below is NOT PROVEN until read from the exchange's own file.
+# Holiday hours differ by minutes between product groups; this one calendar
+# uses the equity index hours for all instruments that name it.
+name = "cme_globex"
+tz = "America/New_York"
+week_open = ["Sun", "18:00"]
+week_close = ["Fri", "17:00"]
+daily_break = ["17:00", "18:00"]
+day_rolls_at = "17:00"       # a bar belongs to the trading day that ends at the next 17:00 local
+checked = "2026-10-12"
+source = "the exchange's public Globex trading hours, https://www.cmegroup.com/trading-hours.html (Sunday 18:00 to Friday 17:00 New York time, daily break 17:00 to 18:00); recalled, not read on the checked date"
+verified = false
+
+[[closure]]
+start = "2018-12-31 17:00"
+end = "2019-01-01 18:00"
+note = "New Year's Day 2019: closed, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2019-01-21 13:00"
+end = "2019-01-21 18:00"
+note = "Martin Luther King Jr. Day 2019: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2019-02-18 13:00"
+end = "2019-02-18 18:00"
+note = "Presidents' Day 2019: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2019-04-18 17:00"
+end = "2019-04-21 18:00"
+note = "Good Friday 2019: closed from the Thursday close to the Sunday open"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2019-05-27 13:00"
+end = "2019-05-27 18:00"
+note = "Memorial Day 2019: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2019-07-03 13:15"
+end = "2019-07-03 18:00"
+note = "Day before Independence Day 2019: early close at 13:15, reopens at 18:00"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2019-07-04 13:00"
+end = "2019-07-04 18:00"
+note = "Independence Day 2019: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2019-09-02 13:00"
+end = "2019-09-02 18:00"
+note = "Labor Day 2019: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2019-11-28 13:00"
+end = "2019-11-28 18:00"
+note = "Thanksgiving 2019: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2019-11-29 13:15"
+end = "2019-12-01 18:00"
+note = "Day after Thanksgiving 2019: early close at 13:15, reopens Sunday at 18:00"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2019-12-24 13:15"
+end = "2019-12-25 18:00"
+note = "Christmas 2019: early close on the 24th at 13:15, closed on the 25th"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2019-12-31 17:00"
+end = "2020-01-01 18:00"
+note = "New Year's Day 2020: closed, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2020-01-20 13:00"
+end = "2020-01-20 18:00"
+note = "Martin Luther King Jr. Day 2020: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2020-02-17 13:00"
+end = "2020-02-17 18:00"
+note = "Presidents' Day 2020: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2020-04-09 17:00"
+end = "2020-04-12 18:00"
+note = "Good Friday 2020: closed from the Thursday close to the Sunday open"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2020-05-25 13:00"
+end = "2020-05-25 18:00"
+note = "Memorial Day 2020: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2020-07-03 13:00"
+end = "2020-07-05 18:00"
+note = "Independence Day 2020 (observed): early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2020-09-07 13:00"
+end = "2020-09-07 18:00"
+note = "Labor Day 2020: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2020-11-26 13:00"
+end = "2020-11-26 18:00"
+note = "Thanksgiving 2020: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2020-11-27 13:15"
+end = "2020-11-29 18:00"
+note = "Day after Thanksgiving 2020: early close at 13:15, reopens Sunday at 18:00"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2020-12-24 13:15"
+end = "2020-12-27 18:00"
+note = "Christmas 2020: early close on the 24th at 13:15, closed to the Sunday open"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2020-12-31 17:00"
+end = "2021-01-03 18:00"
+note = "New Year's Day 2021: closed, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2021-01-18 13:00"
+end = "2021-01-18 18:00"
+note = "Martin Luther King Jr. Day 2021: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2021-02-15 13:00"
+end = "2021-02-15 18:00"
+note = "Presidents' Day 2021: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2021-04-01 17:00"
+end = "2021-04-04 18:00"
+note = "Good Friday 2021: closed from the Thursday close to the Sunday open (assumed; the exchange has run an abbreviated equity session on a Good Friday with a payroll release, not modelled)"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2021-05-31 13:00"
+end = "2021-05-31 18:00"
+note = "Memorial Day 2021: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2021-07-05 13:00"
+end = "2021-07-05 18:00"
+note = "Independence Day 2021 (observed): early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2021-09-06 13:00"
+end = "2021-09-06 18:00"
+note = "Labor Day 2021: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2021-11-25 13:00"
+end = "2021-11-25 18:00"
+note = "Thanksgiving 2021: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2021-11-26 13:15"
+end = "2021-11-28 18:00"
+note = "Day after Thanksgiving 2021: early close at 13:15, reopens Sunday at 18:00"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2021-12-23 17:00"
+end = "2021-12-26 18:00"
+note = "Christmas 2021: observed Friday the 24th, closed from the Thursday close"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2022-01-17 13:00"
+end = "2022-01-17 18:00"
+note = "Martin Luther King Jr. Day 2022: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2022-02-21 13:00"
+end = "2022-02-21 18:00"
+note = "Presidents' Day 2022: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2022-04-14 17:00"
+end = "2022-04-17 18:00"
+note = "Good Friday 2022: closed from the Thursday close to the Sunday open"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2022-05-30 13:00"
+end = "2022-05-30 18:00"
+note = "Memorial Day 2022: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2022-06-20 13:00"
+end = "2022-06-20 18:00"
+note = "Juneteenth 2022 (observed): early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2022-07-04 13:00"
+end = "2022-07-04 18:00"
+note = "Independence Day 2022: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2022-09-05 13:00"
+end = "2022-09-05 18:00"
+note = "Labor Day 2022: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2022-11-24 13:00"
+end = "2022-11-24 18:00"
+note = "Thanksgiving 2022: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2022-11-25 13:15"
+end = "2022-11-27 18:00"
+note = "Day after Thanksgiving 2022: early close at 13:15, reopens Sunday at 18:00"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2022-12-25 18:00"
+end = "2022-12-26 18:00"
+note = "Christmas 2022: observed Monday the 26th, closed on Sunday evening and Monday"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2023-01-01 18:00"
+end = "2023-01-02 18:00"
+note = "New Year's Day 2023 (observed Monday): closed, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2023-01-16 13:00"
+end = "2023-01-16 18:00"
+note = "Martin Luther King Jr. Day 2023: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2023-02-20 13:00"
+end = "2023-02-20 18:00"
+note = "Presidents' Day 2023: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2023-04-06 17:00"
+end = "2023-04-09 18:00"
+note = "Good Friday 2023: closed from the Thursday close to the Sunday open (assumed; the exchange has run an abbreviated equity session on a Good Friday with a payroll release, not modelled)"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2023-05-29 13:00"
+end = "2023-05-29 18:00"
+note = "Memorial Day 2023: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2023-06-19 13:00"
+end = "2023-06-19 18:00"
+note = "Juneteenth 2023: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2023-07-03 13:15"
+end = "2023-07-03 18:00"
+note = "Day before Independence Day 2023: early close at 13:15, reopens at 18:00"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2023-07-04 13:00"
+end = "2023-07-04 18:00"
+note = "Independence Day 2023: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2023-09-04 13:00"
+end = "2023-09-04 18:00"
+note = "Labor Day 2023: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2023-11-23 13:00"
+end = "2023-11-23 18:00"
+note = "Thanksgiving 2023: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2023-11-24 13:15"
+end = "2023-11-26 18:00"
+note = "Day after Thanksgiving 2023: early close at 13:15, reopens Sunday at 18:00"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2023-12-24 18:00"
+end = "2023-12-25 18:00"
+note = "Christmas 2023: Monday the 25th, closed on Sunday evening and Monday"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2023-12-31 18:00"
+end = "2024-01-01 18:00"
+note = "New Year's Day 2024: closed, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2024-01-15 13:00"
+end = "2024-01-15 18:00"
+note = "Martin Luther King Jr. Day 2024: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2024-02-19 13:00"
+end = "2024-02-19 18:00"
+note = "Presidents' Day 2024: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2024-03-28 17:00"
+end = "2024-03-31 18:00"
+note = "Good Friday 2024: closed from the Thursday close to the Sunday open"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2024-05-27 13:00"
+end = "2024-05-27 18:00"
+note = "Memorial Day 2024: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2024-06-19 13:00"
+end = "2024-06-19 18:00"
+note = "Juneteenth 2024: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2024-07-03 13:15"
+end = "2024-07-03 18:00"
+note = "Day before Independence Day 2024: early close at 13:15, reopens at 18:00"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2024-07-04 13:00"
+end = "2024-07-04 18:00"
+note = "Independence Day 2024: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2024-09-02 13:00"
+end = "2024-09-02 18:00"
+note = "Labor Day 2024: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2024-11-28 13:00"
+end = "2024-11-28 18:00"
+note = "Thanksgiving 2024: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2024-11-29 13:15"
+end = "2024-12-01 18:00"
+note = "Day after Thanksgiving 2024: early close at 13:15, reopens Sunday at 18:00"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2024-12-24 13:15"
+end = "2024-12-25 18:00"
+note = "Christmas 2024: early close on the 24th at 13:15, closed on the 25th"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2024-12-31 17:00"
+end = "2025-01-01 18:00"
+note = "New Year's Day 2025: closed, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2025-01-09 09:30"
+end = "2025-01-09 18:00"
+note = "National Day of Mourning (President Carter) 2025: early halt assumed at 09:30, reopens at 18:00; the halt time is uncertain"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2025-01-20 13:00"
+end = "2025-01-20 18:00"
+note = "Martin Luther King Jr. Day 2025: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2025-02-17 13:00"
+end = "2025-02-17 18:00"
+note = "Presidents' Day 2025: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2025-04-17 17:00"
+end = "2025-04-20 18:00"
+note = "Good Friday 2025: closed from the Thursday close to the Sunday open"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2025-05-26 13:00"
+end = "2025-05-26 18:00"
+note = "Memorial Day 2025: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2025-06-19 13:00"
+end = "2025-06-19 18:00"
+note = "Juneteenth 2025: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2025-07-03 13:15"
+end = "2025-07-03 18:00"
+note = "Day before Independence Day 2025: early close at 13:15, reopens at 18:00"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2025-07-04 13:00"
+end = "2025-07-06 18:00"
+note = "Independence Day 2025: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2025-09-01 13:00"
+end = "2025-09-01 18:00"
+note = "Labor Day 2025: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2025-11-27 13:00"
+end = "2025-11-27 18:00"
+note = "Thanksgiving 2025: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2025-11-28 13:15"
+end = "2025-11-30 18:00"
+note = "Day after Thanksgiving 2025: early close at 13:15, reopens Sunday at 18:00"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2025-12-24 13:15"
+end = "2025-12-25 18:00"
+note = "Christmas 2025: early close on the 24th at 13:15, closed on the 25th"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2025-12-31 17:00"
+end = "2026-01-01 18:00"
+note = "New Year's Day 2026: closed, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2026-01-19 13:00"
+end = "2026-01-19 18:00"
+note = "Martin Luther King Jr. Day 2026: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2026-02-16 13:00"
+end = "2026-02-16 18:00"
+note = "Presidents' Day 2026: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2026-04-02 17:00"
+end = "2026-04-05 18:00"
+note = "Good Friday 2026: closed from the Thursday close to the Sunday open (assumed; the exchange has run an abbreviated equity session on a Good Friday with a payroll release, not modelled)"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2026-05-25 13:00"
+end = "2026-05-25 18:00"
+note = "Memorial Day 2026: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2026-06-19 13:00"
+end = "2026-06-21 18:00"
+note = "Juneteenth 2026: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2026-07-03 13:00"
+end = "2026-07-05 18:00"
+note = "Independence Day 2026 (observed): early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2026-09-07 13:00"
+end = "2026-09-07 18:00"
+note = "Labor Day 2026: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2026-11-26 13:00"
+end = "2026-11-26 18:00"
+note = "Thanksgiving 2026: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2026-11-27 13:15"
+end = "2026-11-29 18:00"
+note = "Day after Thanksgiving 2026: early close at 13:15, reopens Sunday at 18:00"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2026-12-24 13:15"
+end = "2026-12-27 18:00"
+note = "Christmas 2026: early close on the 24th at 13:15, closed to the Sunday open"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2026-12-31 17:00"
+end = "2027-01-03 18:00"
+note = "New Year's Day 2027: closed, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2027-01-18 13:00"
+end = "2027-01-18 18:00"
+note = "Martin Luther King Jr. Day 2027: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2027-02-15 13:00"
+end = "2027-02-15 18:00"
+note = "Presidents' Day 2027: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2027-03-25 17:00"
+end = "2027-03-28 18:00"
+note = "Good Friday 2027: closed from the Thursday close to the Sunday open"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2027-05-31 13:00"
+end = "2027-05-31 18:00"
+note = "Memorial Day 2027: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2027-06-18 13:00"
+end = "2027-06-20 18:00"
+note = "Juneteenth 2027 (observed): early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2027-07-05 13:00"
+end = "2027-07-05 18:00"
+note = "Independence Day 2027 (observed): early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2027-09-06 13:00"
+end = "2027-09-06 18:00"
+note = "Labor Day 2027: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2027-11-25 13:00"
+end = "2027-11-25 18:00"
+note = "Thanksgiving 2027: early halt at 13:00, reopens at 18:00 for the next trading day"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2027-11-26 13:15"
+end = "2027-11-28 18:00"
+note = "Day after Thanksgiving 2027: early close at 13:15, reopens Sunday at 18:00"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
+
+[[closure]]
+start = "2027-12-23 17:00"
+end = "2027-12-26 18:00"
+note = "Christmas 2027: observed Friday the 24th, closed from the Thursday close"
+checked = "2026-10-12"
+source = "the exchange's published Globex holiday trading hours (https://www.cmegroup.com/trading-hours.html and its holiday calendar notices), equity index futures hours in New York time; recalled, not read on the checked date; other product groups can differ by minutes on holidays"
+verified = false
