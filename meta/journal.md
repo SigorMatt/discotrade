@@ -15,3 +15,4 @@
 - 2026-10-12 mission 2 U0 plan written (plan.md, CHECKPOINT.md, journal.md, FINDINGS.md: D-001/D-002 answered, D-003 filed).
 - 2026-10-12 mission 2 U1 done f3f8c2d: store recovery with store_recovered notice, non-finite refusal/drop, gap check bounded at D, window fraction to end of D, atomic gaps.jsonl, bars gaps default D; 28 tests. Note: bars fetch default day still UTC-date based.
 - 2026-10-12 mission 2 U2 done 8e423c1: state refused inside any code repo and when blank (I-14); type-strict frozen-config check; single-item gate verdict only; gate marker collection errors.
+- 2026-10-12 mission 2 U3 done cb9c21d: synth quarterly contracts, fetch_contract, generator keys from [source] refused by name when missing; fixture fetch hashes unchanged; also fixed fetch wholly before trusted_from.
