@@ -7,3 +7,4 @@
 - 2026-10-12 mission 1 U4 done 8348743: append-only bar store with month files and hashed index; state.py content hash; 26 tests.
 - 2026-10-12 mission 1 U5 done 3b5439e: gap check, bars gaps subcommand, data_gaps health event value; finding D-002 (stopped feed).
 - 2026-10-12 mission 1 U6 done e1c3f76: null synthetic market, BarSource protocol, bars fetch through the store and gap check; 17 tests.
+- 2026-10-12 mission 1 U7 done 0650364: final report; mission finished.
