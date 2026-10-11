@@ -15,8 +15,9 @@ import os
 import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
+from typing import Any
 
 from discotrade import __version__
 from discotrade.clock import Clock, FixedClock, SystemClock
@@ -149,39 +150,28 @@ def _add_config(subparsers: argparse._SubParsersAction, common: argparse.Argumen
 SUBCOMMANDS.append(_add_config)
 
 
-def _bars_gaps(ctx: Context, args: argparse.Namespace) -> int:
-    from datetime import date, timedelta
-
-    from discotrade.bars.gaps import check_gaps
-    from discotrade.bars.store import BarStoreError
-    from discotrade.config import (
-        ConfigError,
-        load_calendar,
-        load_thresholds,
-        load_track_config,
-    )
-
-    if ctx.state is None:
-        print("bars gaps: FAIL: no state directory (--state or $DISCOTRADE_STATE)",
-              file=sys.stderr)
-        return 1
+def _gap_day(ctx: Context, args: argparse.Namespace, command: str) -> date | None:
     try:
-        day = (date.fromisoformat(args.day) if args.day
-               else ctx.clock.now().date() - timedelta(days=1))
+        return (date.fromisoformat(args.day) if args.day
+                else ctx.clock.now().date() - timedelta(days=1))
     except ValueError as exc:
-        print(f"bars gaps: FAIL: --day {args.day!r}: {exc}", file=sys.stderr)
-        return 1
-    try:
-        tc = load_track_config(ctx.config, ctx.track)
-        calendars = {
-            name: load_calendar(ctx.config / "calendars" / f"{name}.toml")
-            for name in sorted({inst.calendar for inst in tc.instruments})
-        }
-        limit = load_thresholds(ctx.config / "thresholds.toml")["gaps.max_fraction"]
-        report = check_gaps(ctx.state, tc, calendars, day, limit)
-    except (ConfigError, BarStoreError, OSError) as exc:
-        print(f"bars gaps: FAIL: {exc}", file=sys.stderr)
-        return 1
+        print(f"{command}: FAIL: --day {args.day!r}: {exc}", file=sys.stderr)
+        return None
+
+
+def _load_for_gaps(ctx: Context) -> tuple[Any, dict[str, Any], float]:
+    from discotrade.config import load_calendar, load_thresholds, load_track_config
+
+    tc = load_track_config(ctx.config, ctx.track)
+    calendars = {
+        name: load_calendar(ctx.config / "calendars" / f"{name}.toml")
+        for name in sorted({inst.calendar for inst in tc.instruments})
+    }
+    limit = load_thresholds(ctx.config / "thresholds.toml")["gaps.max_fraction"]
+    return tc, calendars, limit
+
+
+def _print_gaps(report: Any) -> None:
     print(f"track {report.track}, day {report.day.isoformat()}")
     for symbol, times in report.missing.items():
         print(f"{symbol}: {len(times)} missing")
@@ -197,6 +187,75 @@ def _bars_gaps(ctx: Context, args: argparse.Namespace) -> int:
               f"{report.max_fraction:g})")
     else:
         print("generation: ok")
+
+
+def _bars_gaps(ctx: Context, args: argparse.Namespace) -> int:
+    from discotrade.bars.gaps import check_gaps
+    from discotrade.bars.store import BarStoreError
+    from discotrade.config import ConfigError
+
+    if ctx.state is None:
+        print("bars gaps: FAIL: no state directory (--state or $DISCOTRADE_STATE)",
+              file=sys.stderr)
+        return 1
+    day = _gap_day(ctx, args, "bars gaps")
+    if day is None:
+        return 1
+    try:
+        tc, calendars, limit = _load_for_gaps(ctx)
+        report = check_gaps(ctx.state, tc, calendars, day, limit)
+    except (ConfigError, BarStoreError, OSError) as exc:
+        print(f"bars gaps: FAIL: {exc}", file=sys.stderr)
+        return 1
+    _print_gaps(report)
+    return 0
+
+
+def _bars_fetch(ctx: Context, args: argparse.Namespace) -> int:
+    import pandas as pd
+
+    from discotrade.bars.gaps import check_gaps
+    from discotrade.bars.store import BarStore, BarStoreError
+    from discotrade.config import ConfigError
+    from discotrade.sources import NotBuiltError, source_for
+
+    if ctx.state is None:
+        print("bars fetch: FAIL: no state directory (--state or $DISCOTRADE_STATE)",
+              file=sys.stderr)
+        return 1
+    day = _gap_day(ctx, args, "bars fetch")
+    if day is None:
+        return 1
+    try:
+        tc, calendars, limit = _load_for_gaps(ctx)
+        bar = tc.track.bar_seconds
+        store = BarStore(ctx.state, tc.track.name, bar)
+        now = ctx.clock.now()
+        # Every instrument's bars are asked for before any is written, so a
+        # source that cannot serve one instrument leaves the store untouched.
+        batches = []
+        for inst in tc.instruments:
+            source = source_for(inst.source.adapter, calendars, bar)
+            until = source.available_until(now)
+            last = store.last_ts(inst.symbol)
+            start = (datetime.combine(inst.trusted_from, time(), tzinfo=UTC) if last is None
+                     else last.to_pydatetime() + timedelta(seconds=bar))
+            bars = source.fetch(inst, start, until) if start < until else None
+            if bars is not None:
+                bars = bars[bars["ts"] + pd.Timedelta(seconds=bar) <= pd.Timestamp(until)]
+            batches.append((inst.symbol, bars, until))
+        for symbol, bars, until in batches:
+            written = 0 if bars is None else store.append(symbol, bars, until)
+            print(f"fetched {symbol}: {written} bars written, available until "
+                  f"{until.isoformat()}")
+        report = check_gaps(ctx.state, tc, calendars, day, limit)
+    except NotBuiltError as exc:
+        print(f"bars fetch: FAIL: not built: {exc}", file=sys.stderr)
+        return 1
+    except (ConfigError, BarStoreError, OSError, ValueError) as exc:
+        print(f"bars fetch: FAIL: {exc}", file=sys.stderr)
+        return 1
+    _print_gaps(report)
     return 0
 
 
@@ -214,6 +273,18 @@ def _add_bars(subparsers: argparse._SubParsersAction, common: argparse.ArgumentP
         "UTC date of --as-of)",
     )
     gaps.set_defaults(handler=_bars_gaps)
+    fetch = actions.add_parser(
+        "fetch", parents=[common],
+        help="ask each instrument's source for its bars from the last stored bar to the "
+        "source's available_until at --as-of, write the closed ones, then run the gap "
+        "check (DESIGN 5.5, 5.4)",
+    )
+    fetch.add_argument(
+        "--day", metavar="YYYY-MM-DD", default=None,
+        help="trading day whose W and T the gap check reports (default: the day before "
+        "the UTC date of --as-of)",
+    )
+    fetch.set_defaults(handler=_bars_fetch)
 
 
 SUBCOMMANDS.append(_add_bars)
