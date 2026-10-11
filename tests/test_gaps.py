@@ -313,3 +313,203 @@ def test_bars_gaps_command_needs_a_state_directory(tmp_path, monkeypatch, capsys
     assert main(["--config", str(config), "--track", TRACK, "bars", "gaps",
                  "--day", "2019-07-12"]) == 1
     assert "state directory" in capsys.readouterr().err
+
+
+# --- the check for a day reads only bars up to the end of that day (decision 3) -----
+
+AFTER = datetime(2019, 7, 27, 0, 0, tzinfo=UTC)
+
+
+def _after_day_removed(tc, calendars):
+    """Missing bars both before and after the end of DAY's trading day."""
+    a = all_expected(tc, calendars, "SYNA", START, AFTER)
+    c = all_expected(tc, calendars, "SYNC", START, AFTER)
+    end_a = [t for t in a if trading_date(calendars["synth_week"], t) <= DAY]
+    return {"SYNA": [a[30], end_a[-3], a[len(end_a) + 40]], "SYNC": [c[len(end_a) + 7]]}
+
+
+def test_a_replay_of_a_past_day_appends_nothing_beyond_the_original_run(tmp_path, tc,
+                                                                       calendars):
+    removed = _after_day_removed(tc, calendars)
+    original, replay = tmp_path / "original", tmp_path / "replay"
+    # The original run of DAY: bars up to the end of DAY.
+    fill(original, tc, calendars, removed, START, END)
+    first = check_gaps(original, tc, calendars, DAY, max_fraction=1.0)
+    lines = (original / "bars" / TRACK / GAPS_FILE).read_bytes()
+    assert [ln["ts"] for ln in gap_lines(original)] == [
+        removed["SYNA"][0].isoformat(), removed["SYNA"][1].isoformat()]
+    # Later bars arrive, with gaps of their own; DAY is replayed.
+    store = BarStore(original, TRACK, 3600)
+    for inst in tc.instruments:
+        drop = set(removed.get(inst.symbol, ()))
+        later = [t for t in all_expected(tc, calendars, inst.symbol, END, AFTER)
+                 if t not in drop]
+        store.append(inst.symbol, frame(later, inst.symbol), LATE)
+    again = check_gaps(original, tc, calendars, DAY, max_fraction=1.0)
+    assert again.new == 0
+    assert again.missing == first.missing
+    assert again.windows == first.windows
+    assert (original / "bars" / TRACK / GAPS_FILE).read_bytes() == lines
+    # A first run of DAY on a store that already holds the later bars.
+    fill(replay, tc, calendars, removed, START, AFTER)
+    late_first = check_gaps(replay, tc, calendars, DAY, max_fraction=1.0)
+    assert late_first.missing == first.missing
+    assert late_first.windows == first.windows
+    assert (replay / "bars" / TRACK / GAPS_FILE).read_bytes() == lines
+
+
+# --- a stopped or absent feed counts as missing to the end of D (decision 2) --------
+
+
+def test_a_feed_that_stopped_counts_as_missing_to_the_end_of_the_day(tmp_path, tc, calendars):
+    state = tmp_path / "state"
+    wins = tc.track.windows(DAY)
+    cal = calendars["synth_week"]
+    a = all_expected(tc, calendars, "SYNA")
+    in_t = in_window(tc, calendars, "SYNA", a, wins.t.first, wins.t.last)
+    stop = in_t[20]
+    store = fill(state, tc, calendars, {"SYNA": [t for t in a if t >= stop]})
+    assert store.last_ts("SYNA") < stop
+    report = check_gaps(state, tc, calendars, DAY, max_fraction=0.01)
+    w, t = report.windows
+    assert t.missing == len(in_t) - 20
+    assert t.expected == 460
+    assert w.missing == 0
+    assert report.skip_generation and report.event.detail["over"] == ["T"]
+    # gaps.jsonl keeps the first definition: nothing after the last stored bar.
+    assert report.missing["SYNA"] == ()
+    assert gap_lines(state) == []
+    assert all(trading_date(cal, x) <= DAY for x in in_t)
+
+
+def test_an_instrument_with_no_stored_bar_counts_as_missing(tmp_path, tc, calendars):
+    state = tmp_path / "state"
+    store = BarStore(state, TRACK, 3600)
+    for inst in tc.instruments:
+        if inst.symbol != "SYND":
+            store.append(inst.symbol, frame(all_expected(tc, calendars, inst.symbol),
+                                            inst.symbol), LATE)
+    report = check_gaps(state, tc, calendars, DAY, max_fraction=0.01)
+    w, t = report.windows
+    assert (t.missing, t.expected) == (115, 460)
+    assert w.missing == w.expected // 4
+    assert report.skip_generation and report.event.detail["over"] == ["W", "T"]
+    assert report.missing["SYND"] == ()
+
+
+def test_an_empty_store_skips_generation(tmp_path, tc, calendars):
+    report = check_gaps(tmp_path / "state", tc, calendars, DAY, max_fraction=0.01)
+    w, t = report.windows
+    assert (t.missing, t.expected) == (460, 460)
+    assert w.missing == w.expected > 0
+    assert report.skip_generation
+
+
+def test_window_counts_start_no_earlier_than_trusted_from(tmp_path, tc, calendars):
+    """A window that starts before ``trusted_from`` expects nothing before it."""
+    inst = tc.instruments[0]
+    trusted = inst.trusted_from
+    day = trusted + timedelta(days=3)
+    report = check_gaps(tmp_path / "state", tc, calendars, day, max_fraction=1.0)
+    cal = calendars[inst.calendar]
+    start = datetime.combine(trusted, datetime.min.time(), tzinfo=UTC)
+    t_bars = [x for x in expected_bars(cal, start, start + timedelta(days=5), 3600)
+              if trading_date(cal, x) <= day]
+    assert report.windows[1].expected == 4 * len(t_bars)
+    assert report.windows[0].expected == 0
+
+
+# --- gaps.jsonl is appended atomically (decision 4) ----------------------------------
+
+
+def test_an_append_to_gaps_jsonl_leaves_every_earlier_line_byte_identical(tmp_path, tc,
+                                                                         calendars):
+    state = tmp_path / "state"
+    mid = datetime(2019, 6, 20, 0, 0, tzinfo=UTC)
+    a1 = all_expected(tc, calendars, "SYNA", START, mid)
+    store = fill(state, tc, calendars, {"SYNA": [a1[10], a1[11]]}, START, mid)
+    check_gaps(state, tc, calendars, DAY, max_fraction=1.0)
+    path = state / "bars" / TRACK / GAPS_FILE
+    old = path.read_bytes()
+    assert old.count(b"\n") == 2
+    for inst in tc.instruments:
+        times = all_expected(tc, calendars, inst.symbol, mid, END)
+        store.append(inst.symbol, frame(times[:5] + times[6:], inst.symbol), LATE)
+    assert check_gaps(state, tc, calendars, DAY, max_fraction=1.0).new == 4
+    new = path.read_bytes()
+    assert new.startswith(old) and new.count(b"\n") == 6
+    assert not list(path.parent.glob("*.tmp"))
+
+
+def test_a_crash_before_the_rename_leaves_gaps_jsonl_intact(tmp_path, tc, calendars,
+                                                           monkeypatch):
+    import os
+
+    state = tmp_path / "state"
+    mid = datetime(2019, 6, 20, 0, 0, tzinfo=UTC)
+    a1 = all_expected(tc, calendars, "SYNA", START, mid)
+    store = fill(state, tc, calendars, {"SYNA": [a1[10]]}, START, mid)
+    check_gaps(state, tc, calendars, DAY, max_fraction=1.0)
+    path = state / "bars" / TRACK / GAPS_FILE
+    old = path.read_bytes()
+    for inst in tc.instruments:
+        times = all_expected(tc, calendars, inst.symbol, mid, END)
+        store.append(inst.symbol, frame(times[:5] + times[6:], inst.symbol), LATE)
+
+    def crash(src, dst):
+        raise OSError("simulated crash before the rename")
+    with monkeypatch.context() as m:
+        m.setattr(os, "replace", crash)
+        with pytest.raises(OSError, match="simulated"):
+            check_gaps(state, tc, calendars, DAY, max_fraction=1.0)
+    assert path.read_bytes() == old
+    # The next run appends the lines the crashed one did not.
+    assert check_gaps(state, tc, calendars, DAY, max_fraction=1.0).new == 4
+    assert path.read_bytes().startswith(old)
+
+
+def test_fsync_is_called_on_gaps_jsonl_before_its_rename(tmp_path, tc, calendars,
+                                                       monkeypatch):
+    import os
+
+    state = tmp_path / "state"
+    a = all_expected(tc, calendars, "SYNA")
+    fill(state, tc, calendars, {"SYNA": [a[100]]})
+    log = []
+    real_fsync, real_replace = os.fsync, os.replace
+
+    def fsync(fd):
+        log.append(("fsync", os.readlink(f"/proc/self/fd/{fd}")))
+        return real_fsync(fd)
+
+    def replace(src, dst):
+        log.append(("replace", str(src)))
+        return real_replace(src, dst)
+    monkeypatch.setattr(os, "fsync", fsync)
+    monkeypatch.setattr(os, "replace", replace)
+    check_gaps(state, tc, calendars, DAY, max_fraction=1.0)
+    assert log[-3:] == [("fsync", str(state / "bars" / TRACK / (GAPS_FILE + ".tmp"))),
+                        ("replace", str(state / "bars" / TRACK / (GAPS_FILE + ".tmp"))),
+                        ("fsync", str(state / "bars" / TRACK))]
+
+
+# --- the default day of `bars gaps` (decision 3, DESIGN 16.1) ------------------------
+
+
+@pytest.mark.parametrize("as_of, day", [
+    # 19:00 New York on Thursday: UTC date 07-11, trading date 07-12 (in progress).
+    ("2019-07-11T23:00:00+00:00", "2019-07-11"),
+    # Friday's last bar (20:00 UTC) closes at 21:00 UTC exactly.
+    ("2019-07-12T21:00:00+00:00", "2019-07-12"),
+    ("2019-07-12T20:59:00+00:00", "2019-07-11"),
+    # Monday morning: the weekend dates have no bar, so D is Friday.
+    ("2019-07-15T03:00:00+00:00", "2019-07-12"),
+])
+def test_bars_gaps_default_day_is_the_latest_closed_trading_day(tmp_path, tc, calendars,
+                                                                 capsys, as_of, day):
+    state = tmp_path / "state"
+    fill(state, tc, calendars)
+    config = _cli_config(tmp_path)
+    assert main(["--state", str(state), "--config", str(config), "--track", TRACK,
+                 "--as-of", as_of, "bars", "gaps"]) == 0
+    assert f"track {TRACK}, day {day}" in capsys.readouterr().out

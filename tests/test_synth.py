@@ -263,3 +263,101 @@ def test_bars_fetch_needs_a_state_directory(tmp_path, monkeypatch, capsys):
                  "bars", "fetch"]) == 1
     assert "state directory" in capsys.readouterr().err
 
+
+
+# --- bars fetch: an interrupted append and bars that are not finite (decisions 5, 6) --
+
+
+class Crash(OSError):
+    """A simulated crash."""
+
+
+def _parquet_bytes(state):
+    root = state / "bars" / "test_null"
+    return {p.relative_to(root): p.read_bytes() for p in sorted(root.rglob("*.parquet"))}
+
+
+def test_bars_fetch_completes_an_interrupted_append_of_several_months(tmp_path, monkeypatch,
+                                                                      capsys):
+    clean, state, config = tmp_path / "clean", tmp_path / "state", _cli_config(tmp_path)
+    assert main(_argv(clean, config, "bars", "fetch")) == 0
+    early = "2019-02-15T00:00:00+00:00"
+    assert main(_argv(state, config, "bars", "fetch", as_of=early)) == 0
+    index_before = (state / "bars" / "test_null" / "index.json").read_text()
+    # The next fetch (February to April for each instrument) crashes after
+    # the first instrument's month files are renamed, before its index write.
+    with monkeypatch.context() as m:
+        def crash(self, index):
+            raise Crash("simulated crash before the index write")
+        m.setattr(BarStore, "_write_index", crash)
+        assert main(_argv(state, config, "bars", "fetch")) == 1
+    assert (state / "bars" / "test_null" / "index.json").read_text() == index_before
+    crashed = {k: v for k, v in _parquet_bytes(state).items() if k.parts[0] == "SYNB"}
+    capsys.readouterr()
+    # The reader refuses the file as an interrupted append, not a revised point.
+    assert main(_argv(state, config, "bars", "gaps", "--day", "2019-02-14")) == 1
+    err = capsys.readouterr().err
+    assert "interrupted append" in err and "revised" not in err
+
+    assert main(_argv(state, config, "bars", "fetch")) == 0
+    out = capsys.readouterr().out
+    notices = [json.loads(ln.split(" ", 1)[1]) for ln in out.splitlines()
+               if ln.startswith("notice ")]
+    assert [(n["level"], n["kind"], n["subject"], n["detail"]["file"]) for n in notices] == [
+        ("notice", "store_recovered", "SYNB", f"SYNB/{month}.parquet")
+        for month in ("2019-02", "2019-03", "2019-04")]
+    assert all(n["date"] == "2019-03-31" for n in notices)
+    after = _parquet_bytes(state)
+    # The recovered files are byte-identical: no row changed.
+    assert {k: after[k] for k in crashed} == crashed
+    assert (state / "bars" / "test_null" / "index.json").read_text() == (
+        clean / "bars" / "test_null" / "index.json").read_text()
+    for symbol in NULL_TRACK:
+        pd.testing.assert_frame_equal(
+            BarStore(state, "test_null", HOUR).read_range(symbol, START, UNTIL),
+            BarStore(clean, "test_null", HOUR).read_range(symbol, START, UNTIL),
+            check_exact=True)
+
+
+def test_bars_fetch_refuses_a_revised_file_and_writes_nothing(tmp_path, capsys):
+    state, config = tmp_path / "state", _cli_config(tmp_path)
+    assert main(_argv(state, config, "bars", "fetch", as_of="2019-02-15T00:00:00+00:00")) == 0
+    path = state / "bars" / "test_null" / "SYNL" / "2019-01.parquet"
+    revised = pd.read_parquet(path)
+    revised.loc[3, "close"] = revised.loc[3, "close"] + 1.0
+    revised.to_parquet(path, index=False)
+    before = _parquet_bytes(state)
+    index = (state / "bars" / "test_null" / "index.json").read_text()
+    capsys.readouterr()
+    assert main(_argv(state, config, "bars", "fetch")) == 1
+    assert "revised data point" in capsys.readouterr().err
+    assert _parquet_bytes(state) == before
+    assert (state / "bars" / "test_null" / "index.json").read_text() == index
+
+
+def test_bars_fetch_drops_bars_that_are_not_finite_and_the_gap_check_lists_them(
+        tmp_path, monkeypatch, capsys):
+    state, config = tmp_path / "state", _cli_config(tmp_path)
+    real = SynthSource.fetch
+    poisoned = {}
+
+    def fetch(self, instrument, start, end):
+        bars = real(self, instrument, start, end)
+        if instrument.symbol == "SYNB":
+            bars = bars.copy()
+            for row, column, value in ((100, "close", np.nan), (101, "open", np.inf),
+                                       (500, "volume", -np.inf)):
+                bars.loc[row, column] = value
+                poisoned[bars.loc[row, "ts"].to_pydatetime()] = column
+        return bars
+    monkeypatch.setattr(SynthSource, "fetch", fetch)
+    assert main(_argv(state, config, "bars", "fetch")) == 0
+    out = capsys.readouterr().out.splitlines()
+    fetched = {ln.split(":")[0]: ln for ln in out if ln.startswith("fetched ")}
+    assert "3 dropped as not finite" in fetched["fetched SYNB"]
+    assert "0 dropped as not finite" in fetched["fetched SYNL"]
+    stored = BarStore(state, "test_null", HOUR).read_range("SYNB", START, UNTIL)
+    assert not set(stored["ts"].dt.to_pydatetime()) & set(poisoned)
+    assert np.isfinite(stored[["open", "high", "low", "close", "volume"]].to_numpy()).all()
+    missing = {ln.split(" ", 2)[2] for ln in out if ln.startswith("missing SYNB ")}
+    assert {t.isoformat() for t in poisoned} <= missing

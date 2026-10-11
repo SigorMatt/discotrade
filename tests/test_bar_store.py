@@ -5,8 +5,11 @@ judged against ``available_until``, computed here from a ``FixedClock`` the
 way the synthetic source does (``available_until(now) = now``, DESIGN 5.5).
 """
 
+import io
 import json
-from datetime import UTC, datetime
+import os
+from datetime import UTC, date, datetime
+from pathlib import Path
 
 import pandas as pd
 import pytest
@@ -268,3 +271,228 @@ def test_store_never_reads_the_wall_clock():
     source = open(module.__file__, encoding="utf-8").read()
     for call in ("now(", "today(", "time.time", "utcnow"):
         assert call not in source
+
+
+# --- non-finite values (decision 6) -----------------------------------------------
+
+
+@pytest.mark.parametrize("column", ["open", "high", "low", "close", "volume"])
+@pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+def test_writer_refuses_a_bar_with_a_value_that_is_not_finite(store, column, value):
+    store.append(SYM, bars("2026-03-31 20:00", 2), LATE)
+    index_before = store.index_path.read_text()
+    files_before = {p: p.read_bytes() for p in store.root.rglob("*") if p.is_file()}
+    batch = bars("2026-03-31 22:00", 4)          # spans two months; one bad bar in April
+    batch.loc[3, column] = value
+    with pytest.raises(BarStoreError, match="not finite"):
+        store.append(SYM, batch, LATE)
+    assert store.index_path.read_text() == index_before
+    assert {p: p.read_bytes() for p in store.root.rglob("*") if p.is_file()} == files_before
+
+
+def test_writer_refuses_a_non_finite_first_batch_and_creates_nothing(store):
+    batch = bars("2026-03-02 00:00", 3)
+    batch.loc[0, "open"] = float("nan")
+    with pytest.raises(BarStoreError, match="not finite"):
+        store.append(SYM, batch, LATE)
+    assert not store.root.exists()
+
+
+# --- an interrupted append (decision 5) -------------------------------------------
+
+
+class Crash(OSError):
+    """A simulated crash."""
+
+
+def crash_at_index_write(monkeypatch, store):
+    def boom(index):
+        raise Crash("simulated crash before the index write")
+    monkeypatch.setattr(store, "_write_index", boom)
+
+
+def crash_at_rename(monkeypatch, nth):
+    """Let ``nth - 1`` renames happen, then crash in place of the ``nth``."""
+    real = os.replace
+    calls = []
+
+    def replace(src, dst):
+        calls.append(dst)
+        if len(calls) == nth:
+            raise Crash(f"simulated crash before rename {nth}")
+        return real(src, dst)
+    monkeypatch.setattr(os, "replace", replace)
+
+
+def snapshot(store):
+    return {p.relative_to(store.root): p.read_bytes()
+            for p in store.root.rglob("*.parquet")}
+
+
+def clean_store(tmp_path, *batches):
+    other = BarStore(tmp_path / "clean", "hourly", HOUR)
+    for batch in batches:
+        other.append(SYM, batch, LATE)
+    return other
+
+
+def test_interrupted_append_is_completed_by_the_next_append(store, tmp_path, monkeypatch):
+    first, second, third = (bars("2026-03-02 00:00", 5), bars("2026-03-02 05:00", 3, base=200),
+                            bars("2026-03-02 08:00", 2, base=300))
+    store.append(SYM, first, LATE)
+    with monkeypatch.context() as m:
+        crash_at_index_write(m, store)
+        with pytest.raises(Crash):
+            store.append(SYM, second, LATE)
+    on_disk = snapshot(store)
+    # The reader refuses the file and says it is an interrupted append.
+    with pytest.raises(BarStoreError, match="interrupted append") as err:
+        store.read_range(SYM, _ts("2026-03-01"), _ts("2026-04-01"))
+    assert "revised" not in str(err.value)
+
+    assert store.append(SYM, third, LATE) == 2
+    assert [(e.level, e.kind, e.subject) for e in store.notices] == [
+        ("notice", "store_recovered", SYM)]
+    assert store.notices[0].detail["file"] == f"{SYM}/2026-03.parquet"
+    got = store.read_range(SYM, _ts("2026-03-01"), _ts("2026-04-01"))
+    want = pd.concat([first, second, third], ignore_index=True)
+    pd.testing.assert_frame_equal(got, want, check_dtype=False)
+    clean = clean_store(tmp_path, first, second, third)
+    assert store.index_path.read_text() == clean.index_path.read_text()
+    # The recovered rows are the rows the crashed append had written.
+    head = pd.read_parquet(store.month_path(SYM, "2026-03")).iloc[:8]
+    pd.testing.assert_frame_equal(
+        head, pd.read_parquet(io.BytesIO(on_disk[Path(SYM) / "2026-03.parquet"])))
+
+
+@pytest.mark.parametrize("fresh", [False, True])
+def test_interrupted_append_of_several_months_is_completed_by_recover(
+        store, tmp_path, monkeypatch, fresh):
+    first = bars("2026-02-27 00:00", 3)
+    crossing = bars("2026-02-28 20:00", 24 * 32, base=150)   # Feb, March and April
+    if not fresh:
+        store.append(SYM, first, LATE)
+    with monkeypatch.context() as m:
+        crash_at_index_write(m, store)
+        with pytest.raises(Crash):
+            store.append(SYM, crossing, LATE)
+    before = snapshot(store)
+    events = store.recover(SYM, date(2026, 4, 3))
+    assert [(e.date, e.level, e.kind, e.subject, e.detail["file"]) for e in events] == [
+        (date(2026, 4, 3), "notice", "store_recovered", SYM, f"{SYM}/{month}.parquet")
+        for month in ("2026-02", "2026-03", "2026-04")]
+    assert snapshot(store) == before                            # no row changed
+    clean = clean_store(tmp_path, *([] if fresh else [first]), crossing)
+    assert store.index_path.read_text() == clean.index_path.read_text()
+    assert store.recover(SYM, date(2026, 4, 3)) == ()
+    index_after = store.index_path.read_text()
+    assert store.recover(SYM, date(2026, 4, 4)) == ()
+    assert store.index_path.read_text() == index_after
+
+
+def test_crash_between_two_month_renames_is_completed(store, tmp_path, monkeypatch):
+    first = bars("2026-03-30 00:00", 3)
+    crossing = bars("2026-03-30 03:00", 48)                     # March and April
+    store.append(SYM, first, LATE)
+    with monkeypatch.context() as m:
+        crash_at_rename(m, 2)                                   # March renamed, April not
+        with pytest.raises(Crash):
+            store.append(SYM, crossing, LATE)
+    assert not store.month_path(SYM, "2026-04").exists()
+    events = store.recover(SYM, date(2026, 4, 2))
+    assert [e.detail["file"] for e in events] == [f"{SYM}/2026-03.parquet"]
+    last = store.last_ts(SYM)
+    assert last == _ts("2026-03-31 23:00")
+    rest = crossing[crossing["ts"] > last]
+    assert store.append(SYM, rest, LATE) == len(rest)
+    clean = clean_store(tmp_path, first, crossing)
+    assert store.index_path.read_text() == clean.index_path.read_text()
+
+
+def _change_old_row(frame):
+    frame.loc[1, "close"] = frame.loc[1, "close"] + 1e-9
+    return frame
+
+
+def _remove_row(frame):
+    return frame.drop(index=1).reset_index(drop=True)
+
+
+def _insert_earlier_row(frame):
+    row = frame.iloc[[1]].copy()
+    row["ts"] = row["ts"] + pd.Timedelta(minutes=30)
+    return pd.concat([frame, row]).sort_values("ts").reset_index(drop=True)
+
+
+@pytest.mark.parametrize("revise", [_change_old_row, _remove_row, _insert_earlier_row])
+@pytest.mark.parametrize("crashed", [False, True])
+def test_a_revised_file_stays_refused_and_is_not_recovered(store, monkeypatch, revise,
+                                                           crashed):
+    store.append(SYM, bars("2026-03-02 00:00", 5), LATE)
+    if crashed:
+        with monkeypatch.context() as m:
+            crash_at_index_write(m, store)
+            with pytest.raises(Crash):
+                store.append(SYM, bars("2026-03-02 05:00", 3), LATE)
+    path = store.month_path(SYM, "2026-03")
+    revise(pd.read_parquet(path)).to_parquet(path, index=False)
+    index_before = store.index_path.read_text()
+    file_before = path.read_bytes()
+
+    with pytest.raises(BarStoreError, match="revised data point") as err:
+        store.read_range(SYM, _ts("2026-03-01"), _ts("2026-04-01"))
+    assert "interrupted" not in str(err.value)
+    with pytest.raises(BarStoreError, match="revised data point"):
+        store.recover(SYM, date(2026, 3, 3))
+    with pytest.raises(BarStoreError, match="revised data point"):
+        store.append(SYM, bars("2026-03-03 00:00", 1), LATE)
+    assert store.notices == []
+    assert store.index_path.read_text() == index_before
+    assert path.read_bytes() == file_before
+
+
+def test_an_unlisted_file_with_a_row_not_later_than_the_last_is_revised(store):
+    store.append(SYM, bars("2026-03-31 20:00", 2), LATE)        # last ts 21:00 March
+    stray = bars("2026-04-01 00:00", 2)
+    stray.loc[0, "ts"] = _ts("2026-03-31 21:00")                 # in April's file, not later
+    store.month_path(SYM, "2026-04").parent.mkdir(parents=True, exist_ok=True)
+    stray.to_parquet(store.month_path(SYM, "2026-04"), index=False)
+    with pytest.raises(BarStoreError, match="revised data point"):
+        store.recover(SYM, date(2026, 4, 1))
+
+
+def test_recover_with_nothing_to_complete_writes_nothing(store, tmp_path):
+    assert store.recover(SYM, date(2026, 3, 3)) == ()
+    assert not store.root.exists()
+    store.append(SYM, bars("2026-03-02 00:00", 5), LATE)
+    index_before = store.index_path.read_text()
+    assert store.recover(SYM, date(2026, 3, 3)) == ()
+    assert store.index_path.read_text() == index_before
+    assert store.notices == []
+
+
+# --- durability ---------------------------------------------------------------------
+
+
+def test_fsync_is_called_on_the_new_file_before_each_rename(store, monkeypatch):
+    store.append(SYM, bars("2026-03-30 00:00", 3), LATE)
+    log = []
+    real_fsync, real_replace = os.fsync, os.replace
+
+    def fsync(fd):
+        log.append(("fsync", os.readlink(f"/proc/self/fd/{fd}")))
+        return real_fsync(fd)
+
+    def replace(src, dst):
+        log.append(("replace", str(src)))
+        return real_replace(src, dst)
+
+    monkeypatch.setattr(os, "fsync", fsync)
+    monkeypatch.setattr(os, "replace", replace)
+    store.append(SYM, bars("2026-03-30 03:00", 48), LATE)        # two months, then the index
+    renames = [i for i, (kind, _) in enumerate(log) if kind == "replace"]
+    assert len(renames) == 3
+    for i in renames:
+        assert log[i - 1] == ("fsync", log[i][1])                 # the file being renamed
+        assert log[i + 1][0] == "fsync"                           # then its directory
+        assert log[i + 1][1] == str(Path(log[i][1]).parent)

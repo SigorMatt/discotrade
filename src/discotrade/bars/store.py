@@ -5,11 +5,13 @@ instrument per calendar month of ``ts`` in UTC, rows sorted by ``ts`` with no
 duplicate, and ``<state>/bars/<track>/index.json``.
 
 The writer only appends. A batch is refused whole when any bar in it has not
-closed (``ts + bar_seconds`` later than ``available_until``), is not later
-than the last stored bar of its instrument, or repeats or reorders a ``ts``.
-An append rewrites each touched month file atomically (write beside, then
-rename) with the old rows first and unchanged, then rewrites the index the
-same way. ``available_until`` is the caller's: the source's
+closed (``ts + bar_seconds`` later than ``available_until``), has an
+``open``, ``high``, ``low``, ``close`` or ``volume`` that is NaN or infinite
+(decision 2026-10-12 6), is not later than the last stored bar of its
+instrument, or repeats or reorders a ``ts``. An append rewrites each touched
+month file atomically (write beside, flush and ``fsync``, rename, then
+``fsync`` the directory) with the old rows first and unchanged, then rewrites
+the index the same way. ``available_until`` is the caller's: the source's
 ``available_until`` of the injected clock's ``now`` (DESIGN 5.5, I-12); the
 store reads no clock.
 
@@ -17,25 +19,43 @@ The index holds, per instrument, ``first_ts``, ``last_ts`` and ``rows``,
 and per month file ``first_ts``, ``last_ts``, ``rows`` and ``hash``, the
 content hash of DESIGN 9.2 keyed on ``ts``. Timestamps in the index are ISO
 8601 in UTC. Every month file is checked against its hash when read, by the
-reader and by the writer before it appends; a file that no longer matches is
-a revised data point and is refused.
+reader and by the writer before it appends.
+
+A month file that does not match the index, or that the index does not list,
+is an interrupted append (decision 2026-10-12 5) when its first ``r`` rows,
+``r`` being the row count the index records for it (0 when unlisted), have
+exactly the indexed content hash, and every further row is later than the
+instrument's indexed last ``ts``; those further rows must also be strictly
+increasing with finite values, as the writer writes them (the decision is
+silent on this; the simplest reading of "written by the harness"). Any other
+mismatch is a revised data point. ``recover`` completes an interrupted
+append: it records the file in the index (rows, last ``ts``, content hash),
+changes no row, and returns one ``store_recovered`` health notice (DESIGN
+15.2, decision 16) per completed file, naming the instrument and the file.
+The writer runs it before every append and keeps the notices in
+``notices`` for its caller. The reader does not repair: it refuses both
+cases, with an error that says which. The date of a notice is the caller's
+``day``; inside ``append`` it is the UTC date of ``available_until``.
 """
 
 from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from collections.abc import Callable
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+import numpy as np
 import pandas as pd
 
-from discotrade.state import content_hash
+from discotrade.state import HealthEvent, content_hash
 
 COLUMNS = ("ts", "open", "high", "low", "close", "volume", "contract")
 FLOATS = ("open", "high", "low", "close", "volume")
 KEY = ("ts",)
+STORE_RECOVERED = "store_recovered"
 
 
 class BarStoreError(ValueError):
@@ -51,6 +71,31 @@ def _utc(instant: datetime | pd.Timestamp, what: str) -> pd.Timestamp:
     if stamp.tzinfo is None:
         raise BarStoreError(f"{what} {stamp} has no time zone; expected UTC")
     return stamp.tz_convert("UTC")
+
+
+def _fsync_path(path: Path) -> None:
+    fd = os.open(path, os.O_RDONLY)
+    try:
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+
+
+def write_atomic(path: Path, write: Callable[[Path], Any]) -> None:
+    """Write ``path`` beside itself, ``fsync`` it, rename it into place and
+    ``fsync`` its directory. A crash before the rename leaves the old file."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_name(path.name + ".tmp")
+    write(tmp)
+    _fsync_path(tmp)
+    os.replace(tmp, path)
+    _fsync_path(path.parent)
+
+
+def finite_rows(bars: pd.DataFrame) -> np.ndarray:
+    """A mask of the bars whose five values are all finite."""
+    values = bars[list(FLOATS)].astype("float64").to_numpy()
+    return np.isfinite(values).all(axis=1)
 
 
 def _normalize(bars: pd.DataFrame) -> pd.DataFrame:
@@ -81,6 +126,8 @@ class BarStore:
         self.root = Path(state_dir) / "bars" / track
         self.bar_seconds = bar_seconds
         self.index_path = self.root / "index.json"
+        #: Health notices of the interrupted appends the writer completed.
+        self.notices: list[HealthEvent] = []
 
     # --- paths and the index ---------------------------------------------------
 
@@ -98,16 +145,96 @@ class BarStore:
         entry = self.index().get(symbol)
         return None if entry is None else pd.Timestamp(entry["last_ts"]).tz_convert("UTC")
 
-    @staticmethod
-    def _write_atomic(path: Path, write: Any) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        tmp = path.with_name(path.name + ".tmp")
-        write(tmp)
-        os.replace(tmp, path)
-
     def _write_index(self, index: dict[str, Any]) -> None:
         text = json.dumps(index, indent=2, sort_keys=True) + "\n"
-        self._write_atomic(self.index_path, lambda p: p.write_text(text, encoding="utf-8"))
+        write_atomic(self.index_path, lambda p: p.write_text(text, encoding="utf-8"))
+
+    # --- matching a month file against the index ---------------------------------
+
+    @staticmethod
+    def _interrupted(frame: pd.DataFrame, month_entry: dict[str, Any] | None,
+                     last: pd.Timestamp | None) -> bool:
+        """Whether a file that does not match the index is an interrupted append."""
+        r = 0 if month_entry is None else month_entry["rows"]
+        if len(frame) <= r:
+            return False
+        if r and content_hash(frame.iloc[:r], KEY) != month_entry["hash"]:  # type: ignore[index]
+            return False
+        try:
+            extra = _normalize(frame.iloc[r:])
+        except BarStoreError:
+            return False
+        ts = extra["ts"]
+        if last is not None and not (ts > last).all():
+            return False
+        if r and not ts.iloc[0] > frame["ts"].iloc[r - 1]:
+            return False
+        return bool(ts.is_monotonic_increasing and not ts.duplicated().any()
+                    and finite_rows(extra).all())
+
+    @staticmethod
+    def _matches(frame: pd.DataFrame, month_entry: dict[str, Any]) -> bool:
+        return len(frame) == month_entry["rows"] and content_hash(frame, KEY) == month_entry["hash"]
+
+    def recover(self, symbol: str, day: date) -> tuple[HealthEvent, ...]:
+        """Complete an interrupted append of ``symbol`` (decision 2026-10-12 5).
+
+        Returns one ``store_recovered`` notice dated ``day`` per completed file;
+        refuses a revised data point; writes nothing when nothing is to complete.
+        """
+        folder = self.month_path(symbol, "x").parent
+        index = self.index()
+        entry = index.get(symbol)
+        months: dict[str, Any] = {} if entry is None else entry["months"]
+        last = None if entry is None else pd.Timestamp(entry["last_ts"]).tz_convert("UTC")
+        on_disk = sorted(p.stem for p in folder.glob("*.parquet")) if folder.is_dir() else []
+        completed: dict[str, dict[str, Any]] = {}
+        for month in sorted(set(on_disk) | set(months)):
+            listed = months.get(month)
+            path = self.month_path(symbol, month)
+            if not path.exists():
+                raise BarStoreError(f"{symbol} {month}: month file missing, listed in the "
+                                    f"index (a revised data point); refused")
+            frame = pd.read_parquet(path)
+            if listed is not None and self._matches(frame, listed):
+                continue
+            if not self._interrupted(frame, listed, last):
+                raise BarStoreError(self._revised(symbol, month))
+            completed[month] = {
+                "first_ts": _iso(frame["ts"].iloc[0]),
+                "last_ts": _iso(frame["ts"].iloc[-1]),
+                "rows": len(frame),
+                "hash": content_hash(frame, KEY),
+                "before": 0 if listed is None else listed["rows"],
+            }
+        if not completed:
+            return ()
+        entry = entry if entry is not None else {"months": {}}
+        events = []
+        for month, done in completed.items():
+            before = done.pop("before")
+            entry["months"][month] = done
+            events.append(HealthEvent(
+                date=day, level="notice", kind=STORE_RECOVERED, subject=symbol,
+                detail={"file": f"{symbol}/{month}.parquet", "rows_before": before,
+                        "rows": done["rows"], "last_ts": done["last_ts"]},
+            ))
+        self._summarize(entry)
+        index[symbol] = entry
+        self._write_index(index)
+        return tuple(events)
+
+    @staticmethod
+    def _revised(symbol: str, month: str) -> str:
+        return (f"{symbol} {month}: content no longer matches the index "
+                f"(a revised data point); refused")
+
+    @staticmethod
+    def _summarize(entry: dict[str, Any]) -> None:
+        listed = sorted(entry["months"].items())
+        entry["first_ts"] = listed[0][1]["first_ts"]
+        entry["last_ts"] = listed[-1][1]["last_ts"]
+        entry["rows"] = sum(m["rows"] for _, m in listed)
 
     # --- reading -----------------------------------------------------------------
 
@@ -116,11 +243,14 @@ class BarStore:
         if not path.exists():
             raise BarStoreError(f"{symbol} {month}: month file missing, listed in the index")
         frame = pd.read_parquet(path)
-        if content_hash(frame, KEY) != entry["hash"] or len(frame) != entry["rows"]:
-            raise BarStoreError(
-                f"{symbol} {month}: content no longer matches the index "
-                f"(a revised data point); refused"
-            )
+        if not self._matches(frame, entry):
+            last = self.last_ts(symbol)
+            if self._interrupted(frame, entry, last):
+                raise BarStoreError(
+                    f"{symbol} {month}: file holds an interrupted append not yet in the "
+                    f"index; refused until the next append or bars fetch completes it"
+                )
+            raise BarStoreError(self._revised(symbol, month))
         return frame
 
     def _months(self, symbol: str) -> dict[str, Any]:
@@ -199,6 +329,11 @@ class BarStore:
             bad = ts[closes > until].iloc[0]
             raise BarStoreError(f"{symbol}: bar {_iso(bad)} has not closed by "
                                 f"{_iso(until)}")
+        finite = finite_rows(new)
+        if not finite.all():
+            raise BarStoreError(f"{symbol}: bar {_iso(ts[~finite].iloc[0])} has a value that "
+                                f"is not finite (NaN or infinite); nothing written")
+        self.notices.extend(self.recover(symbol, until.date()))
         index = self.index()
         entry = index.get(symbol)
         if entry is not None:
@@ -217,14 +352,14 @@ class BarStore:
             path = self.month_path(symbol, month)
             if month in entry["months"]:
                 old[month] = self._read_month(symbol, month, entry["months"][month])
-            elif path.exists():
+            elif path.exists():   # recover() has just listed every completable file
                 raise BarStoreError(f"{symbol} {month}: month file exists but is not in the "
                                     f"index; refused")
 
         for month, rows in groups:
             frame = rows if month not in old else pd.concat([old[month], rows])
             frame = frame.reset_index(drop=True)
-            self._write_atomic(
+            write_atomic(
                 self.month_path(symbol, month),
                 lambda p, f=frame: f.to_parquet(p, index=False, engine="pyarrow"),
             )
@@ -234,10 +369,7 @@ class BarStore:
                 "rows": len(frame),
                 "hash": content_hash(frame, KEY),
             }
-        listed = sorted(entry["months"].items())
-        entry["first_ts"] = listed[0][1]["first_ts"]
-        entry["last_ts"] = listed[-1][1]["last_ts"]
-        entry["rows"] = sum(m["rows"] for _, m in listed)
+        self._summarize(entry)
         index[symbol] = entry
         self._write_index(index)
         return len(new)
