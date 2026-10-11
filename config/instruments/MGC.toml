@@ -1,0 +1,35 @@
+# Micro Gold (MGC). DESIGN 4.2. Frozen once created (DESIGN 4.3, I-10).
+# multiplier, tick_size, trusted_from and main_session come from the exchange's
+# public contract specification and are not yet confirmed by a live check
+# (verified = false; companions in [spec]). trusted_from is the contract's listing date.
+# main_session is exchange-local (the calendar's time zone): the former COMEX gold open-outcry hours.
+symbol = "MGC"
+venue = "COMEX"
+quote_currency = "USD"
+calendar = "cme_globex"
+multiplier = 10.0
+tick_size = 0.1
+shorting = true
+test_only = false
+trusted_from = "2010-09-27"
+main_session = ["08:20", "13:30"]
+
+[spec]                       # companions of the four values above
+checked = "2026-10-12"
+source = "exchange public contract specification, https://www.cmegroup.com/markets/metals/precious/e-micro-gold.contractSpecs.html (multiplier, tick size); listing date and main session from the exchange's public product pages, recalled, not read on the checked date"
+verified = false
+
+[cost]
+fee_per_side = 0.96
+spread_ticks_main = 1.0
+spread_ticks_off = 2.0
+slippage_coef = 0.02
+checked = "2026-10-11"
+source = "SPEC.md §17"
+verified = false
+
+[source]
+adapter = "vendor"
+dataset = "GLBX.MDP3"
+symbol = "MGC.v.0"
+roll_rule = "volume"

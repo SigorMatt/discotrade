@@ -120,6 +120,35 @@ def parse(argv: Sequence[str] | None = None) -> tuple[Context, argparse.Namespac
     return _context(parser, args), args
 
 
+def _config_check(ctx: Context, args: argparse.Namespace) -> int:
+    from discotrade.config import ConfigError, check
+
+    try:
+        report = check(ctx.config, ctx.track)
+    except ConfigError as exc:
+        print(f"config check: FAIL: {exc}", file=sys.stderr)
+        return 1
+    for line in (*report.lines, *report.unverified):
+        print(line)
+    print(f"config check: ok, {len(report.unverified)} unverified values")
+    return 0
+
+
+def _add_config(subparsers: argparse._SubParsersAction, common: argparse.ArgumentParser) -> None:
+    config = subparsers.add_parser(
+        "config", parents=[common], help="configuration records (DESIGN 4)"
+    )
+    actions = config.add_subparsers(dest="action", metavar="action", required=True)
+    checker = actions.add_parser(
+        "check", parents=[common],
+        help="load every record, list each unverified value, fail on an invalid one",
+    )
+    checker.set_defaults(handler=_config_check)
+
+
+SUBCOMMANDS.append(_add_config)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)

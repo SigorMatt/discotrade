@@ -1,0 +1,16 @@
+# Fixture track test_synth (DESIGN 18.2, 18.3): the gate track, four synthetic instruments that can all be shorted.
+name = "test_synth"
+bar_seconds = 3600
+w_days = 28
+t_days = 7
+history_cap_bars = 480
+block_days = 7
+epoch = "2019-06-03"
+instruments = ["SYNA", "SYNB", "SYNC", "SYND"]
+families = ["trend", "mean_reversion", "breakout", "volatility_regime",
+            "volume", "time_of_day"]
+cell_slots = 3
+
+[horizons]
+short = [1, 6]
+medium = [6, 48]

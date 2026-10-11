@@ -1,0 +1,69 @@
+# Gate thresholds (DESIGN 18.2): the production thresholds with exactly
+# the keys DESIGN 18.2 lists changed, so a replay fits the gate time limit.
+
+[validation]
+max_params = 5
+max_lines = 60
+grid_max_params = 2
+grid_max_values = 3
+call_p95_ms = 50
+call_max_ms = 500
+min_changes_w = 10
+corr_max = 0.7
+description_max_chars = 200
+
+[admission]
+min_trades_t = 10
+
+[lifecycle]
+dormant_window_days = 15         # trading days
+retire_dormant_days = 365        # calendar days
+revival_min_dormant_days = 5     # trading days
+
+[controls]
+random_pool = 50
+match_window_days = 30           # paper days the random pool is matched on
+match_min_live = 3
+
+[gaps]
+max_fraction = 0.01
+
+[journal]
+recompute_sample = 20
+
+[alerts]
+persistent_min_days = 30
+persistent_base_percentile = 0.95
+false_alerts_per_year = 0.5
+group_days = 40
+group_level = 0.05
+group_bootstrap = 1000
+rank_blocks = 6
+rank_level = 0.05
+rank_min_population = 5
+revival_min_days = 10
+cost_stale_days = 90
+min_valid_candidates = 5
+valid_candidates_window_days = 14
+no_finding_months = 12
+
+[pool]
+fail_window = 20
+fail_rate = 0.5
+
+[coordinator]
+brief_max_chars = 600
+weak_window_days = 30
+
+[stage_gate]
+min_clean_days = 126             # six months of trading days (SPEC §14)
+
+[budgets]
+worker_tokens_per_day = 60000
+coordinator_tokens_per_day = 40000
+worker_max_output_tokens = 8000
+
+[[history]]
+date = "2026-10-11"
+key = "*"
+reason = "starting values from SPEC.md v1"

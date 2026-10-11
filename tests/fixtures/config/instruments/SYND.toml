@@ -1,0 +1,26 @@
+# Synthetic fixture instrument (DESIGN 17.1, 18.2, 18.3): can be shorted, per-contract fee.
+# Every value is invented by the project, so no companions are needed.
+symbol = "SYND"
+venue = "SYNTH"
+quote_currency = "USD"
+calendar = "synth_week"
+multiplier = 10.0
+tick_size = 0.25
+shorting = true
+test_only = false
+trusted_from = "2019-01-07"
+main_session = ["09:30", "16:00"]
+
+[cost]
+fee_per_side = 0.5
+spread_ticks_main = 1.0
+spread_ticks_off = 2.0
+slippage_coef = 0.02
+
+[source]
+adapter = "synth"
+seed = 104
+hourly_vol = 0.003
+start_price = 70.0
+drop_fraction = 0.0
+roll_schedule = "none"

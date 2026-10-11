@@ -13,8 +13,9 @@ uv sync --extra dev || fail "uv sync"
 uv run --no-sync ruff check . || fail "ruff"
 uv run --no-sync pytest -m "not gate and not network and not live" || fail "pytest"
 
-# Command-line smoke test. Later units add `discotrade config check` here.
+# Command-line smoke test.
 uv run --no-sync discotrade --help >/dev/null || fail "smoke: discotrade --help"
 uv run --no-sync discotrade --version || fail "smoke: discotrade --version"
+uv run --no-sync discotrade config check || fail "smoke: discotrade config check"
 
 echo "check: green"

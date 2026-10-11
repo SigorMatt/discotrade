@@ -1,0 +1,25 @@
+# Synthetic fixture instrument (DESIGN 17.1, 18.2, 18.3): proportional fee (fee_bps, no multiplier), test only, dropped bars.
+# Every value is invented by the project, so no companions are needed.
+symbol = "SYNX"
+venue = "SYNTH"
+quote_currency = "USD"
+calendar = "always_open"
+tick_size = 0.25
+shorting = true
+test_only = true
+trusted_from = "2019-01-07"
+main_session = ["09:30", "16:00"]
+
+[cost]
+fee_bps = 5.0
+spread_ticks_main = 1.0
+spread_ticks_off = 2.0
+slippage_coef = 0.02
+
+[source]
+adapter = "synth"
+seed = 106
+hourly_vol = 0.006
+start_price = 50000.0
+drop_fraction = 0.002
+roll_schedule = "none"

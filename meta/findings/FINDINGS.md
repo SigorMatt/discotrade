@@ -17,7 +17,34 @@ output, file and line), direction, and `Status: open | fixing | fixed <sha>
 
 ## discotrade findings
 
-(none yet)
+### D-001 — the instrument record cannot hold top-level companions: `source` is already the `[source]` table
+
+Severity: low · Component: DESIGN §4 (companions) with §4.2 (instrument
+record) · Found: 2026-10-12, mission 1 U2.
+
+Symptom. DESIGN §4 stores every number from outside the project with the
+companions `checked`, `source` and `verified`. In the §4.2 instrument
+record, `multiplier`, `tick_size`, `trusted_from` and `main_session` are
+top-level keys taken from the exchange's contract specification, so their
+companions would be top-level keys too; but the record's top level already
+has the table `[source]`, and TOML refuses a key `source` beside it:
+
+    tomllib.TOMLDecodeError: Cannot overwrite a value (at line 29, column 8)
+
+(from an instrument file with `source = "..."` at the top level and a
+`[source]` table). DESIGN is silent on where those four values' companions
+go.
+
+What U2 did (the simplest thing, stated in its commit body): a `[spec]`
+table holding only `checked`, `source` and `verified`, which covers the four
+top-level contract-specification values; `[cost]` keeps its own companions
+as §4.2 shows. `[spec]` is required for an instrument whose adapter is not
+`synth` and optional for synthetic ones, whose values the project invents.
+
+Direction (for the architect). Confirm `[spec]`, or name another place in
+DESIGN §4.2.
+
+Status: open
 
 ---
 

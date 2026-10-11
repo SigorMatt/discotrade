@@ -1,0 +1,16 @@
+# The hourly track (DESIGN 4.1). Frozen once created (DESIGN 4.3, I-10).
+name = "hourly"
+bar_seconds = 3600
+w_days = 90                  # devise window, calendar days
+t_days = 14                  # rank window, calendar days
+history_cap_bars = 1500      # bars passed to a strategy; W's length in bars
+block_days = 14              # rank-persistence block, calendar days
+epoch = "2019-06-03"         # the date blocks are counted from
+instruments = ["MES", "MNQ", "MYM", "M2K", "MGC", "SIL", "MCL", "M6E"]
+families = ["trend", "mean_reversion", "breakout", "volatility_regime",
+            "volume", "time_of_day"]
+cell_slots = 3
+
+[horizons]
+short = [1, 6]               # holding time in bars, inclusive bounds
+medium = [6, 48]

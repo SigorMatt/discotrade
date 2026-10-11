@@ -1,0 +1,4 @@
+# Owner-approved changes to frozen config values (DESIGN 4.3, I-10).
+# One [[change]] entry per change: date, file, key, old, new, reason, and
+# decision (the file under meta/decisions/ that carries the approval).
+# A new frozen file needs an entry with key = "*".
