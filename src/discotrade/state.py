@@ -1,4 +1,6 @@
-"""The state directory (DESIGN 9.1, 9.2, 15.2). For now: the content hash.
+"""The state directory (DESIGN 9.1, 9.2, 15.2). For now: the content hash and
+the health event value of DESIGN 15.2 (the health log that stores it is a
+later step's).
 
 The content hash of a table (DESIGN 9.2) is the sha256 of its rows, sorted
 by the key columns, written as text with every float in ``%.17g``. The text
@@ -14,7 +16,10 @@ so that the text has one reading.
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Sequence
+import json
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field
+from datetime import date
 from typing import Any
 
 import numpy as np
@@ -63,3 +68,31 @@ def content_text(frame: pd.DataFrame, key: Sequence[str]) -> str:
 def content_hash(frame: pd.DataFrame, key: Sequence[str]) -> str:
     """The sha256 hex digest of ``content_text(frame, key)`` (DESIGN 9.2)."""
     return hashlib.sha256(content_text(frame, key).encode("utf-8")).hexdigest()
+
+
+HEALTH_LEVELS = ("alert", "notice")
+
+
+@dataclass(frozen=True)
+class HealthEvent:
+    """One health event (DESIGN 15.2): date, level, kind, subject and a detail
+    object. The code that detects a condition returns it; the daily run
+    appends it to the health log."""
+
+    date: date
+    level: str
+    kind: str
+    subject: str
+    detail: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.level not in HEALTH_LEVELS:
+            raise ValueError(f"health level must be one of {HEALTH_LEVELS}, not {self.level!r}")
+
+    def to_json(self) -> str:
+        """The event as one JSON line (no newline), keys sorted."""
+        return json.dumps(
+            {"date": self.date.isoformat(), "level": self.level, "kind": self.kind,
+             "subject": self.subject, "detail": dict(self.detail)},
+            sort_keys=True,
+        )

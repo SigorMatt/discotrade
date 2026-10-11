@@ -48,6 +48,31 @@ Status: open
 
 ---
 
+### D-002 — the window gap fraction cannot see an instrument whose feed stopped
+
+Severity: medium · Component: DESIGN §5.4 (gap check, window fraction) ·
+Found: 2026-10-12, mission 1 U5.
+
+Symptom. §5.4 defines missing bars only from the later of `trusted_from`
+and the first stored bar to the last stored bar, then says the window
+fraction is "missing bars over expected bars". U5 counts both numerator and
+denominator over that same checked span (`src/discotrade/bars/gaps.py`,
+`check_gaps`). Under that reading, an instrument whose source returns
+nothing after some date adds neither missing nor expected bars to T: with
+three of four instruments complete and the fourth stopped a week ago, T's
+pooled fraction is 0 and generation is not skipped. Counting expected bars
+of the whole window in the denominator while keeping the span-limited
+numerator would only dilute the fraction further.
+
+Direction (for the architect). Decide whether a window's missing bars run
+to the end of the window (the end of `D`'s trading day) rather than to the
+last stored bar, so that a stopped or absent feed counts as gaps in T, or
+whether a stale feed is a separate health condition.
+
+Status: open
+
+---
+
 ## hands findings
 
 ### HF-001 — after an autonomous apply, the engine sends the kickoff of the playbook it loaded before the apply

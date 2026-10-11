@@ -149,6 +149,76 @@ def _add_config(subparsers: argparse._SubParsersAction, common: argparse.Argumen
 SUBCOMMANDS.append(_add_config)
 
 
+def _bars_gaps(ctx: Context, args: argparse.Namespace) -> int:
+    from datetime import date, timedelta
+
+    from discotrade.bars.gaps import check_gaps
+    from discotrade.bars.store import BarStoreError
+    from discotrade.config import (
+        ConfigError,
+        load_calendar,
+        load_thresholds,
+        load_track_config,
+    )
+
+    if ctx.state is None:
+        print("bars gaps: FAIL: no state directory (--state or $DISCOTRADE_STATE)",
+              file=sys.stderr)
+        return 1
+    try:
+        day = (date.fromisoformat(args.day) if args.day
+               else ctx.clock.now().date() - timedelta(days=1))
+    except ValueError as exc:
+        print(f"bars gaps: FAIL: --day {args.day!r}: {exc}", file=sys.stderr)
+        return 1
+    try:
+        tc = load_track_config(ctx.config, ctx.track)
+        calendars = {
+            name: load_calendar(ctx.config / "calendars" / f"{name}.toml")
+            for name in sorted({inst.calendar for inst in tc.instruments})
+        }
+        limit = load_thresholds(ctx.config / "thresholds.toml")["gaps.max_fraction"]
+        report = check_gaps(ctx.state, tc, calendars, day, limit)
+    except (ConfigError, BarStoreError, OSError) as exc:
+        print(f"bars gaps: FAIL: {exc}", file=sys.stderr)
+        return 1
+    print(f"track {report.track}, day {report.day.isoformat()}")
+    for symbol, times in report.missing.items():
+        print(f"{symbol}: {len(times)} missing")
+        for t in times:
+            print(f"missing {symbol} {t.isoformat()}")
+    for win in report.windows:
+        print(f"{win.name} {win.first.isoformat()} to {win.last.isoformat()}: "
+              f"{win.missing} missing of {win.expected} expected, fraction {win.fraction:.6f}")
+    print(f"new in gaps.jsonl: {report.new}")
+    if report.skip_generation:
+        over = " and ".join(report.event.detail["over"]) if report.event else ""
+        print(f"generation: skipped (data_gaps: {over} above gaps.max_fraction "
+              f"{report.max_fraction:g})")
+    else:
+        print("generation: ok")
+    return 0
+
+
+def _add_bars(subparsers: argparse._SubParsersAction, common: argparse.ArgumentParser) -> None:
+    bars = subparsers.add_parser("bars", parents=[common], help="the bar store (DESIGN 5)")
+    actions = bars.add_subparsers(dest="action", metavar="action", required=True)
+    gaps = actions.add_parser(
+        "gaps", parents=[common],
+        help="report missing bars, append new ones to gaps.jsonl, and the W and T gap "
+        "fractions (DESIGN 5.4)",
+    )
+    gaps.add_argument(
+        "--day", metavar="YYYY-MM-DD", default=None,
+        help="trading day whose W and T are checked (default: the day before the "
+        "UTC date of --as-of)",
+    )
+    gaps.set_defaults(handler=_bars_gaps)
+
+
+SUBCOMMANDS.append(_add_bars)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
