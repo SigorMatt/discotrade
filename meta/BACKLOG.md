@@ -7,8 +7,26 @@ owner.
 
 ## Carried review items
 
-(none yet; each item names the review it came from and the step that takes
-it)
+Each item names the review it came from and the step that takes it.
+REVIEW-1 should-fix 1 to 4, 6 and 7 are taken by mission 2 (step S0.2,
+units U1 to U3); item 5 is the owner's (below).
+
+- REVIEW-1 note: DESIGN §18.1's rule that tests marked `container` skip,
+  with the reason printed, when no runtime is found is not built. The
+  mission that adds the first `container` test builds it: step S2.2.
+- REVIEW-1 note: every seed a gate test uses is written in the test file,
+  not only in a fixture TOML (DESIGN §18.2). Step S0.3 (the first gate
+  tests) and every closing step.
+- REVIEW-1 should-fix (U6, performance only): `bars fetch` builds a source
+  per instrument and the synthetic source regenerates its series from
+  `trusted_from` on every fetch. Take it when a replay gate's time limit
+  (DESIGN §18.2, 15 minutes) is at risk: step S1.2 at the latest.
+- REVIEW-1 note: `tradingcal.in_main_session` cannot represent a main
+  session that crosses midnight. No instrument has one; the step that adds
+  such an instrument takes it.
+- REVIEW-1 note: `config.py` bounds `drop_fraction` at 0.5 without a
+  DESIGN source. Harmless for fixtures; no step takes it unless a fixture
+  needs more.
 
 ## For the owner, before the first builder mission that needs it
 
@@ -17,6 +35,16 @@ it)
 - The architect role's directory, set up as hands `architect/README.md`
   says, with this project's parameters (the plan kit's hand-over message
   gives the block).
+
+## For the owner, at any time (frozen-config changes)
+
+- REVIEW-1 should-fix 5, finding D-003 (filed by mission 2 U0): the
+  `[spec]` `checked` and `source` strings of the eight instrument records
+  read as if the exchange's pages were read on 2026-10-12; mission 1's
+  report says the values are from memory. `[cost] source = "SPEC.md §17"`
+  also covers the spread ticks and `slippage_coef`, which come from DESIGN
+  §4.2 and R-5. Changing these strings is a frozen-config change: a
+  decisions file and `config/HISTORY.toml` entries.
 
 ## For the owner, after the series (not milestones)
 
@@ -34,6 +62,11 @@ it)
 - SPEC §15's decisions: the length of T; the alert thresholds; where the
   dashboard is hosted; the stage-3 gate values; the money limits.
 - Token budgets in `config/thresholds.toml` (R-19 placeholders).
+- The architect's decisions of 2026-10-12
+  (`meta/decisions/decisions-2026-10-12.md`), in particular item 2 (a
+  stopped feed counts as missing bars to the end of the day, so generation
+  is skipped) and item 5 (an interrupted bar append is completed, not
+  refused), to confirm or replace.
 
 ## Deferred to v2 (SPEC §15)
 

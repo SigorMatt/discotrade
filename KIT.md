@@ -1,1 +1,1 @@
-plan: discotrade plan kit (DESIGN v1.0, roadmap, mission 1, role mode)
+plan: mission 2 kit (S0.2, sources, rolls, spreads, review 1 items)

@@ -44,8 +44,8 @@ them to the hands Project.
 
 - **M0 Harness core** — steps S0.1 to S0.3 (SPEC phase 0).
   Gate: `./scripts/gate M0` prints `gate M0: PASS` at the branch tip, items G0.1 to G0.4 of DESIGN §18.3: three reference strategies equal an independent calculation; a lookahead-cheating strategy cannot gain; store, gap check, adjusted series and roll cost hold; config check passes and no market is named in the source.
-  - [ ] S0.1 Skeleton, config records, trading calendar, bar store, gap check, null synthetic market. DESIGN §3, §4, §5.1 to §5.4, §17.1, §18.1, §18.2. Mission 1.
-  - [ ] S0.2 Bar sources (synthetic with contracts, crypto test data, vendor adapter against a fake client), rolls and the adjusted series, spread tables and their measurement. DESIGN §5.5 to §5.7, §17.1, §19.3 (L1, L2 offline behaviour).
+  - [x] S0.1 Skeleton, config records, trading calendar, bar store, gap check, null synthetic market. DESIGN §3, §4, §5.1 to §5.4, §17.1, §18.1, §18.2. Mission 1, 2026-10-12.
+  - [ ] S0.2 Bar sources (synthetic with contracts, crypto test data, vendor adapter against a fake client), rolls and the adjusted series, spread tables and their measurement. DESIGN §5.5 to §5.7, §17.1, §19.3 (L1, L2 offline behaviour). Mission 2.
   - [ ] S0.3 Strategy contract, indicator library, evaluation loop, cost model, executor and simulator, metrics, the `backtest` command, the three reference strategies, the independent calculation (given to a sub-agent of its own that is told not to open the modules it checks), the gate tests. DESIGN §6, §7, §8, §18.2, §18.3 (M0). Closes M0.
 - **M1 Journal, controls and ledger** — steps S1.1 and S1.2 (SPEC phase 1).
   Gate: `./scripts/gate M1` prints `gate M1: PASS` at the branch tip, items G1.1 to G1.4 of DESIGN §18.3: a one-year replay of the null market with controls only is centred on minus costs with rank persistence near zero; the journal recomputes exactly and a re-run writes nothing; the scripted lifecycle scenario shows every transition; deflation and tightening match hand values.
