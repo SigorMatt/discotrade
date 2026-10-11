@@ -9,5 +9,5 @@ Brief: `meta/BUILDER-1-PROMPT.md`. Roadmap step: S0.1 (milestone M0, not closed 
 - [x] U3 Trading calendar (DESIGN §5.3, §4.3). — f4e0141
 - [x] U4 Bar store (DESIGN §5.1, §5.2, §9.2 content hash; I-5). — 8348743
 - [x] U5 Gap check (DESIGN §5.4, §4.1 windows, §15.2 health event). — 3b5439e
-- [ ] U6 Null synthetic market (DESIGN §5.5, §17.1 without contracts).
+- [x] U6 Null synthetic market (DESIGN §5.5, §17.1 without contracts). — e1c3f76
 - [ ] U7 Final report (`meta/FINAL-REPORT-1.md`).
