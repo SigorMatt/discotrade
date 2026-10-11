@@ -17,3 +17,4 @@
 - 2026-10-12 mission 2 U2 done 8e423c1: state refused inside any code repo and when blank (I-14); type-strict frozen-config check; single-item gate verdict only; gate marker collection errors.
 - 2026-10-12 mission 2 U3 done cb9c21d: synth quarterly contracts, fetch_contract, generator keys from [source] refused by name when missing; fixture fetch hashes unchanged; also fixed fetch wholly before trusted_from.
 - 2026-10-12 mission 2 U4 done 61e1c59: rolls.py: detection on stored bars, atomic append of roll files, measured or estimated gap with roll_gap_estimated notice, adjusted series as of t; bars fetch records rolls; 14 tests.
+- 2026-10-12 mission 2 U5 done 5995b92: vendor adapter (lazy client, cost refusal, embargo, symbology, fetch_contract) with fake client; crypto adapter over httpx MockTransport; doctor --live vendor refuses without key; vendor extra pins databento 0.87.0; CRYA fixture + test_crypto track.
