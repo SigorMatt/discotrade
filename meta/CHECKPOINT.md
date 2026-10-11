@@ -1,11 +1,11 @@
 # CHECKPOINT
 
 Mission: 1 (`meta/BUILDER-1-PROMPT.md`), roadmap step S0.1. Base 9ed3cd4.
-Done: U0 766cf32, U1 f04fab2, U2 5ddcba4.
+Done: U0 766cf32, U1 f04fab2, U2 5ddcba4, U3 f4e0141.
 
-Unit in progress: U3 Trading calendar (DESIGN §5.3, §4.3 frozen config).
-Intent: tradingcal.py, config/calendars/cme_globex.toml with 2019-2027 closures (verified=false), fixture calendars always_open and synth_week, calendar values in config_frozen.json, config check loads calendars.
-Done means: tests for open/closed, trading date, expected bar times, main session across both DST weeks, weekend, daily break, closure; hypothesis test that expected bars overlap open intervals; one commit, pushed.
+Unit in progress: U4 Bar store (DESIGN §5.1, §5.2, §9.2 content hash; I-5).
+Intent: bars/__init__.py, bars/store.py (append-only month files with index), state.py holding only the §9.2 content hash, tests.
+Done means: tests: writer refuses unclosed, non-increasing and duplicate bars; append keeps old rows identical; month files split on UTC month; index has first/last ts, counts, hashes; reader half-open range and last n bars; reader refuses a month file not matching the index; one commit, pushed.
 
 Standing constraints: one sub-agent per unit, foreground only; every unit
 ends with a commit and a push listing every file; never `git add -A`;
