@@ -14,3 +14,4 @@
 2026-10-11T23:05:40.443Z  consult 0mv4fkngb-ar5u (architect done) on aux.done of aux job 0mv4fkd55-29gj: VERDICT: next kit mission-2-kit
 - 2026-10-12 mission 2 U0 plan written (plan.md, CHECKPOINT.md, journal.md, FINDINGS.md: D-001/D-002 answered, D-003 filed).
 - 2026-10-12 mission 2 U1 done f3f8c2d: store recovery with store_recovered notice, non-finite refusal/drop, gap check bounded at D, window fraction to end of D, atomic gaps.jsonl, bars gaps default D; 28 tests. Note: bars fetch default day still UTC-date based.
+- 2026-10-12 mission 2 U2 done 8e423c1: state refused inside any code repo and when blank (I-14); type-strict frozen-config check; single-item gate verdict only; gate marker collection errors.
