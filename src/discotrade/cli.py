@@ -271,6 +271,7 @@ def _bars_fetch(ctx: Context, args: argparse.Namespace) -> int:
     from discotrade.bars.gaps import check_gaps
     from discotrade.bars.store import BarStore, BarStoreError, finite_rows
     from discotrade.config import ConfigError
+    from discotrade.rolls import update_rolls
     from discotrade.sources import NotBuiltError, source_for
 
     if ctx.state is None:
@@ -294,6 +295,7 @@ def _bars_fetch(ctx: Context, args: argparse.Namespace) -> int:
         # Every instrument's bars are asked for before any is written, so a
         # source that cannot serve one instrument leaves the store untouched.
         batches = []
+        sources = {}
         for inst in tc.instruments:
             source = source_for(inst.source.adapter, calendars, bar)
             until = source.available_until(now)
@@ -310,11 +312,15 @@ def _bars_fetch(ctx: Context, args: argparse.Namespace) -> int:
                 dropped = int((~finite).sum())
                 bars = bars[finite]
             batches.append((inst.symbol, bars, until, dropped))
+            sources[inst.symbol] = source
         for symbol, bars, until, dropped in batches:
             written = 0 if bars is None else store.append(symbol, bars, until)
             print(f"fetched {symbol}: {written} bars written, {dropped} dropped as not "
                   f"finite, available until {until.isoformat()}")
         report = check_gaps(ctx.state, tc, calendars, day, limit)
+        # Rolls are found on the stored bars and recorded once (DESIGN 5.6).
+        rolls = [update_rolls(ctx.state, tc.track.name, bar, inst, sources[inst.symbol], day)
+                 for inst in tc.instruments]
     except NotBuiltError as exc:
         print(f"bars fetch: FAIL: not built: {exc}", file=sys.stderr)
         return 1
@@ -322,6 +328,14 @@ def _bars_fetch(ctx: Context, args: argparse.Namespace) -> int:
         print(f"bars fetch: FAIL: {exc}", file=sys.stderr)
         return 1
     _print_gaps(report)
+    for inst, (new, events) in zip(tc.instruments, rolls, strict=True):
+        for roll in new:
+            how = ("(estimated)" if roll.measured_at is None
+                   else f"(measured at {roll.measured_at.isoformat()})")
+            print(f"roll {inst.symbol} {roll.ts.isoformat()} {roll.old} -> {roll.new} "
+                  f"gap {roll.gap!r} {how}")
+        for event in events:
+            print(f"notice {event.to_json()}")
     return 0
 
 
@@ -344,8 +358,8 @@ def _add_bars(subparsers: argparse._SubParsersAction, common: argparse.ArgumentP
         "fetch", parents=[common],
         help="complete an interrupted append, ask each instrument's source for its bars "
         "from the last stored bar to the source's available_until at --as-of, drop bars "
-        "with a value that is not finite, write the closed ones, then run the gap check "
-        "(DESIGN 5.5, 5.4)",
+        "with a value that is not finite, write the closed ones, run the gap check, then "
+        "record new rolls with their gaps (DESIGN 5.5, 5.4, 5.6)",
     )
     fetch.add_argument(
         "--day", metavar="YYYY-MM-DD", default=None,
