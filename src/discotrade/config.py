@@ -36,6 +36,14 @@ COST_SOURCED = (
 )
 
 ADAPTERS = ("vendor", "crypto", "synth")
+#: A synthetic record's generator settings (decision 2026-10-12 10), required.
+SYNTH_GENERATOR = (
+    "gap_scale", "range_scale", "volume_median", "volume_sigma", "hour_vol_amplitude",
+    "hour_volume_amplitude", "hour_peak_utc",
+)
+#: A synthetic record's contract keys (DESIGN 17.1), required with
+#: ``roll_schedule = "quarterly"`` and refused without it.
+SYNTH_CONTRACT = ("roll_day", "contract_overlap_bars", "contract_offset_scale")
 TEST_TRACK_PREFIX = "test_"
 
 #: The result-moving files frozen by ``tests/fixtures/config_frozen.json``
@@ -280,14 +288,41 @@ def _source(path: Path, data: Any) -> Source:
         params = [("symbol", t.text("symbol"))]
     else:
         t = _Table(path, data, "source.", ("adapter", "seed", "hourly_vol", "start_price",
-                                           "drop_fraction", "roll_schedule"))
+                                           "drop_fraction", "roll_schedule", *SYNTH_GENERATOR,
+                                           *SYNTH_CONTRACT))
         params = [
             ("seed", t.integer("seed", low=0)),
             ("hourly_vol", t.number("hourly_vol", positive=True)),
             ("start_price", t.number("start_price", positive=True)),
             ("drop_fraction", t.number("drop_fraction", low=0.0, high=0.5, default=0.0)),
             ("roll_schedule", t.choice("roll_schedule", ("none", "quarterly"), default="none")),
+            # The generator settings (decision 2026-10-12 10), all required.
+            ("gap_scale", t.number("gap_scale", low=0.0)),
+            ("range_scale", t.number("range_scale", low=0.0)),
+            ("volume_median", t.number("volume_median", positive=True)),
+            ("volume_sigma", t.number("volume_sigma", low=0.0)),
+            ("hour_vol_amplitude", t.number("hour_vol_amplitude", low=0.0)),
+            ("hour_volume_amplitude", t.number("hour_volume_amplitude", low=0.0)),
+            ("hour_peak_utc", t.integer("hour_peak_utc", low=0)),
         ]
+        if dict(params)["hour_vol_amplitude"] >= 1.0:
+            t.fail("hour_vol_amplitude", "must be less than 1, so the volatility shape stays "
+                   "positive")
+        if dict(params)["hour_peak_utc"] > 23:
+            t.fail("hour_peak_utc", "must be at most 23")
+        if dict(params)["roll_schedule"] == "quarterly":
+            # The contract keys of DESIGN 17.1 (decision 2026-10-12 10).
+            params += [
+                ("roll_day", t.integer("roll_day", low=1)),
+                ("contract_overlap_bars", t.integer("contract_overlap_bars", low=24)),
+                ("contract_offset_scale", t.number("contract_offset_scale", low=0.0)),
+            ]
+            if dict(params)["roll_day"] > 28:
+                t.fail("roll_day", "must be at most 28")
+        else:
+            for key in SYNTH_CONTRACT:
+                if t.has(key):
+                    t.fail(key, 'is a contract key: it needs roll_schedule = "quarterly"')
     return Source(adapter=adapter, params=tuple(params))
 
 

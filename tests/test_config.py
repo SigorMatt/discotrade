@@ -80,7 +80,22 @@ adapter = "synth"
 seed = 1
 hourly_vol = 0.002
 start_price = 100.0
+gap_scale = 0.1
+range_scale = 0.5
+volume_median = 1000.0
+volume_sigma = 0.5
+hour_vol_amplitude = 0.5
+hour_volume_amplitude = 0.5
+hour_peak_utc = 15
 """
+
+#: Decision 10: the generator settings every synthetic record carries.
+GENERATOR = {"gap_scale": 0.1, "range_scale": 0.5, "volume_median": 1000.0,
+             "volume_sigma": 0.5, "hour_vol_amplitude": 0.5,
+             "hour_volume_amplitude": 0.5, "hour_peak_utc": 15}
+#: DESIGN 17.1: the contract keys a quarterly roll schedule needs.
+QUARTERLY = 'roll_schedule = "quarterly"\nroll_day = 14\ncontract_overlap_bars = 48\n' \
+            "contract_offset_scale = 20.0\n"
 
 TRACK = """\
 name = "{name}"
@@ -438,6 +453,80 @@ def test_synth_source_keys(tmp_path):
         synth(tmp_path, "SYB", extra="drop_fraction = 1.5\n"),
         match="drop_fraction",
     )
+
+
+@pytest.mark.parametrize("key", sorted(GENERATOR))
+def test_synth_generator_key_missing_refused_by_name(tmp_path, key):
+    """Decision 10: every generator setting is a required [source] key."""
+    body = SYNTH_INSTRUMENT.format(symbol="SYA", test_only="false")
+    line = next(ln for ln in body.splitlines() if ln.startswith(f"{key} = "))
+    path = write(tmp_path / "instruments" / "SYA.toml", body.replace(line + "\n", ""))
+    refused(load_instrument, path, match=f"missing key 'source.{key}'")
+
+
+def test_synth_generator_keys_are_read():
+    inst = load_instrument(FIXTURE_CONFIG / "instruments" / "SYNB.toml")
+    for key, value in GENERATOR.items():
+        got = inst.source.get(key)
+        assert got == value and type(got) is type(value), key
+
+
+def test_every_fixture_record_carries_the_mission_1_generator_settings():
+    for path in sorted((FIXTURE_CONFIG / "instruments").glob("*.toml")):
+        inst = load_instrument(path)
+        assert {k: inst.source.get(k) for k in GENERATOR} == GENERATOR, path.name
+
+
+@pytest.mark.parametrize(("key", "value", "match"), [
+    ("gap_scale", "-0.1", "at least 0"),
+    ("range_scale", "-0.5", "at least 0"),
+    ("volume_median", "0.0", "positive"),
+    ("volume_sigma", "-1.0", "at least 0"),
+    ("hour_vol_amplitude", "1.0", "less than 1"),
+    ("hour_vol_amplitude", "-0.1", "at least 0"),
+    ("hour_volume_amplitude", "-0.1", "at least 0"),
+    ("hour_peak_utc", "24", "at most 23"),
+    ("hour_peak_utc", "15.0", "integer"),
+])
+def test_synth_generator_value_refused(tmp_path, key, value, match):
+    body = SYNTH_INSTRUMENT.format(symbol="SYA", test_only="false")
+    line = next(ln for ln in body.splitlines() if ln.startswith(f"{key} = "))
+    path = write(tmp_path / "instruments" / "SYA.toml", body.replace(line, f"{key} = {value}"))
+    refused(load_instrument, path, match=f"source.{key}.*{match}")
+
+
+def test_synth_quarterly_contract_keys(tmp_path):
+    inst = load_instrument(synth(tmp_path, extra=QUARTERLY))
+    assert inst.source.get("roll_schedule") == "quarterly"
+    assert inst.source.get("roll_day") == 14
+    assert inst.source.get("contract_overlap_bars") == 48
+    assert inst.source.get("contract_offset_scale") == 20.0
+    syna = load_instrument(FIXTURE_CONFIG / "instruments" / "SYNA.toml")
+    assert syna.source.get("roll_schedule") == "quarterly"
+    assert syna.source.get("contract_overlap_bars") >= 24
+
+
+@pytest.mark.parametrize("key", ["roll_day", "contract_overlap_bars", "contract_offset_scale"])
+def test_synth_quarterly_contract_key_missing_refused_by_name(tmp_path, key):
+    extra = "".join(ln + "\n" for ln in QUARTERLY.splitlines() if not ln.startswith(key))
+    refused(load_instrument, synth(tmp_path, extra=extra), match=f"missing key 'source.{key}'")
+
+
+@pytest.mark.parametrize(("key", "value", "match"), [
+    ("roll_day", "0", "at least 1"),
+    ("roll_day", "29", "at most 28"),
+    ("contract_overlap_bars", "23", "at least 24"),
+    ("contract_offset_scale", "-1.0", "at least 0"),
+])
+def test_synth_quarterly_contract_value_refused(tmp_path, key, value, match):
+    extra = "".join((f"{key} = {value}" if ln.startswith(key) else ln) + "\n"
+                    for ln in QUARTERLY.splitlines())
+    refused(load_instrument, synth(tmp_path, extra=extra), match=f"source.{key}.*{match}")
+
+
+def test_synth_contract_keys_refused_without_a_roll_schedule(tmp_path):
+    refused(load_instrument, synth(tmp_path, extra="roll_day = 14\n"),
+            match="source.roll_day.*roll_schedule")
 
 
 def test_not_toml_refused(tmp_path):
