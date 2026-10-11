@@ -1,7 +1,16 @@
 # CHECKPOINT
 
-Mission: 1 (`meta/BUILDER-1-PROMPT.md`), roadmap step S0.1. Base 9ed3cd4.
-Done: U0 766cf32, U1 f04fab2, U2 5ddcba4, U3 f4e0141, U4 8348743, U5 3b5439e, U6 e1c3f76, U7 0650364.
+Mission: 2 (`meta/BUILDER-2-PROMPT.md`), roadmap step S0.2. Base 1151e55.
+Done: none yet.
 
-Unit in progress: none. Mission 1 finished; `meta/FINAL-REPORT-1.md` exists.
-Next: the cold review of mission 1, then the architect's next kit.
+Unit in progress: U0 Plan.
+Intent: write plan.md, this checkpoint, a journal line; append D-001/D-002
+status lines and new finding D-003 to FINDINGS.md.
+Done means: the four files committed and pushed in one `plan:` commit.
+
+Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12
+wins over DESIGN; no value of a frozen file changes (config/, existing
+entries of tests/fixtures/config_frozen.json); one commit per unit, files
+listed, never `git add -A`, push; ./scripts/check green three times before
+each commit; sub-agents in the foreground only; no network, secret or
+wall clock in tests.

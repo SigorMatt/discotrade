@@ -1,13 +1,14 @@
-# PLAN — mission 1 (roadmap step S0.1)
+# PLAN — mission 2 (roadmap step S0.2)
 
-Base commit: 9ed3cd4 (`plan: discotrade plan kit (DESIGN v1.0, roadmap, mission 1, role mode)`).
-Brief: `meta/BUILDER-1-PROMPT.md`. Roadmap step: S0.1 (milestone M0, not closed by this mission).
+Base commit: 1151e55 (`plan: mission 2 kit (S0.2, sources, rolls, spreads, review 1 items)`).
+Brief: `meta/BUILDER-2-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-12.md`.
+Roadmap step: S0.2 (milestone M0, not closed by this mission).
 
-- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`. — 766cf32
-- [x] U1 Skeleton and the two gate scripts (DESIGN §3, §18.1, §18.2; I-11, I-12, I-14). — f04fab2
-- [x] U2 Configuration records (DESIGN §4.1, §4.2, §4.3; I-9, I-10). — 5ddcba4
-- [x] U3 Trading calendar (DESIGN §5.3, §4.3). — f4e0141
-- [x] U4 Bar store (DESIGN §5.1, §5.2, §9.2 content hash; I-5). — 8348743
-- [x] U5 Gap check (DESIGN §5.4, §4.1 windows, §15.2 health event). — 3b5439e
-- [x] U6 Null synthetic market (DESIGN §5.5, §17.1 without contracts). — e1c3f76
-- [x] U7 Final report (`meta/FINAL-REPORT-1.md`). — 0650364
+- [ ] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (D-001/D-002 answered, D-003 filed).
+- [ ] U1 Store and gap-check repairs (REVIEW-1 should-fix 1, 4; decisions 2-6, 16; DESIGN §5.1, §5.2, §5.4, §15.2).
+- [ ] U2 Command-line, config-check and gate-script repairs (REVIEW-1 should-fix 3, 6, 7; decisions 7-9; DESIGN §3, §4.3, §18.1, §18.2).
+- [ ] U3 Synthetic market with contracts and configured generator settings (REVIEW-1 should-fix 2; decision 10; DESIGN §4.2, §5.1, §5.5, §17.1).
+- [ ] U4 Rolls and the adjusted series (DESIGN §5.6, §5.5; decision 16).
+- [ ] U5 Vendor and crypto adapters, live check L1 offline (DESIGN §5.5, §19.3 L1; decisions 11, 12, 15).
+- [ ] U6 Spread tables and their measurement, live check L2 offline (DESIGN §5.7, §19.3 L2; decisions 13-15).
+- [ ] U7 Final report (`meta/FINAL-REPORT-2.md`).

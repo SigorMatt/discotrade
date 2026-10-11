@@ -73,6 +73,34 @@ Status: open
 
 ---
 
+D-001 status (appended 2026-10-12, mission 2 U0): Status: answered meta/decisions/decisions-2026-10-12.md
+
+D-002 status (appended 2026-10-12, mission 2 U0): Status: answered meta/decisions/decisions-2026-10-12.md
+
+---
+
+### D-003 — the provenance strings of the instrument records read stronger than what was done
+
+Severity: low · Component: `config/instruments/*.toml` (`[spec]` and
+`[cost]` companions) with DESIGN §4 and §4.2 · Found: REVIEW-1 should-fix
+5, filed 2026-10-12, mission 2 U0.
+
+Symptom. Each of the eight instrument records has a `[spec]` table with
+`checked = "2026-10-12"` and a `source` naming the exchange's
+contract-specification page "(multiplier, tick size)", which implies the
+page was read that day; FINAL-REPORT-1 NOT PROVEN says the values are from
+memory of those pages (`verified = false` is set honestly). Likewise
+`[cost] source = "SPEC.md §17"` also covers the spread ticks and
+`slippage_coef = 0.02`, which come from DESIGN §4.2 / R-5, not SPEC §17.
+
+Direction. These are values of frozen files (DESIGN §4.3); no builder
+changes them. The owner rewrites the `checked` and `source` strings by a
+frozen-config change (decisions-2026-10-12 item 17; `meta/BACKLOG.md`).
+
+Status: open
+
+---
+
 ## hands findings
 
 ### HF-001 — after an autonomous apply, the engine sends the kickoff of the playbook it loaded before the apply
