@@ -1,0 +1,137 @@
+version = 1
+
+# discotrade, series discotrade-v1: the switch point (hands DESIGN §31).
+# Approving the apply of this file approves every apply the architect role
+# files under it, with no further gate. The architect is consulted on every
+# review outcome and writes the next kit from meta/ROADMAP.md, or escalates.
+[series]
+name = "discotrade-v1"
+# The kickoff names no mission number, on purpose: it never changes, so this
+# file is never re-issued by a kit (meta/ARCHITECT.md §4; finding HF-001).
+kickoff = "Read the builder prompt with the highest mission number in the meta directory and execute the mission below its divider."
+architect = "role"
+autonomous = true
+gate_failures = 2
+escalate_on = ["blocker-unanswered", "milestone-missing", "budget-exhausted"]
+kit_wait_s = 600
+
+[limits]
+max_resumes = 2
+max_consults = 2
+# Thirteen planned missions need thirteen consultations; the rest is room for
+# missions that close a review's blockers. Spent, the engine stops by itself.
+max_architect_consults = 30
+
+# The builder finished a mission: cold review by aux, with no context.
+[[rule]]
+on = "builder.done"
+verdict = '^VERDICT: mission (?P<n>\d+) finished'
+then = "send"
+role = "aux"
+context = "clear"
+prompt = "Read meta/REVIEW-PROTOCOL.md and review mission {n} of this repository: every commit after the last review: commit on origin/main (the protocol says how to find the base). Follow the protocol exactly, commit only meta/reviews/REVIEW-{n}.md, and begin your reply with the VERDICT line it specifies."
+
+# A kit applied by the human (this plan kit, or one after an escalation) is
+# worth a note; the next step is `go`. For a kit the architect role filed,
+# this rule does not fire: the engine sends the kickoff itself (§31).
+[[rule]]
+on = "builder.done"
+verdict = '^VERDICT: kit applied'
+then = "notify"
+message = "Kit applied; send go to start the mission"
+
+# A unit failed twice: the human.
+[[rule]]
+on = "builder.done"
+verdict = '^VERDICT: mission (?P<n>\d+) blocked'
+then = "stop"
+message = "Mission {n} blocked; see the builder's reply"
+
+# A builder question goes to the driver role when the project has one; where
+# it has none, hands stops instead, which is the same as asking the human.
+[[rule]]
+on = "builder.done"
+verdict = '^VERDICT: question'
+then = "consult"
+role = "driver"
+
+[[rule]]
+on = "builder.done"
+then = "stop"
+message = "Builder finished without a recognised verdict"
+
+# The driver's answer. Anything but resolved is a stop the engine enforces.
+[[rule]]
+on = "driver.done"
+verdict = '^VERDICT: resolved (?P<what>.+)'
+then = "notify"
+message = "Consult resolved: {what}"
+
+[[rule]]
+on = "driver.done"
+verdict = '^VERDICT: escalate (?P<reason>.+)'
+then = "stop"
+message = "The driver escalated: {reason}"
+
+[[rule]]
+on = "driver.done"
+then = "stop"
+message = "Driver finished without a recognised verdict"
+
+[[rule]]
+on = "driver.failed"
+then = "stop"
+message = "Driver job failed"
+
+# Every review outcome, clean or not, goes to the architect role (§31). Its
+# reply is read by the engine, not by a rule: next kit, series complete, or
+# escalate.
+[[rule]]
+on = "aux.done"
+verdict = '^VERDICT: review mission (?P<n>\d+) blockers='
+then = "consult"
+role = "architect"
+
+[[rule]]
+on = "aux.done"
+then = "stop"
+message = "Aux finished without a recognised verdict"
+
+# Process trouble: resume until max_resumes, then it stops on its own.
+[[rule]]
+on = "builder.orphaned"
+then = "resume"
+
+[[rule]]
+on = "builder.failed"
+then = "resume"
+
+[[rule]]
+on = "aux.failed"
+then = "stop"
+message = "Aux job failed"
+
+[[rule]]
+on = "monitor.task_killed"
+then = "notify"
+message = "A task inside a role job was killed"
+
+[[rule]]
+on = "monitor.orphan_processes"
+then = "stop"
+message = "Processes outlived their job"
+
+[[rule]]
+on = "monitor.stall"
+then = "notify"
+message = "Builder looks stalled"
+
+[[rule]]
+on = "monitor.tripwire"
+then = "stop"
+message = "Tripwire fired"
+
+[[rule]]
+on = "job.denied"
+then = "notify"
+message = "A held job was denied"
