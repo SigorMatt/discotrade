@@ -247,11 +247,12 @@ def test_fixture_test_mixed():
     assert all(i.source.get("drop_fraction") > 0 for i in mixed)
 
 
-def test_fixture_has_six_synthetic_instruments():
+def test_fixture_has_six_synthetic_instruments_and_one_crypto():
     files = sorted((FIXTURE_CONFIG / "instruments").glob("*.toml"))
-    assert len(files) == 6
-    for path in files:
-        assert load_instrument(path).source.adapter == "synth"
+    adapters = {path.stem: load_instrument(path).source.adapter for path in files}
+    assert sorted(s for s, a in adapters.items() if a == "synth") == [
+        "SYNA", "SYNB", "SYNC", "SYND", "SYNL", "SYNX"]
+    assert {s: a for s, a in adapters.items() if a != "synth"} == {"CRYA": "crypto"}
 
 
 # --- refusals ------------------------------------------------------------------
@@ -474,6 +475,8 @@ def test_synth_generator_keys_are_read():
 def test_every_fixture_record_carries_the_mission_1_generator_settings():
     for path in sorted((FIXTURE_CONFIG / "instruments").glob("*.toml")):
         inst = load_instrument(path)
+        if inst.source.adapter != "synth":
+            continue
         assert {k: inst.source.get(k) for k in GENERATOR} == GENERATOR, path.name
 
 

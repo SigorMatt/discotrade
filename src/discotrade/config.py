@@ -284,8 +284,9 @@ def _source(path: Path, data: Any) -> Source:
             ("max_cost_usd", t.number("max_cost_usd", positive=True, default=5.0)),
         ]
     elif adapter == "crypto":
-        t = _Table(path, data, "source.", ("adapter", "symbol"))
-        params = [("symbol", t.text("symbol"))]
+        # The endpoint is configuration (decision 2026-10-12 12).
+        t = _Table(path, data, "source.", ("adapter", "base_url", "market"))
+        params = [("base_url", t.text("base_url")), ("market", t.text("market"))]
     else:
         t = _Table(path, data, "source.", ("adapter", "seed", "hourly_vol", "start_price",
                                            "drop_fraction", "roll_schedule", *SYNTH_GENERATOR,

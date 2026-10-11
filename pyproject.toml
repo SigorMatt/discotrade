@@ -12,6 +12,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# The data vendor's official client, imported lazily by sources/vendor.py only
+# (DESIGN 3, 5.5; decision 2026-10-12 11). scripts/check does not install it.
+vendor = [
+    "databento",
+]
 dev = [
     "pytest",
     "ruff",

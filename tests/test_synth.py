@@ -70,11 +70,10 @@ def test_synth_is_a_bar_source_available_until_now(source):
     assert source.available_until(now) == now
 
 
-def test_source_for_gives_synth_and_refuses_unbuilt_adapters(calendars):
+def test_source_for_gives_synth_and_refuses_an_unknown_adapter(calendars):
     assert isinstance(source_for("synth", calendars, HOUR), SynthSource)
-    for adapter in ("vendor", "crypto"):
-        with pytest.raises(NotBuiltError, match=adapter):
-            source_for(adapter, calendars, HOUR)
+    with pytest.raises(NotBuiltError, match="carrier_pigeon"):
+        source_for("carrier_pigeon", calendars, HOUR)
 
 
 def test_fetch_contract_of_an_instrument_that_does_not_roll_is_its_series(source):

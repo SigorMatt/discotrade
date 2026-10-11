@@ -1,0 +1,36 @@
+# Crypto fixture instrument (DESIGN 5.5; decision 2026-10-12 12): test only, read
+# from a public exchange endpoint that needs no key. Tests drive it with
+# httpx.MockTransport only; no gate depends on it. Not a frozen file (it is a
+# fixture, not a record under config/instruments/).
+# base_url and market name a real public endpoint and market, recalled, not read
+# on the checked date: the endpoint's request and response shape is NOT PROVEN.
+# tick_size, trusted_from, main_session and the [cost] values are invented for
+# tests and are not the venue's.
+symbol = "CRYA"
+venue = "TESTEXCHANGE"
+quote_currency = "USD"
+calendar = "always_open"
+tick_size = 0.01
+shorting = true
+test_only = true
+trusted_from = "2024-01-01"
+main_session = ["00:00", "23:59"]
+
+[spec]                       # companions of the four values above
+checked = "2026-10-12"
+source = "invented for tests; not the venue's values"
+verified = false
+
+[cost]
+fee_bps = 10.0
+spread_ticks_main = 1.0
+spread_ticks_off = 1.0
+slippage_coef = 0.02
+checked = "2026-10-12"
+source = "invented for tests; not the venue's values"
+verified = false
+
+[source]
+adapter = "crypto"
+base_url = "https://api.binance.com/api/v3/klines"
+market = "BTCUSDT"

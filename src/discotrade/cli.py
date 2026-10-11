@@ -372,6 +372,29 @@ def _add_bars(subparsers: argparse._SubParsersAction, common: argparse.ArgumentP
 SUBCOMMANDS.append(_add_bars)
 
 
+def _doctor(ctx: Context, args: argparse.Namespace) -> int:
+    from discotrade.doctor import run
+
+    return run(ctx, args)
+
+
+def _add_doctor(subparsers: argparse._SubParsersAction, common: argparse.ArgumentParser) -> None:
+    doctor = subparsers.add_parser(
+        "doctor", parents=[common],
+        help="live checks against the real services (DESIGN 19.3); in this step only "
+        "--live vendor (L1) and --live spreads (L2)",
+    )
+    doctor.add_argument(
+        "--live", metavar="NAME", default=None,
+        help="the live check to run: vendor (L1) needs DATABENTO_API_KEY and refuses, "
+        "exit 1, without it; plain doctor and the other checks are built by step S5.1",
+    )
+    doctor.set_defaults(handler=_doctor)
+
+
+SUBCOMMANDS.append(_add_doctor)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
