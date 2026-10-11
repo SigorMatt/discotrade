@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# The commit gate (DESIGN 18.1). Prints `check: green` and exits 0 only when
+# every step passes. Never runs a test marked gate, network or live (I-11).
+set -u
+cd "$(dirname "$0")/.."
+
+fail() {
+    echo "check: FAIL ($1)"
+    exit 1
+}
+
+uv sync --extra dev || fail "uv sync"
+uv run --no-sync ruff check . || fail "ruff"
+uv run --no-sync pytest -m "not gate and not network and not live" || fail "pytest"
+
+# Command-line smoke test. Later units add `discotrade config check` here.
+uv run --no-sync discotrade --help >/dev/null || fail "smoke: discotrade --help"
+uv run --no-sync discotrade --version || fail "smoke: discotrade --version"
+
+echo "check: green"

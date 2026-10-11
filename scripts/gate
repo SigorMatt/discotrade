@@ -1,0 +1,82 @@
+#!/usr/bin/env python3
+"""The milestone gate (DESIGN 18.2).
+
+    scripts/gate <milestone>          for example: scripts/gate M0
+    scripts/gate <milestone> <item>   for example: scripts/gate M0 G0.3
+
+The tests of item G<m>.<n> are the files tests/gates/test_g<m>_<n>_*.py.
+Each item runs `pytest -m gate_m<m>` over its files with DISCOTRADE_GATE=1,
+under which a skip is a failure. An item with no test file, or whose files
+select no test, fails. Prints one line per item, then `gate M<m>: PASS` or
+`gate M<m>: FAIL`; exits 0 only on PASS, 1 on FAIL, 2 on a usage error.
+"""
+
+import os
+import subprocess
+import sys
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[1]
+GATES = REPO / "tests" / "gates"
+
+# The gate items of DESIGN 18.3, per milestone.
+ITEMS = {
+    "M0": 4,
+    "M1": 4,
+    "M2": 4,
+    "M3": 3,
+    "M4": 6,
+    "M5": 4,
+}
+
+USAGE = "usage: scripts/gate <milestone M0..M5> [<item>, for example G0.1]"
+
+
+def usage(message: str) -> None:
+    print(f"{USAGE}\nerror: {message}", file=sys.stderr)
+    sys.exit(2)
+
+
+def run_item(milestone: str, item: str) -> tuple[bool, str]:
+    m, n = item[1:].split(".")
+    files = sorted(GATES.glob(f"test_g{m}_{n}_*.py"))
+    if not files:
+        return False, f"no gate test (tests/gates/test_g{m}_{n}_*.py)"
+    env = dict(os.environ, DISCOTRADE_GATE="1")
+    proc = subprocess.run(
+        ["uv", "run", "--extra", "dev", "pytest", "-q", "-p", "no:cacheprovider",
+         "-m", f"gate_{milestone.lower()}", *map(str, files)],
+        cwd=REPO, env=env, capture_output=True, text=True,
+    )
+    lines = [line for line in proc.stdout.splitlines() if line.strip()]
+    summary = lines[-1].strip("= ") if lines else f"pytest exit {proc.returncode}"
+    if proc.returncode == 5:
+        return False, f"no test marked gate_{milestone.lower()}: {summary}"
+    if proc.returncode != 0:
+        sys.stderr.write(proc.stdout + proc.stderr)
+    return proc.returncode == 0, summary
+
+
+def main(argv: list[str]) -> int:
+    if not 1 <= len(argv) <= 2:
+        usage("expected a milestone and at most one item")
+    milestone = argv[0].upper()
+    if milestone not in ITEMS:
+        usage(f"unknown milestone {argv[0]!r}")
+    number = milestone[1:]
+    items = [f"G{number}.{i}" for i in range(1, ITEMS[milestone] + 1)]
+    if len(argv) == 2:
+        if argv[1].upper() not in items:
+            usage(f"{argv[1]!r} is not an item of {milestone} ({', '.join(items)})")
+        items = [argv[1].upper()]
+    passed = True
+    for item in items:
+        ok, detail = run_item(milestone, item)
+        passed = passed and ok
+        print(f"{item} {'PASS' if ok else 'FAIL'} {detail}", flush=True)
+    print(f"gate {milestone}: {'PASS' if passed else 'FAIL'}")
+    return 0 if passed else 1
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

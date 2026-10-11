@@ -1,0 +1,49 @@
+[project]
+name = "discotrade"
+version = "0.1.0"
+description = "A research instrument that tests LLM-proposed price-based trading rules on unseen data, net of costs. Simulation only."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "numpy",
+    "pandas",
+    "pyarrow",
+    "httpx",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "ruff",
+    "hypothesis",
+]
+
+[project.scripts]
+discotrade = "discotrade.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--strict-markers -rs"
+markers = [
+    "gate: a milestone gate test under tests/gates/ (DESIGN 18.2); never run by scripts/check",
+    "gate_m0: gate test of milestone M0",
+    "gate_m1: gate test of milestone M1",
+    "gate_m2: gate test of milestone M2",
+    "gate_m3: gate test of milestone M3",
+    "gate_m4: gate test of milestone M4",
+    "gate_m5: gate test of milestone M5",
+    "container: needs a container runtime (Docker or Podman)",
+    "network: needs the network; never in scripts/check or a gate (I-11)",
+    "live: needs a secret; never in scripts/check or a gate (I-11)",
+]
