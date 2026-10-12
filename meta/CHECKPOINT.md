@@ -1,11 +1,11 @@
 # CHECKPOINT
 
 Mission: 7 (`meta/BUILDER-7-PROMPT.md`), roadmap step S1.1. Closes no milestone. Base c73a695.
-Done: U0 057f9d2, U1 de2a5b2, U2 c8342c4, U3 e44866d, U4 1fbf800.
+Done: U0 057f9d2, U1 de2a5b2, U2 c8342c4, U3 e44866d, U4 1fbf800, U5 073a5bd.
 
-Unit in progress: U5 journal recompute (decision 54; DESIGN §9.4, §15.2; I-6).
-Intent: journal.py, cli.py journal recompute --all, new tests/test_journal_recompute.py.
-Done means: U5 gate in BUILDER-7-PROMPT met; wrong changes (recompute reading stored rows; sample seeded with anything but D) seen red; check green x3; journal recompute --help exits 0; one commit pushed.
+Unit in progress: U6 Final report (meta/FINAL-REPORT-7.md), with ./scripts/gate M0 at the pushed tip.
+Intent: check green x3 at the tip, gate M0 once (timeout >= 30 min), report drafted under meta/drafts/ and moved in by the report commit.
+Done means: FINAL-REPORT-7.md committed and pushed with ## M0 still passes, decisions 47-55 map, Correction of FINAL-REPORT-6, NOT PROVEN, findings, Review items table; verdict line.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
 (items 47-57 new, 1-46 still bind); no value of a frozen file changes (config/, existing entries
