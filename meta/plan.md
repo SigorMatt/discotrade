@@ -10,8 +10,8 @@ Carried items:
 - BACKLOG (REVIEW-1 should-fix U6): `bars fetch` and synthetic regeneration performance (decisions 4, 5, 18, 31, 35). — taken by U3
 - BACKLOG (REVIEW-2 note U1): `recover` reads and hashes only files that can be an interrupted append (decision 5). — taken by U3
 
-- [ ] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`.
-- [ ] U1 REVIEW-8's should-fix items and decision 68 (b) (decisions 63, 66, 67, 68; I-11; DESIGN §10.3, §18.1).
+- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`. — 3c0b023
+- [x] U1 REVIEW-8's should-fix items and decision 68 (b) (decisions 63, 66, 67, 68; I-11; DESIGN §10.3, §18.1). — 94e1294
 - [ ] U2 The replay command (decisions 19, 51, 55, 72; DESIGN §16.4, §16.1, §3; I-6, I-12).
 - [ ] U3 The two performance items (BACKLOG; DESIGN §5.2, §5.5, §16.1 step 1, §18.2; decisions 4, 5, 18, 31, 35).
 - [ ] U4 The combined portfolio and rank persistence in the day loop (decisions 59, 62, 63, 69, 70; DESIGN §9.3, §10.5, §11.1, §16.1 steps 2 and 6).

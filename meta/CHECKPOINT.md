@@ -1,14 +1,13 @@
 # CHECKPOINT
 
 Mission: 9 (`meta/BUILDER-9-PROMPT.md`), roadmap step S1.3. Closes milestone M1. Base 974b700.
-Done: U0 (this commit).
+Done: U0 3c0b023, U1 94e1294.
 
-Unit in progress: U1 (next) — REVIEW-8's should-fix items and decision 68 (b).
-Intent: revival counts trading days (decision 66); scratch-session lookups limited per decision 67,
-gethostbyaddr left alone by identity and refused again after; decision 68 (b) test through the
-lifecycle functions.
-Done means: tests in tests/test_lifecycle.py / tests/test_offline.py (conftest.py only if needed)
-assert the U1 gate, both named wrong changes seen red, check green 3/3, one commit pushed.
+Unit in progress: U2 (next) — the replay command (decisions 19, 51, 55, 72; DESIGN §16.4).
+Intent: `discotrade replay --from A --to B` runs the track's trading days A..B in order through
+the day function with the injected clock at the close of each day's last expected bar.
+Done means: tests/test_replay.py asserts the U2 gate on test_mixed and on test_synth with the gate
+configuration; both named wrong changes seen red; check green 3/3; one commit pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
 (items 66-75 new, 1-65 still bind); no value of a frozen file changes (config/, existing entries

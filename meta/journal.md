@@ -75,3 +75,4 @@
 - 2026-10-12 mission 8 U5 done 37e4d97: check green 3/3 at 3d620f2 (1141 passed); gate M0 PASS (342 s); final report meta/FINAL-REPORT-8.md; no findings filed; mission finished.
 2026-10-12T20:38:03.013Z  consult 0mv5pgkii-7e5h (architect done) on aux.done of aux job 0mv5o795f-paiq: VERDICT: next kit mission-9-kit
 - 2026-10-12 mission 9 U0: plan written (base 974b700, S1.3, closes M1); carried REVIEW-8 should-fix 1, 2 (U1) and BACKLOG performance items (U3).
+- 2026-10-13 mission 9 U1 done 94e1294: revival counts trading days (test only, src unchanged, no finding); scratch network test calls only decision-67 lookups, gethostbyaddr identity held and refused after (conftest restores the five lookups for network/live tests); 68 (b) via run_steps; 2 wrong changes seen red; check green 3/3.
