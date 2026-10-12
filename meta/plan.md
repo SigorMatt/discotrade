@@ -12,7 +12,7 @@ Carried items (taken by U1):
 - [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`. — 02b366c
 - [x] U1 Reader, `bars fetch` default day and socket backstop (REVIEW-2 should-fix 1, 2, note on U5; decisions 3, 5, 18-20; DESIGN §5.2, §5.4, §16.1). — a966344
 - [x] U2 Strategy contract, loader and indicator library (DESIGN §6.1, §6.2 result check, §6.3; decisions 21, 22). — 542c171
-- [ ] U3 Evaluation loop and returns (DESIGN §6.2, §7.1, §7.2, §5.6; decisions 22-24; R-20).
+- [x] U3 Evaluation loop and returns (DESIGN §6.2, §7.1, §7.2, §5.6; decisions 22-24; R-20). — 833aa25, ec1c8a4
 - [ ] U4 Cost model and executor (DESIGN §7.3, §7.4, §5.7; decisions 24-26; R-3, R-5).
 - [ ] U5 Metrics (DESIGN §8; decisions 23, 25; R-7).
 - [ ] U6 Reference strategies and the `backtest` command (DESIGN §3, §6.1, §18.3 G0.1; decisions 21, 27).

@@ -24,3 +24,4 @@
 - 2026-10-12 mission 3 U0: plan written (base ef2e9f1, S0.3; REVIEW-2 should-fix 1, 2 and the U5 socket note carried to U1).
 - 2026-10-12 mission 3 U1 done a966344: reader refuses unlisted month files (interrupted append / revised), bars fetch default day = §16.1 D, autouse socket backstop; test_synth default-day assertion moved to D per decision 19; 551 tests.
 - 2026-10-12 mission 3 U2 done 542c171: strategy loader (limits from thresholds), result check (decision 22), 13 indicators with hand values and a no-lookahead hypothesis test over every public function; 646 tests.
+- 2026-10-12 mission 3 U3 done 833aa25 + ec1c8a4: slice builder, window walk, h(u)=p(u-1), gross per bar, missing-roll error, truncation invariance; orchestrator sent back context-before-trusted_from (DESIGN §4.2), fixed in ec1c8a4.
