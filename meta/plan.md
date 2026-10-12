@@ -12,7 +12,7 @@ Carried items:
 
 - [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, D-004..D-006 status lines in `meta/findings/FINDINGS.md`. — cdc031f
 - [x] U1 G0.1: every field of `backtest --json` (REVIEW-5 blocker 1; decisions 27, 39, 42; DESIGN §3, §8, §18.2, §18.3 G0.1). — c1a2100
-- [ ] U2 The independent calculation's self-test: a position that changes at the roll (REVIEW-5 should-fix 1; D-005; decisions 24, 25, 39, 43 (a); DESIGN §5.6, §7.3). Own sub-agent, forbidden-files words verbatim.
+- [x] U2 The independent calculation's self-test: a position that changes at the roll (REVIEW-5 should-fix 1; D-005; decisions 24, 25, 39, 43 (a); DESIGN §5.6, §7.3). Own sub-agent, forbidden-files words verbatim. — 9ca8575
 - [ ] U3 The roll timing in product unit tests and in G0.1 (D-005; decisions 21, 24, 25, 39, 43 (b), (c); DESIGN §5.6, §7.3, §8, §18.3 G0.1).
 - [ ] U4 `tests/test_gate_script.py` under load (REVIEW-5 note; decision 45; DESIGN §18.2).
 - [ ] U5 The gate run (`./scripts/gate M0` prints `gate M0: PASS` at the pushed tip).

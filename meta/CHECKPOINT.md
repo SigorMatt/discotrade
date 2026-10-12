@@ -1,14 +1,16 @@
 # CHECKPOINT
 
 Mission: 6 (`meta/BUILDER-6-PROMPT.md`), roadmap step S0.4 repaired. Closes M0. Base 19196da.
-Done: U0 cdc031f, U1 c1a2100.
+Done: U0 cdc031f, U1 c1a2100, U2 9ca8575.
 
-Unit in progress: U2 The independent calculation's self-test: a position that changes at the roll
-(REVIEW-5 should-fix 1; D-005; decisions 24, 25, 39, 43 (a)). Own sub-agent, forbidden-files words.
-Intent: tests/gates/test_g0_1_calc_self.py gains hand cases (carried position changing size/sign at a
-roll; flat position opening at a roll) checking roll cost, row cost, net_1x, net_2x, breakeven_cost.
-Done means: calc roll cost on h(u) and rolled turnover on h(u) each seen to fail; existing cases
-unchanged; ./scripts/gate M0 G0.1 passes; check green x3; body states no forbidden file was opened.
+Unit in progress: U3 The roll timing in product unit tests and in G0.1 (D-005; decisions 21, 24, 25,
+39, 43 (b), (c)).
+Intent: a product unit test with a position changing at a roll bar (carried-and-changing, flat-then-
+opening) asserts roll cost 2*|h(u-1)|*c(u) and rolled turnover 2*|h(u-1)| in breakeven_cost;
+tests/fixtures/strategies/roll_probe.py changes position at the SYNA roll bar of the G0.1 window and
+G0.1 compares it with the independent calculation like the reference strategies.
+Done means: discotrade roll cost on h(u) and rolled turnover on h(u) each fail both the unit test and
+the probe's G0.1 comparison; mismatch rule applied; ./scripts/gate M0 G0.1 passes; check green x3.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
 (items 41-46 new, 1-40 still bind); no value of a frozen file changes (config/, existing entries
