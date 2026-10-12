@@ -11,6 +11,8 @@ the exit status: 0 on success, 1 on failure. A usage error exits 2.
 from __future__ import annotations
 
 import argparse
+import json
+import math
 import os
 import sys
 from collections.abc import Callable, Sequence
@@ -478,6 +480,177 @@ def _add_doctor(subparsers: argparse._SubParsersAction, common: argparse.Argumen
 
 
 SUBCOMMANDS.append(_add_doctor)
+
+
+#: The cost components, in the order they are reported (DESIGN 7.3).
+_COSTS = ("fee", "spread", "slippage", "roll")
+
+
+def _number(value: Any) -> Any:
+    """A float that is not a finite number becomes None (JSON ``null``; decision 27)."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    return value
+
+
+def _backtest_result(path: Path, tc: Any, window: Any, strat: Any, evaluations: list,
+                     tables: dict[str, Any]) -> dict[str, Any]:
+    """The result of a backtest as a plain map: the metrics of DESIGN 8 at 1x
+    with ``sharpe_2x`` and ``total_return_2x``, the cost totals by component,
+    the cost model's version and config hash (decision 27), and per instrument
+    its bars, trades, lowest and highest position, cost components and net
+    totals. A subject's cost total is the sum over its instruments divided by
+    their count, as its daily net return is (decision 23), so that
+    ``total_return`` is the summed gross over the count less the summed cost
+    totals."""
+    from dataclasses import asdict
+
+    from discotrade import costs, metrics
+
+    m = metrics.compute([metrics.leg(e) for e in evaluations])
+    n = len(evaluations)
+    per: dict[str, Any] = {}
+    for e in evaluations:
+        rows = e.rows
+        positions = [*rows["p"].tolist(), *rows["h"].tolist()]
+        per[e.symbol] = {
+            "bars": len(rows),
+            "trades": metrics.trades([metrics.leg(e)]),
+            "position_min": min(positions) if positions else None,
+            "position_max": max(positions) if positions else None,
+            **{k: float(rows[k].sum()) for k in (*_COSTS, "cost", "net_1x", "net_2x")},
+        }
+    result: dict[str, Any] = {
+        "strategy": path.relative_to(REPO_ROOT).as_posix(),
+        "params": dict(strat.params),
+        "track": tc.track.name,
+        "from": window.first.isoformat(),
+        "to": window.last.isoformat(),
+        **asdict(m),
+        "costs": {k: sum(p[k] for p in per.values()) / n for k in _COSTS},
+        "cost_model": costs.VERSION,
+        "config_hash": costs.config_hash(tc.instruments, tables),
+        "instruments": per,
+    }
+
+    def clean(value: Any) -> Any:
+        if isinstance(value, dict):
+            return {k: clean(v) for k, v in value.items()}
+        return _number(value)
+
+    return clean(result)
+
+
+def _fmt(value: Any) -> str:
+    if value is None:
+        return "n/a"
+    if isinstance(value, bool) or isinstance(value, int):
+        return str(value)
+    return f"{value:.6g}"
+
+
+def _print_backtest(r: dict[str, Any]) -> None:
+    """The plain report. I-4: the one figure read from gross returns,
+    ``breakeven_cost``, is printed on the line of the net totals at 1x and 2x."""
+    net = f"net_1x total_return {_fmt(r['total_return'])}, " \
+          f"net_2x total_return_2x {_fmt(r['total_return_2x'])}"
+    params = " ".join(f"{k}={_fmt(v)}" for k, v in r["params"].items())
+    print(f"backtest {r['strategy']} ({params}) on track {r['track']}, "
+          f"{r['from']} to {r['to']}: {len(r['instruments'])} instruments, {r['days']} days")
+    print(net)
+    print(f"sharpe {_fmt(r['sharpe'])}, sharpe_2x {_fmt(r['sharpe_2x'])}")
+    print(f"max_drawdown {_fmt(r['max_drawdown'])}, trades {r['trades']}, "
+          f"avg_holding_bars {_fmt(r['avg_holding_bars'])}, fragile {r['fragile']}")
+    print(f"breakeven_cost {_fmt(r['breakeven_cost'])} bps, beside {net}")
+    print("costs at 1x: " + ", ".join(f"{k} {_fmt(r['costs'][k])}" for k in _COSTS))
+    for symbol, p in r["instruments"].items():
+        print(f"{symbol}: {p['bars']} bars, trades {p['trades']}, position "
+              f"{_fmt(p['position_min'])} to {_fmt(p['position_max'])}, "
+              + ", ".join(f"{k} {_fmt(p[k])}" for k in _COSTS)
+              + f", net_1x {_fmt(p['net_1x'])}, net_2x {_fmt(p['net_2x'])}")
+    print(f"cost model {r['cost_model']}, config hash {r['config_hash']}")
+
+
+def _backtest(ctx: Context, args: argparse.Namespace) -> int:
+    from discotrade.backtest import EvaluationError, evaluate
+    from discotrade.bars.store import BarStoreError
+    from discotrade.config import (
+        ConfigError,
+        DateRange,
+        load_calendar,
+        load_thresholds,
+        load_track_config,
+    )
+    from discotrade.spreads import spread_table
+    from discotrade.strategy import ResultError, StrategyError, load_strategy_file
+
+    def fail(why: object) -> int:
+        print(f"backtest: FAIL: {why}", file=sys.stderr)
+        return 1
+
+    def usage(why: str) -> int:
+        print(f"discotrade backtest: error: {why}", file=sys.stderr)
+        return 2
+
+    # Usage errors first (decision 27): a file outside reference/, --from after --to.
+    reference = REPO_ROOT / "reference"
+    path = Path(args.file).expanduser().resolve()
+    if not _inside(path, reference) or path == reference:
+        return usage(f"{args.file} does not lie under {reference}; only the repository's "
+                     f"reference strategies are run (decision 2026-10-12 21)")
+    if not path.is_file():
+        return usage(f"{args.file} is not a file")
+    if args.first > args.last:
+        return usage(f"--from {args.first.isoformat()} is after --to {args.last.isoformat()}")
+    if ctx.state is None:
+        return fail("no state directory (--state or $DISCOTRADE_STATE)")
+    window = DateRange(args.first, args.last)
+    try:
+        thresholds = load_thresholds(ctx.config / "thresholds.toml")
+        strat = load_strategy_file(path, thresholds)
+        tc = load_track_config(ctx.config, ctx.track)
+        calendars = {
+            name: load_calendar(ctx.config / "calendars" / f"{name}.toml")
+            for name in sorted({inst.calendar for inst in tc.instruments})
+        }
+        # Each instrument's measured spread table when it has one (DESIGN 5.7).
+        tables = {inst.symbol: spread_table(ctx.config, inst.symbol)
+                  for inst in tc.instruments}
+        evaluations = [
+            evaluate(ctx.state, tc.track, inst, calendars[inst.calendar], strat, window,
+                     spread_table=tables[inst.symbol])
+            for inst in tc.instruments
+        ]
+    except (ConfigError, StrategyError, ResultError, EvaluationError, BarStoreError,
+            OSError, ValueError) as exc:
+        return fail(exc)
+    result = _backtest_result(path, tc, window, strat, evaluations, tables)
+    if args.json:
+        print(json.dumps(result, sort_keys=True, allow_nan=False, separators=(",", ":")))
+    else:
+        _print_backtest(result)
+    return 0
+
+
+def _add_backtest(subparsers: argparse._SubParsersAction,
+                  common: argparse.ArgumentParser) -> None:
+    backtest = subparsers.add_parser(
+        "backtest", parents=[common],
+        help="evaluate a strategy file from the repository's reference/ with its PARAMS on "
+        "every instrument of --track, from the stored bars and rolls, over a window, and "
+        "print the metrics of DESIGN 8 net of costs at 1x and 2x (decision 2026-10-12 27)",
+    )
+    backtest.add_argument("file", help="a strategy file under the repository's reference/")
+    backtest.add_argument("--from", dest="first", metavar="YYYY-MM-DD", required=True,
+                          type=date.fromisoformat, help="first trading date of the window")
+    backtest.add_argument("--to", dest="last", metavar="YYYY-MM-DD", required=True,
+                          type=date.fromisoformat, help="last trading date of the window")
+    backtest.add_argument("--json", action="store_true",
+                          help="print one JSON object; a value that is not a number is null")
+    backtest.set_defaults(handler=_backtest)
+
+
+SUBCOMMANDS.append(_add_backtest)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
