@@ -14,9 +14,13 @@ The API, for the units that build on it:
 
 - ``Setup.load(config_dir, track_name)``: the track, its instruments, their
   calendars and spread tables, and the thresholds (for the loader).
-- ``day_rows(state_dir, setup, day)``: the rows of trading day ``day`` for
-  every approach the state holds whose admission date is before ``day``
-  (decision 48; the lifecycle is step S1.2's), sorted by ``KEY``. Each
+- ``day_rows(state_dir, setup, day, failures=None)``: the rows of trading day
+  ``day`` for every approach the state holds whose admission date is before
+  ``day`` and whose lifecycle state in force on ``day`` is live or dormant
+  (decisions 48, 63; ``journaled_approaches``), sorted by ``KEY``. With a
+  ``failures`` dict, an approach whose evaluation breaks decision 22's
+  contract (``ResultError``) has all its rows of ``day`` dropped and its
+  error text recorded there (decision 63 step 1: the day goes on). Each
   approach's frozen source runs in-process through the decision-21 loader,
   loaded afresh for each instrument, with its fixed parameters, and only
   when its sha256 is that of a file under the repository's ``reference/`` or
@@ -42,12 +46,13 @@ The API, for the units that build on it:
   ``unchanged``); unequal ones leave every file untouched and return one
   ``journal_mismatch`` alert per subject whose rows differ, dated ``day``
   (status ``mismatch``).
-- ``journal_day(state_dir, setup, day, into=None)``: ``day_rows`` then
-  ``write_day``; returns a ``DayResult``.
+- ``journal_day(state_dir, setup, day, into=None)``: ``day_rows`` (with a
+  ``failures`` dict) then ``write_day``; returns a ``DayResult`` whose
+  ``failures`` names each approach dropped for a contract failure.
 - ``read_index``, ``read_day``, ``journal_path``, ``index_path``.
 - Recomputation (DESIGN 9.4; decision 54), for ``journal recompute``:
   ``journal_pairs(state_dir, track)`` lists every journaled (day, subject)
-  pair (each index day with each approach admitted before it);
+  pair (each index day with each approach journaled that day, decision 63);
   ``sample_pairs(pairs, n, day)`` draws ``n`` of those before ``day`` (all
   when fewer exist) with ``numpy.random.default_rng(YYYYMMDD of day)``,
   choosing indices into the sorted pool without replacement (the design
@@ -64,6 +69,7 @@ is read (I-12).
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
@@ -77,6 +83,7 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
+from discotrade import ledger, lifecycle
 from discotrade.backtest import Evaluation, evaluate
 from discotrade.bars.store import write_atomic
 from discotrade.config import (
@@ -92,7 +99,7 @@ from discotrade.config import (
 )
 from discotrade.spreads import spread_table
 from discotrade.state import Approach, HealthEvent, canonical_json, content_hash, read_approaches
-from discotrade.strategy import load_strategy
+from discotrade.strategy import ResultError, load_strategy
 from discotrade.tradingcal import trading_date
 
 #: The repository whose files an approach's source must equal (decision 48).
@@ -159,6 +166,9 @@ class DayResult:
     rows: int
     content_hash: str
     events: tuple[HealthEvent, ...] = ()
+    #: (approach id, error text) of each approach whose evaluation broke
+    #: decision 22's contract; its rows of the day are not journaled.
+    failures: tuple[tuple[str, str], ...] = ()
 
 
 # --- paths and reading -------------------------------------------------------------------
@@ -322,15 +332,36 @@ def _require_trusted(approaches: Sequence[Approach]) -> None:
                 f"until the sandbox, only those run (decision 48); the day fails")
 
 
-def day_rows(state_dir: Path, setup: Setup, day: date) -> pd.DataFrame:
-    """The rows of ``day`` of every approach admitted before it, sorted by ``KEY``."""
-    approaches: list[Approach] = [a for a in read_approaches(state_dir) if a.admitted < day]
+def journaled_approaches(state_dir: Path, track: str, day: date) -> list[Approach]:
+    """The approaches journaled on ``day``: admitted before it and, by the
+    lifecycle rows dated before it, live or dormant (decision 63), by id."""
+    approaches = read_approaches(state_dir)
+    rows = ledger.read(state_dir, track, ledger.LIFECYCLE)
+    wanted = set(lifecycle.journaled_ids(rows, approaches, day))
+    return [a for a in approaches if a.id in wanted]
+
+
+def day_rows(state_dir: Path, setup: Setup, day: date,
+             failures: dict[str, str] | None = None) -> pd.DataFrame:
+    """The rows of ``day`` of every approach journaled on it, sorted by ``KEY``.
+
+    With ``failures`` given, an approach whose evaluation breaks decision 22's
+    contract (``ResultError``) has none of its rows of ``day`` returned and its
+    error text recorded there under its id (decision 63, step 1); without it,
+    the error passes through."""
+    approaches = journaled_approaches(state_dir, setup.track.name, day)
     _require_trusted(approaches)
     carries = _carries(state_dir, setup.track.name, day, {a.id: a.admitted for a in approaches},
                        [i.symbol for i in setup.instruments])
-    frames = [f for a in approaches
-              for f in subject_rows(state_dir, setup, day, a.id, KIND_APPROACH, a.source,
-                                    a.params, a.admitted, carries)]
+    frames = []
+    for a in approaches:
+        try:
+            frames += subject_rows(state_dir, setup, day, a.id, KIND_APPROACH, a.source,
+                                   a.params, a.admitted, carries)
+        except ResultError as exc:
+            if failures is None:
+                raise
+            failures[a.id] = str(exc)
     return _frame(pd.concat(frames, ignore_index=True)) if frames else _empty()
 
 
@@ -383,9 +414,12 @@ def write_day(state_dir: Path, track: str, day: date, rows: pd.DataFrame,
 
 def journal_day(state_dir: Path, setup: Setup, day: date,
                 into: Path | None = None) -> DayResult:
-    """Compute ``day``'s rows and write or compare them."""
-    return write_day(state_dir, setup.track.name, day, day_rows(state_dir, setup, day),
-                     into=into)
+    """Compute ``day``'s rows and write or compare them; an approach that breaks
+    decision 22's contract has its rows dropped and is named in ``failures``."""
+    failures: dict[str, str] = {}
+    rows = day_rows(state_dir, setup, day, failures)
+    result = write_day(state_dir, setup.track.name, day, rows, into=into)
+    return dataclasses.replace(result, failures=tuple(sorted(failures.items())))
 
 
 # --- recomputation (DESIGN 9.4; decision 54) ---------------------------------------------
@@ -402,11 +436,15 @@ class Recompute:
 
 def journal_pairs(state_dir: Path, track: str) -> list[Pair]:
     """Every journaled (day, subject) pair: each day of the index with each
-    approach of the state admitted before it (the subjects ``day_rows``
-    journals that day), in (day, subject) order."""
+    approach ``day_rows`` journals that day (admitted before it and live or
+    dormant by the lifecycle, decision 63), less one retired that day for a
+    contract failure (its rows of the day are not journaled), in (day,
+    subject) order."""
     days = sorted(date.fromisoformat(e["date"]) for e in read_index(state_dir, track))
     approaches = read_approaches(state_dir)
-    return sorted((d, a.id) for d in days for a in approaches if a.admitted < d)
+    rows = ledger.read(state_dir, track, ledger.LIFECYCLE)
+    return sorted((d, aid) for d in days
+                  for aid in lifecycle.was_journaled(rows, approaches, d))
 
 
 def sample_pairs(pairs: Sequence[Pair], n: int, day: date) -> list[Pair]:

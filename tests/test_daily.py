@@ -21,7 +21,7 @@ from datetime import date, timedelta
 import pandas as pd
 import pytest
 
-from discotrade import journal, paper
+from discotrade import journal, ledger, lifecycle, paper
 from discotrade.bars.store import BarStore
 from discotrade.cli import REPO_ROOT, main
 from discotrade.config import load_calendar, load_track_config
@@ -84,8 +84,8 @@ def health_bytes(state) -> bytes | None:
     return path.read_bytes() if path.exists() else None
 
 
-def admit(state, setup, name="trend_ma.py", source=None, admitted=ADMITTED):
-    path = REPO_ROOT / "reference" / name
+def admit(state, setup, name="trend_ma.py", source=None, admitted=ADMITTED, where="reference"):
+    path = REPO_ROOT / where / name
     strat = load_strategy_file(path, setup.thresholds)
     return write_approach(
         state, source=path.read_text(encoding="utf-8") if source is None else source,
@@ -389,3 +389,162 @@ def test_run_day_help_exits_0(capsys):
     out = capsys.readouterr().out
     for option in ("--day", "--state", "--track", "--config", "--as-of"):
         assert option in out
+
+
+# ------------------------------------------------------------------ the lifecycle (decision 63)
+#
+# ``breaks_thursday_noon.py`` (a fixture under tests/fixtures/strategies/) returns
+# 2.0, outside [-1, 1], at the bar opening at 12:00 local time on a Thursday:
+# the first such bar after ADMITTED is on NEXT (2019-06-13, a Thursday).
+
+BREAKS = "breaks_thursday_noon.py"
+STRATEGIES = "tests/fixtures/strategies"
+
+
+def lifecycle_bytes(state) -> bytes | None:
+    path = ledger.ledger_path(state, TRACK, ledger.LIFECYCLE)
+    return path.read_bytes() if path.exists() else None
+
+
+def ledgers(state) -> dict[str, tuple[bytes, int]]:
+    return {k: v for k, v in files(state).items() if k.startswith("ledger/")}
+
+
+def subjects(state, d) -> set[str]:
+    rows = journal.read_day(state, TRACK, d)
+    return set(rows["subject"])
+
+
+@pytest.fixture(scope="module")
+def before_break(tmp_path_factory, setup, config):
+    """A state run for ``DAYS`` with two reference approaches and the one that
+    breaks the contract on NEXT; tests copy it."""
+    state = fresh(tmp_path_factory.mktemp("dbrk") / "state", setup)
+    admit(state, setup, BREAKS, where=STRATEGIES)
+    run_days(state, config, DAYS)
+    return state
+
+
+def test_the_breaking_fixture_breaks_only_on_next(setup):
+    assert NEXT.weekday() == 3 and all(d.weekday() != 3 for d in DAYS)
+
+
+def test_a_contract_failure_retires_the_approach_and_the_day_goes_on(
+        tmp_path, before_break, config, setup, capsys):
+    state = tmp_path / "state"
+    shutil.copytree(before_break, state)
+    bad = next(a.id for a in read_approaches(state) if a.params == {"weekday": 3, "hour": 12})
+    others = {a.id for a in read_approaches(state)} - {bad}
+    assert subjects(state, DAYS[-1]) == others | {bad}
+    head = commits(state)
+    assert run(state, config, "--day", NEXT.isoformat()) == 0
+    out = capsys.readouterr().out
+    assert commits(state) == [f"run {TRACK} {NEXT.isoformat()}"] + head
+    assert git(state, "status", "--porcelain") == ""
+    # Its rows of NEXT are not journaled; the others' are.
+    assert subjects(state, NEXT) == others
+    [row] = ledger.read(state, TRACK, ledger.LIFECYCLE)
+    assert {k: row[k] for k in ("date", "id", "from", "to")} == \
+        {"date": NEXT.isoformat(), "id": bad, "from": "live", "to": "retired"}
+    assert row["reason"].startswith("failure: position on ")
+    assert "returned 2.0, outside [-1, 1]" in row["reason"]
+    assert f"lifecycle {ledger.line(row)}" in out
+    changed = git(state, "show", "--name-only", "--format=", "HEAD").split()
+    assert f"ledger/{TRACK}/lifecycle.jsonl" in changed
+    # A re-run of NEXT appends no ledger line and writes nothing.
+    before, log = files(state), lifecycle_bytes(state)
+    assert run(state, config, "--day", NEXT.isoformat()) == 0
+    assert files(state) == before and lifecycle_bytes(state) == log
+    assert commits(state)[0] == f"run {TRACK} {NEXT.isoformat()}"
+    # The retired approach is not journaled on the next day.
+    following = NEXT + timedelta(days=1)
+    assert run(state, config, "--day", following.isoformat()) == 0
+    assert subjects(state, following) == others
+    assert lifecycle_bytes(state) == log
+    # The recomputation asks for no pair the journal does not hold, and matches.
+    pairs = journal.journal_pairs(state, TRACK)
+    assert (NEXT, bad) not in pairs and (following, bad) not in pairs
+    assert (DAYS[-1], bad) in pairs
+    assert main(["--state", str(state), "--config", str(config), "--track", TRACK,
+                 "--as-of", AS_OF, "journal", "recompute", "--all"]) == 0
+
+
+def test_a_day_failing_in_step_2_leaves_every_ledger_untouched(
+        tmp_path, before_break, config, setup, capsys):
+    state = tmp_path / "state"
+    shutil.copytree(before_break, state)
+    # A candidate admitted on the last day whose source is not a repository file:
+    # its trial row, its approach and its lifecycle row are in the ledgers.
+    source = (REPO_ROOT / "reference" / "zscore_reversal.py").read_text(encoding="utf-8")
+    done = lifecycle.admit(state, setup, lifecycle.Candidate(
+        source=source + "# not a repository file\n", params={"k": 1},
+        cell="mean_reversion/short", model_id="test-model", model_version="v0",
+        cutoff=date(2019, 1, 1), description="untrusted", profile_version="w-test",
+        metrics_t={"sharpe": 1.0, "trades": 30}, t_days=DAYS), DAYS[-1])
+    assert done.admitted
+    held = ledgers(state)
+    assert set(held) == {f"ledger/{TRACK}/trials.jsonl", f"ledger/{TRACK}/lifecycle.jsonl"}
+    kept = {k: v for k, v in files(state).items() if k.startswith(("journal/", "paper/"))}
+    head = commits(state)
+    # NEXT would retire the breaking approach; the untrusted source fails the day first.
+    assert run(state, config, "--day", NEXT.isoformat()) == 1
+    assert done.id in capsys.readouterr().err
+    assert ledgers(state) == held
+    assert {k: v for k, v in files(state).items() if k.startswith(("journal/", "paper/"))} \
+        == kept
+    assert commits(state) == head
+    assert not (state / LOCK).exists() and not (state / STAGING).exists()
+
+
+def test_an_approach_admitted_on_d_is_first_journaled_on_the_next_trading_day(
+        state, config, setup):
+    d = DAYS[-1]
+    path = REPO_ROOT / "reference" / "zscore_reversal.py"
+    strat = load_strategy_file(path, setup.thresholds)
+    done = lifecycle.admit(state, setup, lifecycle.Candidate(
+        source=path.read_text(encoding="utf-8"), params=strat.params,
+        cell="mean_reversion/short", model_id="test-model", model_version="v0",
+        cutoff=date(2019, 1, 1), description="zscore", profile_version="w-test",
+        metrics_t={"sharpe": 1.0, "trades": 30}, t_days=DAYS), d)
+    assert (done.admitted, done.reason) == (True, "free_slot")
+    # A re-run of D does not journal it: the journal of D is unchanged.
+    before = {k: v for k, v in files(state).items() if k.startswith(("journal/", "paper/"))}
+    assert run(state, config, "--day", d.isoformat()) == 0
+    assert {k: v for k, v in files(state).items() if k.startswith(("journal/", "paper/"))} \
+        == before
+    assert done.id not in subjects(state, d)
+    assert run(state, config, "--day", NEXT.isoformat()) == 0
+    rows = journal.read_day(state, TRACK, NEXT)
+    mine = rows[rows["subject"] == done.id]
+    assert len(mine) and set(mine["instrument"]) == {i.symbol for i in setup.instruments}
+    # Its first row on each instrument is the first bar of NEXT, flat (DESIGN 9.2).
+    for _, leg in mine.groupby("instrument"):
+        first = leg.loc[leg["ts"].idxmin()]
+        assert first["prev_position"] == 0.0 and first["position"] == 0.0
+
+
+def test_an_approach_made_dormant_on_d_is_journaled_on_d_plus_1(tmp_path, config, setup):
+    # dormant_window_days 2 on a configuration copied under the test's tmp
+    # directory (the production value 30 would need 30 days of runs; the rule
+    # is tested at 30 in tests/test_lifecycle.py).
+    low = tmp_path / "config"
+    shutil.copytree(config, low)
+    text = (low / "thresholds.toml").read_text(encoding="utf-8")
+    assert "dormant_window_days = 30 " in text
+    (low / "thresholds.toml").write_text(
+        text.replace("dormant_window_days = 30 ", "dormant_window_days = 2  "), encoding="utf-8")
+    state = fresh(tmp_path / "state", setup)
+    run_days(state, low, DAYS[:4])
+    rows = ledger.read(state, TRACK, ledger.LIFECYCLE)
+    assert rows and all(r["to"] == "dormant" and r["reason"] == "dormant" for r in rows)
+    first = rows[0]
+    d, aid = date.fromisoformat(first["date"]), first["id"]
+    assert d < DAYS[3]
+    approaches = read_approaches(state)
+    assert lifecycle.states(rows, approaches, d)[aid].state == "live"
+    assert lifecycle.states(rows, approaches, d + timedelta(days=1))[aid].state == "dormant"
+    assert aid in subjects(state, d) and aid in subjects(state, d + timedelta(days=1))
+    # A re-run of D writes nothing and appends no ledger line.
+    before = files(state)
+    assert run(state, low, "--day", d.isoformat()) == 0
+    assert files(state) == before

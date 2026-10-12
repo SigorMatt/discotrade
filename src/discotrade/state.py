@@ -40,6 +40,8 @@ The API, for the units that build on it:
   dates are ISO. Writing an approach that is already there with the same
   two files changes nothing; with other files it raises ``StateError``
   naming it (a recorded approach is never rewritten, I-5).
+- ``write_trial(path, ...)``: a trial that was not admitted, under
+  ``trials/<id>/`` with the same two files (decision 62), ``admitted`` null.
 
 Git runs with ``git_environment()``: ``GIT_ALLOW_PROTOCOL=file`` (decision
 50), no global or system configuration (so that no hook, signing or
@@ -311,6 +313,7 @@ def append_health(path: Path, track: str, events: Iterable[HealthEvent]) -> list
 # --- approaches (DESIGN 9.1; decision 48) ------------------------------------------------
 
 APPROACHES = "approaches"
+TRIALS = "trials"
 SOURCE_FILE = "strategy.py"
 META_FILE = "meta.json"
 META_FIELDS = ("admitted", "cell", "code_sha256", "config_hash", "cost_model", "cutoff",
@@ -353,6 +356,36 @@ def write_approach(path: Path, *, source: str, params: Mapping[str, Any], cell: 
     """Write ``approaches/<id>/strategy.py`` and ``meta.json`` under the state
     directory ``path`` and return the id (decision 48). ``instruments`` and
     ``spread_tables`` are the track's, for the cost config hash (decision 26)."""
+    return _write_frozen(path, APPROACHES, source=source, params=params, cell=cell,
+                         model_id=model_id, model_version=model_version, cutoff=cutoff,
+                         description=description, profile_version=profile_version,
+                         admitted=admitted, instruments=instruments,
+                         spread_tables=spread_tables)
+
+
+def write_trial(path: Path, *, source: str, params: Mapping[str, Any], cell: str,
+                model_id: str, model_version: str, cutoff: date, description: str,
+                profile_version: str, instruments: Iterable[Any],
+                spread_tables: Mapping[str, Any]) -> str:
+    """Write a trial that was not admitted, ``trials/<id>/strategy.py`` and
+    ``meta.json`` (DESIGN 9.1; decision 62), as ``write_approach`` writes an
+    approach, its ``admitted`` being ``null`` (it was not admitted; the design
+    is silent, the date of the trial is its ledger row's)."""
+    return _write_frozen(path, TRIALS, source=source, params=params, cell=cell,
+                         model_id=model_id, model_version=model_version, cutoff=cutoff,
+                         description=description, profile_version=profile_version,
+                         admitted=None, instruments=instruments,
+                         spread_tables=spread_tables)
+
+
+def trial_dir(path: Path, aid: str) -> Path:
+    return Path(path) / TRIALS / aid
+
+
+def _write_frozen(path: Path, root: str, *, source: str, params: Mapping[str, Any], cell: str,
+                  model_id: str, model_version: str, cutoff: date, description: str,
+                  profile_version: str, admitted: date | None, instruments: Iterable[Any],
+                  spread_tables: Mapping[str, Any]) -> str:
     from discotrade import costs  # costs reads config, which this module need not load
     from discotrade.bars.store import write_atomic
 
@@ -363,18 +396,19 @@ def write_approach(path: Path, *, source: str, params: Mapping[str, Any], cell: 
         "code_sha256": hashlib.sha256(source.encode("utf-8")).hexdigest(),
         "profile_version": profile_version, "cost_model": costs.VERSION,
         "config_hash": costs.config_hash(instruments, spread_tables),
-        "admitted": admitted.isoformat(),
+        "admitted": None if admitted is None else admitted.isoformat(),
     }
     files = {SOURCE_FILE: source.encode("utf-8"),
              META_FILE: (canonical_json(meta) + "\n").encode("utf-8")}
-    where = approach_dir(path, aid)
+    where = Path(path) / root / aid
+    kind = "approach" if root == APPROACHES else "trial"
     if where.exists():
         held = {name: (where / name).read_bytes() if (where / name).is_file() else None
                 for name in files}
         if held == files:
             return aid
-        raise StateError(f"approach {aid} is already in {where} with other files; a "
-                         "recorded approach is never rewritten")
+        raise StateError(f"{kind} {aid} is already in {where} with other files; a "
+                         f"recorded {kind} is never rewritten")
     for name, data in files.items():
         write_atomic(where / name, lambda p, data=data: p.write_bytes(data))
     return aid

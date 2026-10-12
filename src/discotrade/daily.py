@@ -30,13 +30,20 @@ releasing it on success and on failure:
   returns is appended to the health log at once (decision 52).
 - Step 2: the journal day of ``D`` (``journal.journal_day``) into the staging
   directory ``state.STAGING``, and, when the day is new, the paper records
-  rebuilt from the journal with the staged day (``paper.rebuild``). Only when
-  both have succeeded are the staged files moved into place (``os.replace``,
+  rebuilt from the journal with the staged day (``paper.rebuild``); then the
+  lifecycle's steps 1 to 4 (DESIGN 10.3; decision 63; ``lifecycle.run_steps``)
+  on those paper records (the stored ones on a re-run), their rows appended
+  to ``ledger/<track>/lifecycle.jsonl`` in the staging directory (decision
+  62). An approach whose evaluation breaks decision 22's contract has its rows
+  of ``D`` dropped and is retired by step 1; the day goes on. Only when all of
+  this has succeeded are the staged files moved into place (``os.replace``,
   in path order) and the state committed as ``run <track> <D>``
-  (``state.commit``). A re-run whose rows equal the journal's writes nothing
-  and makes no commit (I-6); one whose rows differ moves nothing, appends its
-  ``journal_mismatch`` events and fails (the design is silent on the exit
-  status; a failure is the simplest way the owner sees it).
+  (``state.commit``; no commit when nothing was moved). A re-run whose rows
+  equal the journal's writes nothing and makes no commit (I-6): its lifecycle
+  rows, computed from the states in force on ``D``, are those already in the
+  ledger, which appends no line it holds. One whose rows differ moves nothing,
+  appends its ``journal_mismatch`` events and fails (the design is silent on
+  the exit status; a failure is the simplest way the owner sees it).
 - A failure in either step discards the staging directory and moves nothing.
   A reader that refuses a revised data point appends a ``revised_data`` alert
   (subject the track, the reader's message as detail) and the day fails.
@@ -60,7 +67,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from discotrade import journal, paper, sources, state
+from discotrade import journal, ledger, lifecycle, paper, sources, state
 from discotrade.bars.gaps import check_gaps, day_end, latest_closed_day
 from discotrade.bars.store import BarStore, BarStoreError, finite_rows
 from discotrade.clock import Clock
@@ -86,6 +93,7 @@ class DayRun:
     rows: int
     commit: str | None
     events: tuple[HealthEvent, ...]      # appended to the health log by this run
+    changes: tuple[Mapping[str, object], ...] = ()   # lifecycle rows appended by this run
 
 
 def closed_day(tc: TrackConfig, calendars: Mapping[str, Calendar], now: datetime) -> date:
@@ -231,7 +239,11 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
         if result.status == journal.WRITTEN:
             records = paper.rebuild(state_dir, track, len(setup.instruments), overlay=staging)
             paper.write(staging, track, records)
-        _move(staging, state_dir)
+        else:
+            records = paper.read(state_dir, track)
+        changes = lifecycle.run_steps(state_dir, setup, d, records, dict(result.failures),
+                                      into=staging)
+        moved = _move(staging, state_dir)
     except BarStoreError as exc:
         if _REVISED in str(exc):
             state.append_health(state_dir, track, [HealthEvent(
@@ -239,14 +251,15 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
         raise
     finally:
         shutil.rmtree(staging, ignore_errors=True)
-    sha = state.commit(state_dir, track, d, clock) if result.status == journal.WRITTEN else None
-    return DayRun(d, result.status, result.rows, sha, tuple(appended))
+    sha = state.commit(state_dir, track, d, clock) if moved else None
+    return DayRun(d, result.status, result.rows, sha, tuple(appended), tuple(changes))
 
 
 def describe(run: DayRun, track: str) -> Sequence[str]:
     """The lines ``run-day`` prints."""
     lines = [f"notice {e.to_json()}" if e.level == "notice" else f"alert {e.to_json()}"
              for e in run.events]
+    lines += [f"lifecycle {ledger.line(row)}" for row in run.changes]
     if run.status == journal.WRITTEN:
         lines.append(f"run-day: {track} {run.day.isoformat()}: journal written, {run.rows} "
                      f"rows; committed {run.commit}")
