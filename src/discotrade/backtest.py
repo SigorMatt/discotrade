@@ -32,10 +32,21 @@ with prices adjusted as of ``u``: ``Oa(u)`` and ``Ca(u)`` are raw, and
 ``Ca(u-1)`` is the raw previous close plus the gap of a roll at ``u``. At
 ``u0`` the previous position is 0, so ``gross(u0) = 0``.
 
-The per-bar result is a frame with one row per window bar and the columns
-``ts``, ``contract``, ``date`` (the trading date), ``p``, ``h`` and ``gross``:
-the first columns of decision 25's row, to which the cost model appends the
-rest. No clock is read (I-12).
+Costs (DESIGN 7.3, 7.4; decision 25). The positions become one
+:class:`~discotrade.executor.Order` per window bar (decision bar ``u-1``,
+previous position ``h(u-1)``, target ``h(u)``; at ``u0`` the previous position
+is 0, and the decision bar is the last context bar, or none), priced by
+:class:`~discotrade.executor.SimExecutor` against the bars read, with the
+instrument's spread table when given. ``sigma`` reads stored bars before the
+window too (decision 24): the context read is at least ``costs.SIGMA_RETURNS``
+bars before ``u0``, all trusted, even when the history cap is smaller; the
+strategy's slice is still capped at ``history_cap_bars`` rows.
+
+The per-bar result is a frame with one row per window bar and decision 25's
+columns: ``ts``, ``contract``, ``date`` (the trading date), ``p``, ``h``,
+``gross``, ``trade``, ``fee``, ``spread``, ``slippage``, ``roll``, ``cost``,
+``net_1x`` and ``net_2x``, the cost columns built from the fills. No clock is
+read (I-12).
 """
 
 from __future__ import annotations
@@ -49,16 +60,19 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from discotrade import costs
 from discotrade.bars.store import BarStore
-from discotrade.config import Calendar, DateRange, Instrument, Track
+from discotrade.config import Calendar, DateRange, Instrument, SpreadTable, Track
+from discotrade.executor import Market, Order, SimExecutor
 from discotrade.rolls import read_rolls, roll_path
 from discotrade.strategy import Strategy, call_position
 from discotrade.tradingcal import trading_date
 
 #: The columns of a slice, in order (DESIGN 6.2).
 SLICE_COLUMNS = ("open", "high", "low", "close", "volume", "hour", "weekday")
-#: The columns of the per-bar result built here (the start of decision 25's row).
-ROW_COLUMNS = ("ts", "contract", "date", "p", "h", "gross")
+#: The columns of the per-bar result (decision 25).
+ROW_COLUMNS = ("ts", "contract", "date", "p", "h", "gross", "trade", "fee", "spread",
+               "slippage", "roll", "cost", "net_1x", "net_2x")
 _PRICES = ("open", "high", "low", "close")
 #: How far beyond a window's dates its bars can lie in UTC: a trading date is
 #: the local date or the next one, and no time zone is a day away from UTC.
@@ -148,15 +162,18 @@ def _empty_rows() -> pd.DataFrame:
         "ts": pd.Series([], dtype="datetime64[ns, UTC]"),
         "contract": pd.Series([], dtype=object),
         "date": pd.Series([], dtype=object),
-        **{name: pd.Series([], dtype="float64") for name in ("p", "h", "gross")},
+        **{name: pd.Series([], dtype="float64") for name in ROW_COLUMNS[3:]},
     })
 
 
 def evaluate(state_dir: Path, track: Track, instrument: Instrument, calendar: Calendar,
              strategy: Strategy, window: DateRange,
-             params: Mapping[str, Any] | None = None) -> Evaluation:
+             params: Mapping[str, Any] | None = None,
+             spread_table: SpreadTable | None = None) -> Evaluation:
     """Walk ``window`` of ``instrument`` with ``strategy`` (``params``: its own
-    ``PARAMS`` by default) and return the targets, positions and gross returns."""
+    ``PARAMS`` by default) and return the targets, positions, gross returns and
+    costs; ``spread_table`` is the instrument's measured table (DESIGN 5.7), or
+    None when it has none."""
     symbol = instrument.symbol
     params = strategy.params if params is None else params
     store = BarStore(Path(state_dir), track.name, track.bar_seconds)
@@ -165,7 +182,8 @@ def evaluate(state_dir: Path, track: Track, instrument: Instrument, calendar: Ca
         return Evaluation(symbol, _empty_rows(), inside, 0, np.zeros(0),
                           np.zeros(0, dtype=bool))
     cap = track.history_cap_bars
-    context = store.last_n(symbol, inside["ts"].iloc[0], cap)
+    context = store.last_n(symbol, inside["ts"].iloc[0],
+                           max(cap, costs.SIGMA_RETURNS + 2))
     context = context[context["ts"] >= _midnight(instrument.trusted_from)]
     bars = pd.concat([context.iloc[:-1], inside], ignore_index=True)
     first = len(context) - 1
@@ -214,4 +232,14 @@ def evaluate(state_dir: Path, track: Track, instrument: Instrument, calendar: Ca
         "h": held,
         "gross": gross,
     })
-    return Evaluation(symbol, rows, bars, first, gaps, rolled)
+    market = Market(instrument, calendar, spread_table, bars, gaps, rolled)
+    orders = [Order(strategy.name, symbol, stamps[k - 1] if k > 0 else None,
+                    float(before[i]), float(held[i]))
+              for i, k in enumerate(range(first, n))]
+    fills = SimExecutor().execute(orders, {symbol: market})
+    rows["trade"] = [f.order.trade for f in fills]
+    for name in ("fee", "spread", "slippage", "roll", "cost"):
+        rows[name] = [getattr(f, name) for f in fills]
+    rows["net_1x"] = [costs.net(g, f.cost, 1) for g, f in zip(gross, fills, strict=True)]
+    rows["net_2x"] = [costs.net(g, f.cost, 2) for g, f in zip(gross, fills, strict=True)]
+    return Evaluation(symbol, rows[list(ROW_COLUMNS)], bars, first, gaps, rolled)
