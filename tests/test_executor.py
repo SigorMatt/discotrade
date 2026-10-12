@@ -298,3 +298,55 @@ def test_no_roll_cost_at_a_windows_first_bar(tmp_path, cfg, instruments, calenda
     at_roll = ev.rows[ev.rows["ts"] == pd.Timestamp("2020-01-06 00:00", tz="UTC")].iloc[0]
     assert at_roll["h"] == 1.0 and at_roll["trade"] == 0.0 and at_roll["roll"] > 0.0
     assert at_roll["cost"] == at_roll["roll"]
+
+
+# --- the position changes at the roll bar (decision 43 (b); D-005) ---------------------------
+#
+# The roll cost is charged on the carried position h(u-1), never on the new
+# one h(u) (DESIGN 7.3). Each case changes the position at the roll bar
+# (HAND's 04:00 bar, filled from the decision bar 02:00) with |h(u-1)| !=
+# |h(u)|, so a roll cost read on h(u) is a different number.
+
+_R_TO_ROLL = [(99 - 98) / 98, (101 - 99) / 99, (102 - 101) / 101, (100 - 102) / 102]
+_C_AT_ROLL = 5e-4 + 0.25 / 112 + 0.02 * statistics.stdev(_R_TO_ROLL)
+
+
+@pytest.mark.parametrize("previous, target", [(-0.5, 1.0), (0.0, 1.0)],
+                         ids=["carried-and-changing", "flat-then-opening"])
+def test_an_order_changing_at_a_roll_pays_the_roll_on_the_carried_position(
+        instruments, calendars, previous, target):
+    synx = instruments["SYNX"]
+    market = _market(synx, calendars["always_open"], None, HAND,
+                     gaps=[0, 0, 0, 0, 0, 10.0, 0], rolled=[False] * 5 + [True, False])
+    fill = SimExecutor().execute([Order("s", "SYNX", HAND[4]["ts"], previous, target)],
+                                 {"SYNX": market})[0]
+    trade = abs(target - previous)
+    assert fill.fee == pytest.approx(trade * 5e-4, rel=1e-12)
+    assert fill.spread == pytest.approx(trade * 0.25 / 112, rel=1e-12)
+    assert fill.roll == pytest.approx(2 * abs(previous) * _C_AT_ROLL, rel=1e-12, abs=0)
+    assert fill.cost == pytest.approx(trade * _C_AT_ROLL + 2 * abs(previous) * _C_AT_ROLL,
+                                      rel=1e-12)
+
+
+@pytest.mark.parametrize("targets, h, roll", [
+    # carried -0.5 into the roll, 1.0 after it: roll cost 2 * 0.5 * c(u)
+    ({101.0: 1.0, 102.0: -0.5, 100.0: 1.0, 111.0: 0.0, 109.0: 0.0},
+     [0.0, 1.0, -0.5, 1.0, 0.0], 2 * 0.5 * _C_AT_ROLL),
+    # flat into the roll, 1.0 after it: no roll cost
+    ({101.0: 1.0, 102.0: 0.0, 100.0: 1.0, 111.0: 1.0, 109.0: 0.0},
+     [0.0, 1.0, 0.0, 1.0, 1.0], 0.0),
+], ids=["carried-and-changing", "flat-then-opening"])
+def test_rows_charge_the_roll_on_the_carried_position_when_it_changes(
+        tmp_path, cfg, instruments, calendars, targets, h, roll):
+    _store(tmp_path, HAND, roll_ts="2020-01-06 04:00")
+    ev = _eval(tmp_path, cfg.track, instruments["SYNX"], calendars, by_close(targets),
+               date(2020, 1, 6))
+    rows = ev.rows
+    assert rows["h"].tolist() == h
+    assert rows["ts"].iloc[3] == pd.Timestamp("2020-01-06 04:00", tz="UTC")
+    assert ev.rolled[ev.first + 3]
+    assert rows["roll"].iloc[3] == pytest.approx(roll, rel=1e-12, abs=0)
+    want = [0.0, 0.0, 0.0, roll, 0.0]
+    assert np.allclose(rows["roll"].to_numpy(), want, rtol=1e-12, atol=0)
+    trade = abs(h[3] - h[2])
+    assert rows["cost"].iloc[3] == pytest.approx(trade * _C_AT_ROLL + roll, rel=1e-12)

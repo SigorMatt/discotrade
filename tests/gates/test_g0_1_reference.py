@@ -19,6 +19,15 @@ DESIGN 8 and the cost totals by component must be equal by decision 39:
 ``|a - b| <= 1e-12 * max(1, |a|, |b|)``, both or neither not a number, and
 exact equality for counts, booleans, contracts, timestamps and dates.
 
+A fourth strategy, the test-only ``tests/fixtures/strategies/roll_probe.py``
+(decision 43 (c)), is compared the same way on the same window through the
+module API only (the ``backtest`` command takes files under ``reference/``
+only, decision 21): every per-bar field, both daily series, every metric
+and the cost totals by component. Its position changes at the SYNA roll bar
+of the window, carried and changing size (asserted by
+``test_probe_changes_position_at_the_syna_roll``), so a roll cost or a
+rolled turnover read on ``h(u)`` instead of ``h(u-1)`` differs there.
+
 The synthetic instruments' seeds are those of their fixture records under
 ``tests/fixtures/config/instruments/`` (``SEEDS`` below, asserted); no other
 random draw is made.
@@ -53,6 +62,11 @@ TRACK = "test_mixed"
 AS_OF = "2019-08-05T00:00:00+00:00"
 FIRST, LAST = date(2019, 6, 3), date(2019, 7, 31)
 FILES = ("trend_ma.py", "zscore_reversal.py", "hour_of_day.py")
+PROBE = "roll_probe.py"
+PROBE_PATH = REPO_ROOT / "tests" / "fixtures" / "strategies" / PROBE
+#: The strategies compared with the independent calculation: the reference
+#: files and the roll probe (decision 43 (c)).
+COMPARED = (*FILES, PROBE)
 SYMBOLS = ("SYNA", "SYNL", "SYNX")
 #: The seed of every random draw this gate depends on: the synthetic sources'.
 SEEDS = {"SYNA": 101, "SYNL": 105, "SYNX": 106}
@@ -140,12 +154,13 @@ def discotrade_run(state, config, tc, calendars, strat, first=FIRST, last=LAST):
 
 @pytest.fixture(scope="module")
 def runs(state, config, tc, calendars, thresholds):
-    """Per reference file: discotrade's evaluations, daily series and metrics,
-    the independent result, the raw SYNL targets the independent calculation
-    saw, and the ``backtest --json`` output."""
+    """Per compared strategy: discotrade's evaluations, daily series and
+    metrics, the independent result, the raw SYNL targets the independent
+    calculation saw, and, for a reference file, the ``backtest --json``
+    output (the roll probe is not under ``reference/``, decision 21)."""
     out = {}
-    for name in FILES:
-        path = REPO_ROOT / "reference" / name
+    for name in COMPARED:
+        path = PROBE_PATH if name == PROBE else REPO_ROOT / "reference" / name
         strat = load_strategy_file(path, thresholds)
         evaluations, daily, m = discotrade_run(state, config, tc, calendars, strat)
         # The independent calculation evaluates the instruments in the track's
@@ -156,16 +171,18 @@ def runs(state, config, tc, calendars, thresholds):
         n = {s: len(results.rows[s]) for s in SYMBOLS}
         assert len(recorder.raw) == sum(n.values())
         raw_synl = recorder.raw[n["SYNA"]:n["SYNA"] + n["SYNL"]]
+        out[name] = {"evaluations": evaluations, "daily": daily, "metrics": m,
+                     "calc": results, "raw_synl": raw_synl, "path": path,
+                     "params": dict(strat.params)}
+        if name == PROBE:
+            continue
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             code = main(["--state", str(state), "--config", str(config), "--track", TRACK,
                          "--as-of", AS_OF, "backtest", str(path), "--from",
                          FIRST.isoformat(), "--to", LAST.isoformat(), "--json"])
         assert code == 0, name
-        out[name] = {"evaluations": evaluations, "daily": daily, "metrics": m,
-                     "calc": results, "raw_synl": raw_synl, "path": path,
-                     "params": dict(strat.params),
-                     "json": json.loads(buf.getvalue())}
+        out[name]["json"] = json.loads(buf.getvalue())
     return out
 
 
@@ -264,10 +281,37 @@ def test_each_instrument_has_dropped_bars_in_the_window(state, tc, calendars):
         assert not {pd.Timestamp(t) for t in dropped} & stored, inst.symbol
 
 
+def syna_rolls_in_the_window(rows) -> list[int]:
+    """Indices of the SYNA window rows at which a roll happens: its contract
+    differs from the previous stored bar's (decision 24). Every window row
+    but the first follows its previous stored bar in the rows."""
+    contracts = list(rows["contract"])
+    return [k for k in range(1, len(contracts)) if contracts[k] != contracts[k - 1]]
+
+
+def test_probe_changes_position_at_the_syna_roll(runs):
+    """Decision 43 (c): at the SYNA roll bar of the window the probe's
+    ``h(u-1) != h(u)``, in discotrade's rows and in the independent
+    calculation's, with ``h(u-1)`` carried (not 0) and ``|h(u-1)| != |h(u)|``,
+    so a roll cost or a rolled turnover on ``h(u)`` is a different number."""
+    run = runs[PROBE]
+    mine = run["evaluations"][SYMBOLS.index("SYNA")].rows
+    theirs = pd.DataFrame(run["calc"].rows["SYNA"])
+    at = syna_rolls_in_the_window(mine)
+    assert at, "no SYNA roll in the window"
+    assert at == syna_rolls_in_the_window(theirs)
+    for rows in (mine, theirs):
+        for k in at:
+            before, now = float(rows["h"].iloc[k - 1]), float(rows["h"].iloc[k])
+            assert before != now, rows["ts"].iloc[k]
+            assert before != 0.0 and abs(before) != abs(now), rows["ts"].iloc[k]
+            assert rows["roll"].iloc[k] > 0.0 and rows["trade"].iloc[k] > 0.0
+
+
 # ------------------------------------------------------------- the comparison
 
 
-@pytest.mark.parametrize("name", FILES)
+@pytest.mark.parametrize("name", COMPARED)
 def test_per_bar_rows_are_equal(runs, name):
     run = runs[name]
     for e in run["evaluations"]:
@@ -284,7 +328,7 @@ def test_per_bar_rows_are_equal(runs, name):
                 assert_eq(mine[field].iloc[k], row[field], f"{where} {field}")
 
 
-@pytest.mark.parametrize("name", FILES)
+@pytest.mark.parametrize("name", COMPARED)
 def test_daily_series_are_equal(runs, name):
     run = runs[name]
     daily, calc = run["daily"], run["calc"]
@@ -294,7 +338,7 @@ def test_daily_series_are_equal(runs, name):
         assert_eq(daily["net_2x"].iloc[k], calc.daily_2x[k], f"{name} {day} net_2x")
 
 
-@pytest.mark.parametrize("name", FILES)
+@pytest.mark.parametrize("name", COMPARED)
 def test_metrics_are_equal(runs, name):
     run = runs[name]
     m, calc = run["metrics"], run["calc"].metrics
@@ -313,7 +357,7 @@ def discotrade_costs(evaluations):
     return subject, per
 
 
-@pytest.mark.parametrize("name", FILES)
+@pytest.mark.parametrize("name", COMPARED)
 def test_cost_totals_are_equal(runs, name):
     run = runs[name]
     subject, per = discotrade_costs(run["evaluations"])

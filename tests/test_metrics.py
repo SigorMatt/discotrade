@@ -373,3 +373,26 @@ def test_no_gross_figure_without_its_net_figures():
     assert "date" in daily_series([bare]).columns
     assert metrics.trades([bare]) == 1
     assert metrics.avg_holding_bars([bare]) == pytest.approx(1.0)
+
+
+# --- the rolled turnover when the position changes at the roll (decision 43 (b)) --------
+#
+# Decision 25: the rolled turnover is 2 * |h(u-1)| at each roll, on the
+# carried position. In each case the position changes at the roll bar with
+# |h(u-1)| != |h(u)|, so a turnover read on h(u) is a different number.
+
+def test_breakeven_cost_rolls_the_carried_position_when_it_changes():
+    # Bar 2 rolls: h(u-1) = -0.5 carried, h(u) = 1. Trades 0.5 + 1.5 = 2,
+    # rolled 2 * 0.5 = 1.
+    a = leg([D1] * 4, h=[0, -0.5, 1, 1], trade=[0, 0.5, 1.5, 0], gross=[0, 0.002, 0.001, 0.003],
+            rolled=[False, False, True, False])
+    assert compute([a]).breakeven_cost == pytest.approx(0.006 / (2.0 + 1.0) * 10000,
+                                                        rel=1e-12)
+
+
+def test_breakeven_cost_adds_no_rolled_turnover_for_a_flat_position_opening_at_a_roll():
+    # Bar 2 rolls: h(u-1) = 0, h(u) = 1. Trades 1 + 1 = 2, rolled 0.
+    a = leg([D1] * 4, h=[0, 0, 1, 1], trade=[0, 0, 1, 0], gross=[0, 0, 0.004, 0.002],
+            rolled=[False, False, True, False])
+    b = leg([D2] * 2, h=[0, 1], trade=[0, 1], gross=[0, 0.002])
+    assert compute([a, b]).breakeven_cost == pytest.approx(0.008 / 2.0 * 10000, rel=1e-12)
