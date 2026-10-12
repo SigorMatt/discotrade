@@ -1,19 +1,21 @@
-# PLAN — mission 4 (roadmap step S0.3, repair mission)
+# PLAN — mission 5 (roadmap step S0.4)
 
-Base commit: 9f00d99 (`plan: mission 4 kit (S0.3 repair, review-3 blocker and should-fix)`).
-Brief: `meta/BUILDER-4-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-12.md` (items 30-33 new; 1-29 still bind, with item 33's renumbering).
-Roadmap step: S0.3, repair mission. Closes no milestone; M0 is closed by step S0.4, mission 5 (decision 33).
+Base commit: 3854c96 (`plan: mission 5 kit (S0.4, independent calc, cheat, M0 gate tests)`).
+Brief: `meta/BUILDER-5-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-12.md` (items 34-40 new; 1-33 still bind).
+Roadmap step: S0.4. This mission closes milestone M0.
 
-Carried items (REVIEW-3):
-- Blocker 1: `sharpe` / `sharpe_2x` finite for a constant daily series (decision 30). — taken by U1
-- Should-fix 1: the `trades` test does not tell a right implementation from a wrong one. — taken by U1
-- Should-fix 2: `backtest` exit 1 paths of decision 27 untested. — taken by U2
-- Should-fix 3: `BarStore.last_ts` does not refuse as the other readers do (decision 31). — taken by U3
-- Should-fix 4: indicator module text untrue of `ema` (decision 32). — taken by U4
+Carried items:
+- REVIEW-4 should-fix 1: the `BarStore` classification test misses a public reader written as a property (decision 34). — taken by U1
+- REVIEW-4 note on U3: `bars/gaps.py`, `rolls.py` (`update_rolls`, `adjusted_as_of`) look at the index before the reader, so an interrupted first append reads as "no bars" (decision 35). — taken by U1
+- REVIEW-3 note carried to S0.4: reads before `trusted_from` (roll gap, `adjusted_as_of`, evaluation context, `sigma`) and a contract change across `trusted_from` (decision 36). — taken by U2
+- REVIEW-3 note carried to S0.4: a roll record with the right `ts` and the wrong contracts (decision 37). — taken by U2
+- REVIEW-3 note carried to S0.4: the unlabelled cost lines of the `backtest` plain output (decision 38). — taken by U2
 
-- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`. — 593c0ea
-- [x] U1 Sharpe at zero deviation, and the `trades` test (REVIEW-3 blocker 1, should-fix 1; decisions 25, 30; DESIGN §8; R-7; I-4). — 836c2ab
-- [x] U2 `backtest` exit 1 paths (REVIEW-3 should-fix 2; decisions 18, 21, 22, 24, 27; DESIGN §3, §6.2). — 6445223
-- [x] U3 `BarStore.last_ts` refuses as a reader (REVIEW-3 should-fix 3; decisions 5, 18, 31; DESIGN §5.2; I-5, I-6). — 9c4023b
-- [x] U4 Indicator module text (REVIEW-3 should-fix 4; decision 32; DESIGN §6.3, §13.4; I-2). — 300be21
-- [x] U5 Final report (`meta/FINAL-REPORT-4.md`). — e740b3b
+- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`.
+- [ ] U1 The store's readers, and callers that look at the index first (REVIEW-4 should-fix 1 and note on U3; decisions 5, 18, 31, 34, 35; DESIGN §5.2, §5.4, §5.6; I-5, I-6).
+- [ ] U2 Rolls and `backtest`: `trusted_from`, roll records, cost labels (REVIEW-3 notes; decisions 23, 24, 27, 36, 37, 38; DESIGN §4.2, §5.6, §7.1, §7.3; I-4).
+- [ ] U3 The independent calculation (DESIGN §18.3 G0.1, §5.6, §6.2, §7, §8, §5.3; decisions 22-26, 29, 30, 36, 37, 39). Own sub-agent, forbidden-files words verbatim.
+- [ ] U4 Gate G0.1: reference strategies against the independent calculation (decisions 23-27, 39).
+- [ ] U5 Gate G0.2: the cheating strategy (DESIGN §18.3 G0.2, §6.2, §7.1, §12.1; I-2; decision 40).
+- [ ] U6 Gates G0.3 and G0.4, and the gate run (`./scripts/gate M0` prints `gate M0: PASS`).
+- [ ] U7 Final report (`meta/FINAL-REPORT-5.md`).
