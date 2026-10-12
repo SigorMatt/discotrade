@@ -1,13 +1,12 @@
 # CHECKPOINT
 
 Mission: 3 (`meta/BUILDER-3-PROMPT.md`), roadmap step S0.3. Base ef2e9f1.
-Done: U0 02b366c, U1 a966344.
+Done: U0 02b366c, U1 a966344, U2 542c171.
 
-Unit in progress: U2 Strategy contract, loader and indicator library.
-Intent: DESIGN §6.1, §6.2 (the result check), §6.3; decisions 21, 22; I-1, I-2, I-10.
-Files: src/discotrade/strategy.py, src/discotrade/indicators.py, tests/test_strategy.py,
-tests/test_indicators.py, tests/fixtures/strategies/.
-Done means: U2's gate in meta/BUILDER-3-PROMPT.md has tests, check green x3, one commit pushed.
+Unit in progress: U3 Evaluation loop and returns.
+Intent: DESIGN §6.2, §7.1, §7.2, §5.6; decisions 22, 23, 24; R-20; I-2, I-12.
+Files: src/discotrade/backtest.py, tests/test_backtest.py.
+Done means: U3's gate in meta/BUILDER-3-PROMPT.md has tests, check green x3, one commit pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12
 wins over DESIGN (items 18-29 new, 1-17 still bind); no value of a frozen
