@@ -29,3 +29,5 @@
 - 2026-10-12 mission 3 U5 done 8cfd390: metrics.py (daily series per decision 23, §8 metrics, NaN-safe comparisons), backtest.daily; 252 and 1e-9 are DESIGN §8 formula constants.
 - 2026-10-12 mission 3 U6 done efb2b93: three reference strategies, backtest command (json, exit codes, spread tables loaded). Acceptance run by orchestrator: check green (2m50s), config check ok, gate M0 FAIL exit 1, gate M0 G0.3 FAIL, config/ unchanged since ef2e9f1, no tests/gates, backtest of each reference file on test_mixed exits 0.
 - 2026-10-12 mission 3 U7 done a3cd937: final report, HF-006 filed; mission finished.
+2026-10-12T02:36:56.798Z  consult 0mv4n0qyw-fyo7 (architect done) on aux.done of aux job 0mv4milga-j5cz: VERDICT: next kit mission-4-kit
+- 2026-10-12 mission 4 U0: plan written, base 9f00d99; REVIEW-3 blocker 1 -> U1, should-fix 1 -> U1, 2 -> U2, 3 -> U3, 4 -> U4.

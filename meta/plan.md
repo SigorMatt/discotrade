@@ -1,19 +1,19 @@
-# PLAN — mission 3 (roadmap step S0.3)
+# PLAN — mission 4 (roadmap step S0.3, repair mission)
 
-Base commit: ef2e9f1 (`plan: mission 3 kit (S0.3, strategy loop, costs, metrics, backtest)`).
-Brief: `meta/BUILDER-3-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-12.md` (items 18-29 new; 1-17 still bind).
-Roadmap step: S0.3 (milestone M0, not closed by this mission; S0.4 / mission 4 closes it, decision 28).
+Base commit: 9f00d99 (`plan: mission 4 kit (S0.3 repair, review-3 blocker and should-fix)`).
+Brief: `meta/BUILDER-4-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-12.md` (items 30-33 new; 1-29 still bind, with item 33's renumbering).
+Roadmap step: S0.3, repair mission. Closes no milestone; M0 is closed by step S0.4, mission 5 (decision 33).
 
-Carried items (taken by U1):
-- REVIEW-2 should-fix 1: the reader does not refuse a month file the index does not list (decision 18).
-- REVIEW-2 should-fix 2: `bars fetch` defaults its gap-check day to UTC `--as-of` minus one, not §16.1's `D` (decision 19).
-- REVIEW-2 note on U5: no socket backstop in `tests/conftest.py` (decision 20).
+Carried items (REVIEW-3):
+- Blocker 1: `sharpe` / `sharpe_2x` finite for a constant daily series (decision 30). — taken by U1
+- Should-fix 1: the `trades` test does not tell a right implementation from a wrong one. — taken by U1
+- Should-fix 2: `backtest` exit 1 paths of decision 27 untested. — taken by U2
+- Should-fix 3: `BarStore.last_ts` does not refuse as the other readers do (decision 31). — taken by U3
+- Should-fix 4: indicator module text untrue of `ema` (decision 32). — taken by U4
 
-- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`. — 02b366c
-- [x] U1 Reader, `bars fetch` default day and socket backstop (REVIEW-2 should-fix 1, 2, note on U5; decisions 3, 5, 18-20; DESIGN §5.2, §5.4, §16.1). — a966344
-- [x] U2 Strategy contract, loader and indicator library (DESIGN §6.1, §6.2 result check, §6.3; decisions 21, 22). — 542c171
-- [x] U3 Evaluation loop and returns (DESIGN §6.2, §7.1, §7.2, §5.6; decisions 22-24; R-20). — 833aa25, ec1c8a4
-- [x] U4 Cost model and executor (DESIGN §7.3, §7.4, §5.7; decisions 24-26; R-3, R-5). — 3c24e5f
-- [x] U5 Metrics (DESIGN §8; decisions 23, 25; R-7). — 8cfd390
-- [x] U6 Reference strategies and the `backtest` command (DESIGN §3, §6.1, §18.3 G0.1; decisions 21, 27). — efb2b93
-- [x] U7 Final report (`meta/FINAL-REPORT-3.md`). — a3cd937
+- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`.
+- [ ] U1 Sharpe at zero deviation, and the `trades` test (REVIEW-3 blocker 1, should-fix 1; decisions 25, 30; DESIGN §8; R-7; I-4).
+- [ ] U2 `backtest` exit 1 paths (REVIEW-3 should-fix 2; decisions 18, 21, 22, 24, 27; DESIGN §3, §6.2).
+- [ ] U3 `BarStore.last_ts` refuses as a reader (REVIEW-3 should-fix 3; decisions 5, 18, 31; DESIGN §5.2; I-5, I-6).
+- [ ] U4 Indicator module text (REVIEW-3 should-fix 4; decision 32; DESIGN §6.3, §13.4; I-2).
+- [ ] U5 Final report (`meta/FINAL-REPORT-4.md`).
