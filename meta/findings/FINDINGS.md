@@ -197,6 +197,38 @@ Status: open
 
 ---
 
+### D-007 — `run-day` refused a weekend trading day of a mixed-calendar track at decision 72's clock
+
+Severity: low (resolved in code, needs confirmation) · Component: DESIGN
+§16.1 step 1, §16.4 with decisions 51 and 72; `_locked` / `_unclosed` in
+`src/discotrade/daily.py` · Found: 2026-10-13, mission 9 U2 (reported by
+its sub-agent; the orchestrator read the diff).
+
+Symptom. `run-day` refused any `D` later than the earliest, across the
+track's instruments, of each instrument's latest closed trading day. On
+`test_mixed` (SYNX trades every day, SYNA on weekdays) the Saturday run at
+its close (2019-06-09 00:00 UTC) was refused because SYNA's latest closed
+day was Friday. Decision 72 requires the replay to run every trading day
+of the track with the clock at the close of that day's last expected bar,
+so the old refusal made decision 72 impossible on a track whose calendars
+differ. The mission 9 brief said U2 leaves the day function "unchanged in
+what it does".
+
+Resolution taken (U2, 15754e9). The refusal now asks that no instrument
+has an expected bar of a trading day on or before `D` that has not closed
+by its source's `available_until`. On a track whose instruments share one
+calendar it refuses exactly the days the old check refused (the existing
+tests of the day are unchanged and green); `tests/test_replay.py` shows
+`run-day` taking test_mixed's Saturday at its close and refusing a day
+whose SYNX bar has not closed.
+
+Direction (for the architect). Confirm that decision 72 overrides the
+brief's "unchanged" here, or name the refusal rule the day should use.
+
+Status: open
+
+---
+
 ## hands findings
 
 ### HF-001 — after an autonomous apply, the engine sends the kickoff of the playbook it loaded before the apply

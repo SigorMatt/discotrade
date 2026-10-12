@@ -76,3 +76,4 @@
 2026-10-12T20:38:03.013Z  consult 0mv5pgkii-7e5h (architect done) on aux.done of aux job 0mv5o795f-paiq: VERDICT: next kit mission-9-kit
 - 2026-10-12 mission 9 U0: plan written (base 974b700, S1.3, closes M1); carried REVIEW-8 should-fix 1, 2 (U1) and BACKLOG performance items (U3).
 - 2026-10-13 mission 9 U1 done 94e1294: revival counts trading days (test only, src unchanged, no finding); scratch network test calls only decision-67 lookups, gethostbyaddr identity held and refused after (conftest restores the five lookups for network/live tests); 68 (b) via run_steps; 2 wrong changes seen red; check green 3/3.
+- 2026-10-13 mission 9 U2 done 15754e9: replay.py + cli replay; daily.py refusal (_unclosed) changed so a mixed-calendar track's weekend day runs at decision 72's clock — finding D-007 filed; 21 tests; 2 wrong changes seen red; check green 3/3.
