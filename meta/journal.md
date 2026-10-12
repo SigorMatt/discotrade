@@ -33,3 +33,4 @@
 - 2026-10-12 mission 4 U0: plan written, base 9f00d99; REVIEW-3 blocker 1 -> U1, should-fix 1 -> U1, 2 -> U2, 3 -> U3, 4 -> U4.
 - 2026-10-12 mission 4 U1 done 836c2ab: sharpe NaN at zero deviation (decision 30), trades test fails for both wrong changes.
 - 2026-10-12 mission 4 U2 done 6445223: six backtest exit-1 tests via cli.REFERENCE_ROOT seam; each seen to fail against a wrong exit code.
+- 2026-10-12 mission 4 U3 done 9c4023b: last_ts refuses as a reader (decision 31); _indexed_last_ts for writer and bars fetch; public-method classification test.
