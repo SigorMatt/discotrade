@@ -27,6 +27,10 @@ from discotrade.clock import Clock, FixedClock, SystemClock
 #: The code repository: src/discotrade/cli.py -> the repository root.
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
+#: The directory whose strategy files ``backtest`` runs (decision 2026-10-12 21).
+#: Tests point it at a temporary directory in-process; nothing else changes it.
+REFERENCE_ROOT = REPO_ROOT / "reference"
+
 STATE_ENV = "DISCOTRADE_STATE"
 DEFAULT_TRACK = "hourly"
 
@@ -593,7 +597,7 @@ def _backtest(ctx: Context, args: argparse.Namespace) -> int:
         return 2
 
     # Usage errors first (decision 27): a file outside reference/, --from after --to.
-    reference = REPO_ROOT / "reference"
+    reference = REFERENCE_ROOT
     path = Path(args.file).expanduser().resolve()
     if not _inside(path, reference) or path == reference:
         return usage(f"{args.file} does not lie under {reference}; only the repository's "

@@ -207,3 +207,114 @@ def test_plain_output_prints_no_gross_figure_without_the_net_ones(state, config,
     for key in ("sharpe_2x", "total_return_2x", "max_drawdown", "avg_holding_bars",
                 "fragile", "trades"):
         assert key in out, key
+
+
+# --- exit 1 paths (decisions 2026-10-12 18, 21, 22, 24, 27; REVIEW-3 should-fix 2) ---
+#
+# Strategy texts for these tests are written into a temporary directory that
+# ``cli.REFERENCE_ROOT`` is pointed at in-process (monkeypatch), so nothing is
+# written into the repository's working tree.
+
+ON_FIRST_WEDNESDAY_TEN = (
+    'bars["weekday"].iloc[-1] == 2 and bars["hour"].iloc[-1] == 10'
+)
+
+
+@pytest.fixture
+def reference(tmp_path, monkeypatch):
+    """A temporary reference root that ``backtest`` accepts files from."""
+    import discotrade.cli as cli
+
+    root = tmp_path / "reference"
+    root.mkdir()
+    monkeypatch.setattr(cli, "REFERENCE_ROOT", root)
+    return root
+
+
+def _strategy(root, name, body, params='{"n": 1}'):
+    path = root / name
+    path.write_text(f"PARAMS = {params}\n\n\ndef position(bars, params):\n{body}",
+                    encoding="utf-8")
+    return path
+
+
+def _first_wednesday_ten(state, config):
+    """The ``ts`` of the first window bar of the track's first instrument whose
+    open is a Wednesday at 10:00 in its calendar's time zone."""
+    cfg = load_track_config(config, TRACK)
+    inst = cfg.instruments[0]
+    cal = load_calendar(config / "calendars" / f"{inst.calendar}.toml")
+    bars = BarStore(state, TRACK, 3600).read_range(
+        inst.symbol, pd.Timestamp(FIRST, tz="UTC"), pd.Timestamp(LAST, tz="UTC"))
+    local = bars["ts"].dt.tz_convert(cal.tz)
+    hit = bars["ts"][(local.dt.weekday == 2) & (local.dt.hour == 10)]
+    return inst.symbol, hit.iloc[0]
+
+
+@pytest.mark.parametrize("roll_ts", ["2019-06-14T00:00:00+00:00",   # inside the window
+                                     "2019-03-14T00:00:00+00:00"])  # in its context
+def test_a_missing_roll_record_exits_1(roll_ts, tmp_path, config, state, capsys):
+    copy = tmp_path / "state"
+    shutil.copytree(state, copy)
+    rolls = copy / "rolls" / TRACK / "SYNA.jsonl"
+    lines = rolls.read_text(encoding="utf-8").splitlines(keepends=True)
+    kept = [line for line in lines if json.loads(line)["ts"] != roll_ts]
+    assert len(kept) == len(lines) - 1
+    rolls.write_text("".join(kept), encoding="utf-8")
+    capsys.readouterr()
+    assert backtest(copy, config, REPO_ROOT / "reference" / "trend_ma.py") == 1
+    err = capsys.readouterr().err
+    assert "SYNA" in err and "no record of that roll" in err and "bars fetch" in err
+    assert pd.Timestamp(roll_ts).isoformat() in err
+
+
+def test_a_result_outside_the_contract_exits_1(reference, state, config, capsys):
+    path = _strategy(reference, "two.py",
+                     f"    if {ON_FIRST_WEDNESDAY_TEN}:\n        return 2.0\n    return 0.0\n")
+    symbol, ts = _first_wednesday_ten(state, config)
+    capsys.readouterr()
+    assert backtest(state, config, path) == 1
+    err = capsys.readouterr().err
+    assert f"position on {symbol} at bar ts {ts}" in err
+    assert "2.0" in err and "outside [-1, 1]" in err
+
+
+def test_a_strategy_that_raises_exits_1(reference, state, config, capsys):
+    path = _strategy(reference, "raises.py",
+                     f"    if {ON_FIRST_WEDNESDAY_TEN}:\n"
+                     f"        raise RuntimeError('no position here')\n    return 0.0\n")
+    symbol, ts = _first_wednesday_ten(state, config)
+    capsys.readouterr()
+    assert backtest(state, config, path) == 1
+    err = capsys.readouterr().err
+    assert f"position on {symbol} at bar ts {ts}" in err
+    assert "RuntimeError" in err and "no position here" in err
+
+
+def test_a_strategy_text_the_loader_refuses_exits_1(reference, state, config, capsys):
+    # Six parameters, one above validation.max_params; decision 21 gives no exit
+    # code, and 1 (decision 27's failure) is kept.
+    six = '{"a": 1, "b": 2, "c": 3, "d": 4, "e": 5, "f": 6}'
+    path = _strategy(reference, "six.py", "    return 0.0\n", params=six)
+    assert load_thresholds(config / "thresholds.toml")["validation.max_params"] < 6
+    capsys.readouterr()
+    assert backtest(state, config, path) == 1
+    err = capsys.readouterr().err
+    assert "max_params" in err and "6 parameters" in err
+
+
+def test_an_unlisted_month_file_exits_1(tmp_path, config, state, capsys):
+    # A month file after the window that the index does not list is refused
+    # whatever range the read asks for (decision 18).
+    copy = tmp_path / "state"
+    shutil.copytree(state, copy)
+    store = BarStore(copy, TRACK, 3600)
+    last = pd.read_parquet(store.month_path("SYNX", "2019-07")).tail(1).reset_index(drop=True)
+    last["ts"] = last["ts"] + pd.Timedelta(days=31)
+    month = last["ts"].iloc[0].strftime("%Y-%m")
+    assert month not in store.index()["SYNX"]["months"]
+    last.to_parquet(store.month_path("SYNX", month), index=False)
+    capsys.readouterr()
+    assert backtest(copy, config, REPO_ROOT / "reference" / "trend_ma.py") == 1
+    err = capsys.readouterr().err
+    assert "SYNX" in err and month in err and "not listed in the index" in err
