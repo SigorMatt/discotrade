@@ -1,6 +1,37 @@
-"""The state directory (DESIGN 9.1, 9.2, 15.2). For now: the content hash and
-the health event value of DESIGN 15.2 (the health log that stores it is a
-later step's).
+"""The state directory (DESIGN 9.1, 9.2, 15.2, 16.2; decisions 50, 52, 55 of
+meta/decisions/decisions-2026-10-12.md; I-5, I-12, I-14).
+
+The API, for the units that build on it:
+
+- ``init_state(path, clock)`` makes ``path`` a state directory: a Git
+  repository whose one committed file is ``.gitignore`` (``GITIGNORE``:
+  the bar Parquet files, the staging directory ``STAGING`` and the lock
+  ``LOCK``). On a state directory it changes nothing; on anything else
+  that exists and is not an empty directory it raises ``StateError``.
+- ``is_state_directory(path)`` / ``require_state_directory(path)``: a state
+  directory is one ``init_state`` made, which is read, where the design is
+  silent, as: ``.git/`` exists, ``.gitignore`` is exactly ``GITIGNORE``, and
+  ``HEAD`` names a commit.
+- ``lock(path)``: a context manager that creates ``path/LOCK`` exclusively
+  (``O_CREAT | O_EXCL``), raises ``StateError`` naming it when it is held,
+  and removes it on leaving, success or failure.
+- ``commit(path, track, day, clock)``: stages every change (``.gitignore``
+  keeps out what it lists) and commits it as ``run <track> <day>`` with the
+  author and committer ``discotrade <discotrade@invalid>`` and both dates the
+  clock's instant, returning the commit's sha; with nothing changed it makes
+  no commit and returns None.
+- ``append_health(path, track, events)``: appends each event's
+  ``to_json()`` line to ``health/<track>.jsonl`` atomically (decision 4's
+  way: the whole file written beside the old one, every earlier line
+  byte-identical, ``fsync``-ed and renamed), skipping a line already in the
+  log or earlier in the same call; returns the events appended.
+
+Git runs with ``git_environment()``: ``GIT_ALLOW_PROTOCOL=file`` (decision
+50), no global or system configuration (so that no hook, signing or
+identity of the machine's user changes a state commit; the design is
+silent, this is the simplest reading of I-12 and of a fixed author), and the
+author, committer and dates set explicitly. Git records whole seconds: a
+commit date is the clock's instant with its fraction of a second dropped.
 
 The content hash of a table (DESIGN 9.2) is the sha256 of its rows, sorted
 by the key columns, written as text with every float in ``%.17g``. The text
@@ -17,13 +48,20 @@ from __future__ import annotations
 
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+import math
+import os
+import subprocess
+from collections.abc import Iterable, Iterator, Mapping, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date
+from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+
+from discotrade.clock import Clock
 
 
 def _field(value: Any) -> str:
@@ -96,3 +134,160 @@ class HealthEvent:
              "subject": self.subject, "detail": dict(self.detail)},
             sort_keys=True,
         )
+
+
+# --- the state directory (DESIGN 9.1, 16.2; decision 50) ---------------------------------
+
+#: The staging directory of a day (DESIGN 16.2), relative to the state directory.
+STAGING = "staging"
+#: The run lock (DESIGN 16.2), relative to the state directory.
+LOCK = "lock"
+#: The ``.gitignore`` that ``init_state`` writes (decision 50).
+GITIGNORE = (
+    "# discotrade state directory (DESIGN 9.1, decision 50)\n"
+    "bars/**/*.parquet\n"
+    f"/{STAGING}/\n"
+    f"/{LOCK}\n"
+)
+AUTHOR_NAME = "discotrade"
+AUTHOR_EMAIL = "discotrade@invalid"
+#: The message of the commit ``init_state`` makes (the design is silent).
+INIT_MESSAGE = "init-state"
+
+
+class StateError(Exception):
+    """A state directory that cannot be used as asked; the command exits 1."""
+
+
+def git_environment(clock: Clock | None = None) -> dict[str, str]:
+    """The environment git runs in: the file protocol only, no global or system
+    configuration, the discotrade identity, and with ``clock`` both dates."""
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+    env.update({
+        "GIT_ALLOW_PROTOCOL": "file",
+        "GIT_CONFIG_GLOBAL": os.devnull,
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_AUTHOR_NAME": AUTHOR_NAME,
+        "GIT_AUTHOR_EMAIL": AUTHOR_EMAIL,
+        "GIT_COMMITTER_NAME": AUTHOR_NAME,
+        "GIT_COMMITTER_EMAIL": AUTHOR_EMAIL,
+    })
+    if clock is not None:
+        stamp = f"@{math.floor(clock.now().timestamp())} +0000"
+        env["GIT_AUTHOR_DATE"] = stamp
+        env["GIT_COMMITTER_DATE"] = stamp
+    return env
+
+
+def _git(path: Path, *args: str, clock: Clock | None = None,
+         check: bool = True) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(
+        ["git", "-C", str(path), *args], env=git_environment(clock),
+        capture_output=True, text=True, check=False,
+    )
+    if check and result.returncode != 0:
+        raise StateError(f"git {' '.join(args)} in {path} failed: {result.stderr.strip()}")
+    return result
+
+
+def is_state_directory(path: Path) -> bool:
+    """True when ``path`` is a state directory ``init_state`` made."""
+    path = Path(path)
+    gitignore = path / ".gitignore"
+    if not (path / ".git").is_dir() or not gitignore.is_file():
+        return False
+    if gitignore.read_bytes() != GITIGNORE.encode("utf-8"):
+        return False
+    return _git(path, "rev-parse", "--verify", "-q", "HEAD^{commit}", check=False).returncode == 0
+
+
+def require_state_directory(path: Path) -> None:
+    """Raise ``StateError`` unless ``path`` is a state directory (decision 50)."""
+    if not is_state_directory(path):
+        raise StateError(f"{path} is not a state directory; create one with "
+                         "`discotrade init-state --state <dir>`")
+
+
+def init_state(path: Path, clock: Clock) -> bool:
+    """Make ``path`` a state directory and commit its ``.gitignore`` with the
+    clock's instant. Returns True when it created one, False when ``path``
+    already was one (nothing is changed). Raises ``StateError`` for a path
+    that exists and is neither a state directory nor an empty directory."""
+    path = Path(path)
+    if path.exists():
+        if is_state_directory(path):
+            return False
+        if not path.is_dir() or any(path.iterdir()):
+            raise StateError(f"{path} is not empty and is not a state directory")
+    path.mkdir(parents=True, exist_ok=True)
+    _git(path, "init", "-q", "-b", "main")
+    (path / ".gitignore").write_text(GITIGNORE, encoding="utf-8")
+    _git(path, "add", ".gitignore")
+    _git(path, "commit", "-q", "-m", INIT_MESSAGE, clock=clock)
+    return True
+
+
+@contextmanager
+def lock(path: Path) -> Iterator[Path]:
+    """Hold the run lock of the state directory ``path`` (DESIGN 16.2).
+
+    The lock file is created exclusively; a lock that is already held raises
+    ``StateError`` naming it and leaves it in place. The lock is removed on
+    leaving the block, whether the block succeeded or raised."""
+    target = Path(path) / LOCK
+    try:
+        fd = os.open(target, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o644)
+    except FileExistsError:
+        raise StateError(f"the state directory is locked: {target} exists (another run "
+                         "holds it, or a run died; remove it once no run is going)") from None
+    os.close(fd)
+    try:
+        yield target
+    finally:
+        target.unlink(missing_ok=True)
+
+
+def commit(path: Path, track: str, day: date, clock: Clock) -> str | None:
+    """Commit every change in the state directory as ``run <track> <day>``
+    with both dates the clock's instant; None, and no commit, when nothing
+    changed."""
+    path = Path(path)
+    _git(path, "add", "--all")
+    if _git(path, "diff", "--cached", "--quiet", check=False).returncode == 0:
+        return None
+    _git(path, "commit", "-q", "-m", f"run {track} {day.isoformat()}", clock=clock)
+    return _git(path, "rev-parse", "HEAD").stdout.strip()
+
+
+# --- the health log (DESIGN 15.2; decisions 4, 52) ---------------------------------------
+
+def health_path(path: Path, track: str) -> Path:
+    """``health/<track>.jsonl`` under the state directory ``path``."""
+    return Path(path) / "health" / f"{track}.jsonl"
+
+
+def append_health(path: Path, track: str, events: Iterable[HealthEvent]) -> list[HealthEvent]:
+    """Append each event's ``to_json()`` line that the log does not already
+    hold; return the events appended, in order. Nothing to append writes
+    nothing. A log whose last line has no newline is refused."""
+    from discotrade.bars.store import write_atomic  # bars.store imports this module
+
+    log = health_path(path, track)
+    old = log.read_bytes() if log.exists() else b""
+    if old and not old.endswith(b"\n"):
+        raise StateError(f"{log} does not end with a newline; its last line is torn")
+    present = set(old.decode("utf-8").splitlines())
+    appended: list[HealthEvent] = []
+    lines: list[str] = []
+    for item in events:
+        line = item.to_json()
+        if line in present:
+            continue
+        present.add(line)
+        appended.append(item)
+        lines.append(line + "\n")
+    if lines:
+        data = old + "".join(lines).encode("utf-8")
+        write_atomic(log, lambda p: p.write_bytes(data))
+    return appended

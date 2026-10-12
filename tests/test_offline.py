@@ -173,11 +173,13 @@ def test_a_test_marked_network_is_left_alone(tmp_path):
 #: paths with GIT_ALLOW_PROTOCOL=file, or a Python program of this repository
 #: that opens no connection.
 SUBPROCESS_FILES = {
+    "src/discotrade/state.py": "git on the local state directory, GIT_ALLOW_PROTOCOL=file",
     "tests/test_cli.py": "the discotrade command; a scratch pytest run of tests/conftest.py",
     "tests/test_config_check.py": "the discotrade command",
     "tests/test_costs.py": "a python -c snippet the test writes",
     "tests/test_gate_script.py": "./scripts/gate; scratch pytest runs of tests/conftest.py",
     "tests/test_offline.py": "a scratch pytest run of tests/conftest.py",
+    "tests/test_state.py": "git on a local state directory, GIT_ALLOW_PROTOCOL=file",
     "tests/test_vendor.py": "python -c snippets the test writes",
 }
 
@@ -209,7 +211,7 @@ def check_listed(root: Path) -> None:
 def test_every_file_that_launches_a_subprocess_is_listed():
     check_listed(REPO)
     # And the list names no file that no longer launches one.
-    assert sorted(SUBPROCESS_FILES) == subprocess_files(REPO)
+    assert sorted(SUBPROCESS_FILES) == sorted(subprocess_files(REPO))
 
 
 @pytest.mark.parametrize("name, text", [

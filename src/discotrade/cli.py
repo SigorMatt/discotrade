@@ -487,6 +487,38 @@ def _add_doctor(subparsers: argparse._SubParsersAction, common: argparse.Argumen
 SUBCOMMANDS.append(_add_doctor)
 
 
+def _init_state(ctx: Context, args: argparse.Namespace) -> int:
+    from discotrade.state import StateError, init_state
+
+    if ctx.state is None:
+        print(f"discotrade init-state: give --state <dir> or set {STATE_ENV}", file=sys.stderr)
+        return 2
+    try:
+        created = init_state(ctx.state, ctx.clock)
+    except StateError as exc:
+        print(f"discotrade init-state: {exc}", file=sys.stderr)
+        return 1
+    if created:
+        print(f"init-state: created the state directory {ctx.state}")
+    else:
+        print(f"init-state: {ctx.state} is already a state directory; nothing changed")
+    return 0
+
+
+def _add_init_state(subparsers: argparse._SubParsersAction,
+                    common: argparse.ArgumentParser) -> None:
+    init = subparsers.add_parser(
+        "init-state", parents=[common],
+        help="create the state directory (DESIGN 9.1): a Git repository with its .gitignore, "
+        "committed at the --as-of instant; on a state directory it changes nothing; "
+        "--track and --config are accepted and not used (decision 2026-10-12 50)",
+    )
+    init.set_defaults(handler=_init_state)
+
+
+SUBCOMMANDS.append(_add_init_state)
+
+
 #: The cost components, in the order they are reported (DESIGN 7.3).
 _COSTS = ("fee", "spread", "slippage", "roll")
 

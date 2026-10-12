@@ -319,3 +319,29 @@ def test_the_backstop_fails_an_unmarked_test_and_leaves_network_and_live_alone(t
                  "test_unix_socket_is_not_a_network_connection"):
         assert f"PASSED test_inner.py::{name}" in out
     assert "1 failed, 3 passed" in out
+
+
+# --- init-state (DESIGN 3, 9.1; decision 50) ------------------------------------------------
+
+def test_init_state_help_exits_0(capsys):
+    with pytest.raises(SystemExit) as exc:
+        main(["init-state", "--help"])
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    for option in ("--state", "--track", "--config", "--as-of"):
+        assert option in out
+
+
+def test_init_state_help_from_the_console_script(tmp_path):
+    proc = subprocess.run(
+        [str(DISCOTRADE), "init-state", "--help"], capture_output=True, text=True,
+        cwd=tmp_path, timeout=60,
+    )
+    assert proc.returncode == 0
+    assert "init-state" in proc.stdout
+
+
+def test_init_state_is_listed_in_help(capsys):
+    with pytest.raises(SystemExit):
+        main(["--help"])
+    assert "init-state" in capsys.readouterr().out
