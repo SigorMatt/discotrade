@@ -51,7 +51,7 @@ read (I-12).
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, time, timedelta
 from pathlib import Path
@@ -60,7 +60,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from discotrade import costs
+from discotrade import costs, metrics
 from discotrade.bars.store import BarStore
 from discotrade.config import Calendar, DateRange, Instrument, SpreadTable, Track
 from discotrade.executor import Market, Order, SimExecutor
@@ -243,3 +243,10 @@ def evaluate(state_dir: Path, track: Track, instrument: Instrument, calendar: Ca
     rows["net_1x"] = [costs.net(g, f.cost, 1) for g, f in zip(gross, fills, strict=True)]
     rows["net_2x"] = [costs.net(g, f.cost, 2) for g, f in zip(gross, fills, strict=True)]
     return Evaluation(symbol, rows[list(ROW_COLUMNS)], bars, first, gaps, rolled)
+
+
+def daily(evaluations: Sequence[Evaluation]) -> pd.DataFrame:
+    """The daily net series of a subject whose instruments gave ``evaluations``,
+    one each, an instrument with no window bar included (DESIGN 8; decision
+    23): see :func:`discotrade.metrics.daily_series`."""
+    return metrics.daily_series([metrics.leg(e) for e in evaluations])
