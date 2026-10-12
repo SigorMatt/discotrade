@@ -60,3 +60,4 @@
 - 2026-10-12 mission 6 U6 done: final report meta/FINAL-REPORT-6.md; gate M0 PASS at 65718c5; no product change, no mismatch; D-004/D-005 answered, D-006 deferred S2.1; mission finished.
 2026-10-12T14:11:30.001Z  consult 0mv5bq5op-0o73 (architect done) on aux.done of aux job 0mv5ajqi9-pzef: VERDICT: next kit mission-7-kit
 - 2026-10-12 mission 7 U0: plan.md, CHECKPOINT.md, HF-007 (REVIEW-6 hands note: protocol step 2 vacuous on tests-only commits; check run once) filed; base c73a695.
+- 2026-10-12 mission 7 U1 done de2a5b2: socket block from session start (all fixture scopes, _socket connect/connect_ex/sendto/getaddrinfo), network/live tests let through (scratch session), subprocess/os.system listing test (6 files); function-scope and unguarded-_socket changes seen red; check green 3/3 (951 passed).

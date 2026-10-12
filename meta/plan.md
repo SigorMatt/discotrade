@@ -9,8 +9,8 @@ Carried items:
 - REVIEW-6 should-fix 1: FINAL-REPORT-6 describes the probe test as asserting more than it does (decision 56). — taken by U6
 - REVIEW-6 `hands:` note (protocol step 2 vacuous on tests-only commits; check run once). — recorded as HF-007 by U0
 
-- [ ] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, HF-007 in `meta/findings/FINDINGS.md`.
-- [ ] U1 The socket backstop outside function-scoped tests (REVIEW-3 note; decisions 20, 47; I-11; DESIGN §18.1).
+- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, HF-007 in `meta/findings/FINDINGS.md`. — 057f9d2
+- [x] U1 The socket backstop outside function-scoped tests (REVIEW-3 note; decisions 20, 47; I-11; DESIGN §18.1). — de2a5b2
 - [ ] U2 The state directory, the lock, the state commit and the health log (decisions 7, 50, 52, 55; DESIGN §3, §9.1, §15.2, §16.2).
 - [ ] U3 Approaches and the decision journal (decisions 24, 25, 39, 48, 49, 51; DESIGN §6.2, §7, §9.1, §9.2).
 - [ ] U4 `run-day` and the paper records (decisions 2, 3, 19, 50-53, 55; DESIGN §9.3, §15.2, §16.1 steps 1-2, §16.2).
