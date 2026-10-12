@@ -50,3 +50,5 @@
 - 2026-10-12 mission 5 U4 done 2881ee0: G0.1 reference gate (22 tests) passes all three strategies incl. max_drawdown; wrong changes ddof, roll gap, full-tick floor, drawdown-no-leading-0 fail; D-005's two pass as recorded; no mismatch left.
 - 2026-10-12 mission 5 U6 gate run at 62edb14: check green x3 (~6 min each); gate M0: PASS (G0.1 41/52.9s, G0.2 7/117s, G0.3 13/170s, G0.4 4/0.2s), 343s.
 - 2026-10-12 mission 5 U7 done dd55021: final report; gate M0 PASS at 62edb14; findings D-004 (answered, to be decision 41), D-005, D-006 open; mission finished.
+2026-10-12T11:34:50.342Z  consult 0mv5682vn-26un (architect done) on aux.done of aux job 0mv53wp8e-r6ez: VERDICT: next kit mission-6-kit
+- 2026-10-12 mission 6 U0 plan: base 19196da, units U1-U6, carried REVIEW-5 blocker 1 (U1), should-fix 1/D-005 (U2, U3), D-004 note (answered, decision 41), test_gate_script note (U4); D-004..D-006 status lines appended.

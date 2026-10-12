@@ -353,3 +353,9 @@ What this project does meanwhile: nothing in product code. The mission 4
 brief may name the timeout.
 
 Status: open
+
+D-004 status (appended 2026-10-12, mission 6 U0): Status: answered meta/decisions/decisions-2026-10-12.md (item 41)
+
+D-005 status (appended 2026-10-12, mission 6 U0): Status: answered meta/decisions/decisions-2026-10-12.md (item 43)
+
+D-006 status (appended 2026-10-12, mission 6 U0): Status: deferred S2.1 (meta/decisions/decisions-2026-10-12.md item 44)
