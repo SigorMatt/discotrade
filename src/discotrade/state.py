@@ -26,6 +26,21 @@ The API, for the units that build on it:
   byte-identical, ``fsync``-ed and renamed), skipping a line already in the
   log or earlier in the same call; returns the events appended.
 
+- ``approach_id(source, params)``, ``write_approach(path, ...)`` and
+  ``read_approaches(path)``: the approaches the state holds (DESIGN 9.1;
+  decision 48), ``approaches/<id>/strategy.py`` and ``meta.json``. The id
+  is ``a`` and the first 12 hex digits of the sha256 of the UTF-8 source
+  text, a newline and the canonical JSON (keys sorted, no whitespace) of the
+  fixed parameters. ``meta.json`` (``META_FIELDS``) is that canonical JSON
+  of the fields DESIGN 9.1 lists, with a newline: ``id``, ``cell``,
+  ``model_id``, ``model_version``, ``cutoff`` (the model's cutoff date as
+  used), ``description``, ``params``, ``code_sha256`` (of the UTF-8 source),
+  ``profile_version``, ``cost_model`` and ``config_hash`` (decision 26,
+  computed from the instruments and spread tables given) and ``admitted``;
+  dates are ISO. Writing an approach that is already there with the same
+  two files changes nothing; with other files it raises ``StateError``
+  naming it (a recorded approach is never rewritten, I-5).
+
 Git runs with ``git_environment()``: ``GIT_ALLOW_PROTOCOL=file`` (decision
 50), no global or system configuration (so that no hook, signing or
 identity of the machine's user changes a state commit; the design is
@@ -291,3 +306,100 @@ def append_health(path: Path, track: str, events: Iterable[HealthEvent]) -> list
         data = old + "".join(lines).encode("utf-8")
         write_atomic(log, lambda p: p.write_bytes(data))
     return appended
+
+
+# --- approaches (DESIGN 9.1; decision 48) ------------------------------------------------
+
+APPROACHES = "approaches"
+SOURCE_FILE = "strategy.py"
+META_FILE = "meta.json"
+META_FIELDS = ("admitted", "cell", "code_sha256", "config_hash", "cost_model", "cutoff",
+               "description", "id", "model_id", "model_version", "params",
+               "profile_version")
+
+
+def canonical_json(value: Any) -> str:
+    """JSON with keys sorted and no whitespace; a value that is not finite is refused."""
+    return json.dumps(value, sort_keys=True, separators=(",", ":"), allow_nan=False)
+
+
+def approach_id(source: str, params: Mapping[str, Any]) -> str:
+    """``a`` and the first 12 hex digits of the sha256 of the UTF-8 ``source``, a
+    newline and the canonical JSON of ``params`` (decision 48)."""
+    text = source + "\n" + canonical_json(dict(params))
+    return "a" + hashlib.sha256(text.encode("utf-8")).hexdigest()[:12]
+
+
+@dataclass(frozen=True)
+class Approach:
+    """An approach the state holds: its id, frozen source, fixed parameters,
+    admission date and the whole ``meta.json``."""
+
+    id: str
+    source: str
+    params: Mapping[str, Any]
+    admitted: date
+    meta: Mapping[str, Any]
+
+
+def approach_dir(path: Path, aid: str) -> Path:
+    return Path(path) / APPROACHES / aid
+
+
+def write_approach(path: Path, *, source: str, params: Mapping[str, Any], cell: str,
+                   model_id: str, model_version: str, cutoff: date, description: str,
+                   profile_version: str, admitted: date, instruments: Iterable[Any],
+                   spread_tables: Mapping[str, Any]) -> str:
+    """Write ``approaches/<id>/strategy.py`` and ``meta.json`` under the state
+    directory ``path`` and return the id (decision 48). ``instruments`` and
+    ``spread_tables`` are the track's, for the cost config hash (decision 26)."""
+    from discotrade import costs  # costs reads config, which this module need not load
+    from discotrade.bars.store import write_atomic
+
+    aid = approach_id(source, params)
+    meta = {
+        "id": aid, "cell": cell, "model_id": model_id, "model_version": model_version,
+        "cutoff": cutoff.isoformat(), "description": description, "params": dict(params),
+        "code_sha256": hashlib.sha256(source.encode("utf-8")).hexdigest(),
+        "profile_version": profile_version, "cost_model": costs.VERSION,
+        "config_hash": costs.config_hash(instruments, spread_tables),
+        "admitted": admitted.isoformat(),
+    }
+    files = {SOURCE_FILE: source.encode("utf-8"),
+             META_FILE: (canonical_json(meta) + "\n").encode("utf-8")}
+    where = approach_dir(path, aid)
+    if where.exists():
+        held = {name: (where / name).read_bytes() if (where / name).is_file() else None
+                for name in files}
+        if held == files:
+            return aid
+        raise StateError(f"approach {aid} is already in {where} with other files; a "
+                         "recorded approach is never rewritten")
+    for name, data in files.items():
+        write_atomic(where / name, lambda p, data=data: p.write_bytes(data))
+    return aid
+
+
+def read_approaches(path: Path) -> list[Approach]:
+    """Every approach under ``approaches/`` of the state directory ``path``, by id.
+    An approach whose files do not give back its id is refused (``StateError``)."""
+    root = Path(path) / APPROACHES
+    if not root.is_dir():
+        return []
+    out = []
+    for where in sorted(p for p in root.iterdir() if p.is_dir()):
+        try:
+            source = (where / SOURCE_FILE).read_bytes().decode("utf-8")
+            meta = json.loads((where / META_FILE).read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            raise StateError(f"approach {where.name}: cannot read it: {exc}") from exc
+        if not isinstance(meta, dict) or set(meta) != set(META_FIELDS):
+            raise StateError(f"approach {where.name}: {where / META_FILE} does not hold "
+                             f"exactly the fields {list(META_FIELDS)}")
+        aid = approach_id(source, meta["params"])
+        if aid != where.name or meta["id"] != aid:
+            raise StateError(f"approach {where.name}: its source and parameters give the "
+                             f"id {aid}")
+        out.append(Approach(aid, source, meta["params"], date.fromisoformat(meta["admitted"]),
+                            meta))
+    return out

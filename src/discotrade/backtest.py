@@ -174,11 +174,19 @@ def _empty_rows() -> pd.DataFrame:
 def evaluate(state_dir: Path, track: Track, instrument: Instrument, calendar: Calendar,
              strategy: Strategy, window: DateRange,
              params: Mapping[str, Any] | None = None,
-             spread_table: SpreadTable | None = None) -> Evaluation:
+             spread_table: SpreadTable | None = None,
+             start: tuple[float, float] | None = None) -> Evaluation:
     """Walk ``window`` of ``instrument`` with ``strategy`` (``params``: its own
     ``PARAMS`` by default) and return the targets, positions, gross returns and
     costs; ``spread_table`` is the instrument's measured table (DESIGN 5.7), or
-    None when it has none."""
+    None when it has none.
+
+    ``start`` is None for a window scored on its own: ``h(u0) = 0`` (R-20).
+    The continuous record (DESIGN 9.2; decision 49) gives instead the
+    previous row's ``(position, target_next)``, that is ``(h(u0-1), p(u0-1))``:
+    then ``h(u0)`` is that target and ``gross(u0)``, ``trade(u0)`` and the
+    roll cost at ``u0`` are those of DESIGN 7.2 and 7.3 with ``h(u0-1)``, the
+    previous stored bar being read from the store (decision 24)."""
     symbol = instrument.symbol
     params = strategy.params if params is None else params
     store = BarStore(Path(state_dir), track.name, track.bar_seconds)
@@ -222,13 +230,21 @@ def evaluate(state_dir: Path, track: Track, instrument: Instrument, calendar: Ca
     held = np.zeros_like(targets)
     held[1:] = targets[:-1]
     before = np.zeros_like(targets)
+    if start is not None:
+        if first == 0:
+            raise EvaluationError(
+                f"{symbol}: no stored bar before {stamps[0].isoformat()} to carry the "
+                f"position from")
+        before[0], held[0] = float(start[0]), float(start[1])
     before[1:] = held[:-1]
     o, c = prices["open"][first:], prices["close"][first:]
     prev_close = np.empty_like(o)
-    prev_close[0] = o[0]           # unused: h(u0-1) = 0 (decision 24)
+    # Unused when h(u0-1) = 0 (decision 24); at row 0 there is no previous bar read.
+    prev_close[0] = o[0] if first == 0 else prices["close"][first - 1] + gaps[first]
     prev_close[1:] = prices["close"][first:-1] + gaps[first + 1:]
     gross = (before * (o - prev_close) + held * (c - o)) / o
-    gross[0] = 0.0
+    if start is None:
+        gross[0] = 0.0
     rows = pd.DataFrame({
         "ts": inside["ts"],
         "contract": inside["contract"].to_numpy(),
