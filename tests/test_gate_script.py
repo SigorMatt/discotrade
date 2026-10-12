@@ -20,13 +20,14 @@ def run_gate(*args, cwd=REPO):
     )
 
 
-def test_m0_without_gate_tests_fails():
-    assert not list((REPO / "tests" / "gates").glob("test_g0_*.py"))
-    proc = run_gate("M0")
+def test_milestone_without_gate_tests_fails():
+    # M1 has no gate test yet (M0 gained its first one in mission 5, U3).
+    assert not list((REPO / "tests" / "gates").glob("test_g1_*.py"))
+    proc = run_gate("M1")
     assert proc.returncode != 0
     lines = proc.stdout.splitlines()
-    assert lines[-1] == "gate M0: FAIL"
-    for item in ("G0.1", "G0.2", "G0.3", "G0.4"):
+    assert lines[-1] == "gate M1: FAIL"
+    for item in ("G1.1", "G1.2", "G1.3", "G1.4"):
         assert any(line.startswith(f"{item} FAIL") for line in lines), item
 
 
