@@ -233,3 +233,27 @@ applied. Neither is the laptop's own check against the real config, which
 the human runs before sending the kit.
 
 Status: open
+
+### HF-006 — long foreground `./scripts/check` runs were moved to the background by the harness
+
+Severity: low · Component: the agent harness's command runner and
+`.claude/hooks/no_background.py` (CLAUDE.md "Never run a background
+task") · Found: 2026-10-12, mission 3 U6.
+
+Symptom. With mission 3's tests, `./scripts/check` takes about 2 min 50 s
+(measured by the orchestrator at efb2b93). The U6 sub-agent ran it three
+times in the foreground; it reports that the harness moved the runs to the
+background because they ran long, and that it waited for all three to end
+before committing. The hook refuses a background request the agent makes;
+it does not see one the harness makes on its own when a foreground command
+passes its default time limit.
+
+Direction (for the hands Project). Either give builder sessions a default
+foreground limit above the gate's run time, or have the brief tell every
+sub-agent to pass an explicit timeout to `./scripts/check` (the
+orchestrator's runs with a 10-minute timeout stayed in the foreground).
+
+What this project does meanwhile: nothing in product code. The mission 4
+brief may name the timeout.
+
+Status: open
