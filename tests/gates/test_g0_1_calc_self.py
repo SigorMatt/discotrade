@@ -578,6 +578,155 @@ def test_sigma_reads_bars_before_the_window(store_d):
     assert_eq(rows[4]["slippage"], 0.5 * SIGMA_28, "bar 28")
 
 
+# ------------------------------------- scenario E: the position changes at the roll
+#
+# Decision 43 (a), D-005: a roll cost or a rolled turnover taken on h(u)
+# instead of h(u-1) must fail here. In scenario A the position does not
+# change at either roll bar (1 -> 1, 0 -> 0), so it cannot see that mistake.
+# DESIGN 7.3: roll_cost(u) = 2 * |h(u-1)| * c(u); decision 25: breakeven_cost
+# divides by the sum of trade plus the rolled turnover 2 * |h(u-1)| at each roll.
+
+
+def roll_store(tmp_path, symbol: str, bars: list[tuple], roll: dict):
+    """One instrument on calendar open (UTC), track ``symbol.lower()``, N = 1.
+
+    fee_bps 10, so fee(u) = 0.001; tick 0.5 and 1.0 tick in and out of the main
+    session, so half_spread(u) = max(1.0 / 2, 0.5) * 0.5 / Or(u) = 0.25 / Or(u);
+    slippage_coef 0. Hence c(u) = 0.001 + 0.25 / Or(u).
+    """
+    config, state = tmp_path / "config", tmp_path / "state"
+    track = symbol.lower()
+    write_calendars(config)
+    write_track(config, track, [symbol], cap=480)
+    write_instrument(config, symbol, "open", True, 0.5, {
+        "fee_bps": 10.0, "spread_ticks_main": 1.0, "spread_ticks_off": 1.0,
+        "slippage_coef": 0.0})
+    write_bars(state, track, symbol, bars)
+    write_rolls(state, track, symbol, [roll])
+    return state, config
+
+
+@pytest.fixture
+def store_e(tmp_path):
+    """TE: a carried position changes size and sign at the roll, 1 -> -0.5.
+
+      0 01-07 00:00 E-1 O100 C100 vol 110 -> p = 1
+      1 01-07 01:00 E-1 O100 C102 vol 95  -> p = -0.5
+      2 01-07 02:00 E-2 O111 C110 vol 100 -> p = 0    roll E-1 -> E-2, gap +10;
+                                                      h(1) = 1, h(2) = -0.5
+      3 01-07 03:00 E-2 O109 C108 vol 100 -> p = 0
+    """
+    return roll_store(tmp_path, "TE", [
+        ("2019-01-07 00:00", 100, 100, 110, "E-1"),
+        ("2019-01-07 01:00", 100, 102, 95, "E-1"),
+        ("2019-01-07 02:00", 111, 110, 100, "E-2"),
+        ("2019-01-07 03:00", 109, 108, 100, "E-2"),
+    ], {"ts": "2019-01-07T02:00:00+00:00", "old": "E-1", "new": "E-2", "gap": 10.0,
+        "estimated": False})
+
+
+def test_carried_position_changes_sign_at_the_roll(store_e):
+    state, config = store_e
+    res = calculate(state, config, "te", D7, D7, by_volume, {})
+    expected = [
+        # 0: first window bar, h = 0, nothing.
+        full(1, 0, 0.0, 0, 0, 0, 0, 0),
+        # 1: h 0 -> 1. gross = (0 + 1 * (102 - 100)) / 100 = 0.02; trade 1;
+        #    fee 0.001; spread 0.25 / 100.
+        full(-0.5, 1, 0.02, 1, 0.001, 0.25 / 100, 0, 0),
+        # 2: roll +10, h(1) = 1 -> h(2) = -0.5. As of bar 2, Ca(1) = 102 + 10 = 112:
+        #    gross = (1 * (111 - 112) + -0.5 * (110 - 111)) / 111 = -0.5 / 111;
+        #    trade 1.5; fee 1.5 * 0.001 = 0.0015; spread 1.5 * 0.25 / 111 = 0.375 / 111;
+        #    c(2) = 0.001 + 0.25 / 111; roll = 2 * |h(1)| * c(2) = 0.002 + 0.5 / 111
+        #    (on h(2) it would be 2 * 0.5 * c(2) = 0.001 + 0.25 / 111).
+        full(0, -0.5, -0.5 / 111, 1.5, 0.0015, 0.375 / 111, 0, 0.002 + 0.5 / 111),
+        # 3: h -0.5 -> 0. gross = (-0.5 * (109 - 110) + 0) / 109 = 0.5 / 109;
+        #    trade 0.5; fee 0.0005; spread 0.5 * 0.25 / 109 = 0.125 / 109.
+        full(0, 0, 0.5 / 109, 0.5, 0.0005, 0.125 / 109, 0, 0),
+    ]
+    rows = res.rows["TE"]
+    check_rows(rows, expected)
+    # The row's cost, net_1x and net_2x at the roll bar, written out:
+    # cost = 0.0015 + 0.375 / 111 + 0.002 + 0.5 / 111 = 0.0035 + 0.875 / 111.
+    cost2 = 0.0035 + 0.875 / 111
+    assert_eq(rows[2]["roll"], 0.002 + 0.5 / 111, "roll")
+    assert_eq(rows[2]["cost"], cost2, "cost")
+    assert_eq(rows[2]["net_1x"], -0.5 / 111 - cost2, "net_1x")
+    assert_eq(rows[2]["net_2x"], -0.5 / 111 - 2 * cost2, "net_2x")
+
+    # One day, N = 1: the day's net is the sum of the rows'.
+    gross = 0.02 - 0.5 / 111 + 0.5 / 109
+    cost = (0.001 + 0.0025) + cost2 + (0.0005 + 0.125 / 109)
+    assert res.days == [D7]
+    assert_eq(res.daily_1x[0], gross - cost, "d1")
+    assert_eq(res.daily_2x[0], gross - 2 * cost, "d2")
+    m = res.metrics
+    assert m["trades"] == 3                       # bars 1, 2, 3
+    # Turnover: trades 1 + 1.5 + 0.5 = 3, plus the rolled 2 * |h(1)| = 2: 5
+    # (on h(2) it would be 2 * 0.5 = 1: 4).
+    assert_eq(m["breakeven_cost"], gross / 5 * 10000, "breakeven_cost")
+    assert_eq(res.costs["roll"], 0.002 + 0.5 / 111, "costs roll")
+
+
+@pytest.fixture
+def store_f(tmp_path):
+    """TF: a flat position opens at the roll, h(1) = 0 -> h(2) = 0.5.
+
+      0 01-07 00:00 F-1 O100 C100 vol 100 -> p = 0
+      1 01-07 01:00 F-1 O100 C101 vol 105 -> p = 0.5
+      2 01-07 02:00 F-2 O96  C98  vol 100 -> p = 0    roll F-1 -> F-2, gap -5;
+                                                      h(1) = 0, h(2) = 0.5
+      3 01-07 03:00 F-2 O99  C99  vol 100 -> p = 0
+    """
+    return roll_store(tmp_path, "TF", [
+        ("2019-01-07 00:00", 100, 100, 100, "F-1"),
+        ("2019-01-07 01:00", 100, 101, 105, "F-1"),
+        ("2019-01-07 02:00", 96, 98, 100, "F-2"),
+        ("2019-01-07 03:00", 99, 99, 100, "F-2"),
+    ], {"ts": "2019-01-07T02:00:00+00:00", "old": "F-1", "new": "F-2", "gap": -5.0,
+        "estimated": False})
+
+
+def test_flat_position_opens_at_the_roll(store_f):
+    state, config = store_f
+    res = calculate(state, config, "tf", D7, D7, by_volume, {})
+    expected = [
+        full(0, 0, 0.0, 0, 0, 0, 0, 0),
+        # 1: h 0 -> 0: nothing.
+        full(0.5, 0, 0.0, 0, 0, 0, 0, 0),
+        # 2: roll -5, h(1) = 0 -> h(2) = 0.5. As of bar 2, Ca(1) = 101 - 5 = 96:
+        #    gross = (0 * (96 - 96) + 0.5 * (98 - 96)) / 96 = 1 / 96; trade 0.5;
+        #    fee 0.0005; spread 0.5 * 0.25 / 96 = 0.125 / 96;
+        #    roll = 2 * |h(1)| * c(2) = 0 (on h(2) it would be
+        #    2 * 0.5 * (0.001 + 0.25 / 96) = 0.001 + 0.25 / 96).
+        full(0, 0.5, 1 / 96, 0.5, 0.0005, 0.125 / 96, 0, 0),
+        # 3: h 0.5 -> 0. gross = (0.5 * (99 - 98) + 0) / 99 = 0.5 / 99; trade 0.5;
+        #    fee 0.0005; spread 0.125 / 99.
+        full(0, 0, 0.5 / 99, 0.5, 0.0005, 0.125 / 99, 0, 0),
+    ]
+    rows = res.rows["TF"]
+    check_rows(rows, expected)
+    # The row's cost, net_1x and net_2x at the roll bar, written out:
+    # cost = 0.0005 + 0.125 / 96 + 0.
+    cost2 = 0.0005 + 0.125 / 96
+    assert rows[2]["roll"] == 0.0
+    assert_eq(rows[2]["cost"], cost2, "cost")
+    assert_eq(rows[2]["net_1x"], 1 / 96 - cost2, "net_1x")
+    assert_eq(rows[2]["net_2x"], 1 / 96 - 2 * cost2, "net_2x")
+
+    gross = 1 / 96 + 0.5 / 99
+    cost = cost2 + 0.0005 + 0.125 / 99
+    assert res.days == [D7]
+    assert_eq(res.daily_1x[0], gross - cost, "d1")
+    assert_eq(res.daily_2x[0], gross - 2 * cost, "d2")
+    m = res.metrics
+    assert m["trades"] == 2                       # bars 2, 3
+    # Turnover: trades 0.5 + 0.5 = 1, plus the rolled 2 * |h(1)| = 0: 1
+    # (on h(2) it would be 2 * 0.5 = 1: 2).
+    assert_eq(m["breakeven_cost"], gross / 1 * 10000, "breakeven_cost")
+    assert res.costs["roll"] == 0.0
+
+
 # ------------------------------------------------------------ metrics edges
 
 
