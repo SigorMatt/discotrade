@@ -4,7 +4,10 @@ Importable inside a strategy as ``indicators``. Every public function is pure:
 it takes a Series or array and a window, never modifies its input, and returns
 a result aligned to its input (same length; a Series keeps its index, an array
 gets a plain index from 0) whose value at row ``i`` depends only on rows up to
-``i``. A row with too little history for the window is NaN. A standard
+``i``. Every function except ``ema`` is NaN until its window is full: a row
+with too little history for the window is NaN, so for a window above 1 row 0 is
+NaN. ``ema`` is seeded at the first value: its row 0 is the input's row 0 and
+it has no leading NaN. A standard
 deviation is the sample one (``ddof = 1``). The list of functions given to
 workers (DESIGN 13.4) is built from this module's public names and the first
 line of each docstring, so that line must stand alone.

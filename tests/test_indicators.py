@@ -6,6 +6,7 @@ and written as arithmetic, not taken from pandas.
 
 import inspect
 import math
+import re
 
 import numpy as np
 import pandas as pd
@@ -233,3 +234,33 @@ def test_value_at_i_does_not_depend_on_later_rows(name, f, closes, window, data)
     cut = rows(f(**arguments(f, bars.iloc[: i + 1], window)))
     assert len(cut) == i + 1, name
     np.testing.assert_array_equal(cut[i], full[i], err_msg=f"{name} at row {i}")
+
+
+# --- the module text is true of every function at row 0 (decision 32; DESIGN 6.3, 13.4) ---
+
+
+def seeded_names():
+    """Public functions named in a module docstring sentence saying "seeded at the first value"."""
+    public = {name for name, _ in public_functions()}
+    text = " ".join(inspect.getdoc(indicators).split())
+    names = set()
+    for sentence in re.split(r"(?<=\.)\s", text):
+        if "seeded at the first value" in sentence:
+            names |= set(re.findall(r"``(\w+)``", sentence)) & public
+    return names
+
+
+def test_module_docstring_names_ema_as_seeded():
+    assert "ema" in seeded_names()
+
+
+@pytest.mark.parametrize(("name", "f"), public_functions())
+@pytest.mark.parametrize("window", [2, 3, 12])
+@pytest.mark.parametrize("closes", [[7.0], [5.0, 6.0], list(np.linspace(10.0, 30.0, 25))])
+def test_row_zero_is_as_the_module_text_says(name, f, window, closes):
+    assert "window" in inspect.signature(f).parameters, f"{name} takes no window"
+    first = rows(f(**arguments(f, frame(closes), window)))[0]
+    if name in seeded_names():
+        assert not np.isnan(first).any(), f"{name} is named as seeded but is NaN at row 0"
+    else:
+        assert np.isnan(first).all(), f"{name} is not named as seeded but has a number at row 0"
