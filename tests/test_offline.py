@@ -107,8 +107,12 @@ def test__socket_unix_domain_stays_open(tmp_path):
 
 # --- sendmsg with an address and the name lookups (decision 58) ------------------------
 
-#: Each guarded name lookup with an argument that needs no resolver (a numeric
-#: loopback address), so that even an unguarded call sends no query.
+#: Each guarded name lookup with a numeric loopback argument. Every call of them
+#: in this module is refused by the backstop before the real function runs (the
+#: spy test below shows the real one is not reached). The argument alone would
+#: not keep an unguarded ``gethostbyaddr`` from a resolver: a reverse lookup reads
+#: the hosts file or asks DNS, so the scratch session's network test does not
+#: call it (decision 67).
 LOOKUPS = {
     "gethostbyname": ("127.0.0.1",),
     "gethostbyname_ex": ("127.0.0.1",),
@@ -240,9 +244,11 @@ def test_unix_domain_sendmsg_with_an_address_stays_open(tmp_path):
 INNER_TESTS = '''
 import _socket
 import socket
+import types
 
 import pytest
 from conftest import SocketBlocked
+from originals import ORIGINAL
 
 
 def _listener():
@@ -252,12 +258,31 @@ def _listener():
     return server
 
 
-LOOKUPS = {
+NUMERIC = socket.AI_NUMERICHOST | socket.AI_NUMERICSERV
+
+#: The lookups the network-marked test calls for real (decision 67): each is
+#: answered by Python or the C library without a resolver.
+#: - getaddrinfo of a numeric address and port with AI_NUMERICHOST and
+#:   AI_NUMERICSERV: the flags forbid a host or service lookup; a name that is
+#:   not numeric fails instead of being resolved.
+#: - getnameinfo with NI_NUMERICHOST | NI_NUMERICSERV: Python first parses the
+#:   address with getaddrinfo and AI_NUMERICHOST, and the flags make the C
+#:   library format the address and port as numbers instead of looking them up.
+#: - gethostbyname of a dotted numeric address: Python parses it with
+#:   inet_pton and returns it without calling the C library's lookup.
+#: - gethostbyname_ex of a dotted numeric address: Python parses it as above,
+#:   and the C library's gethostbyname_r answers a name made of digits and dots
+#:   itself, before any hosts file or DNS source is consulted.
+#: gethostbyaddr is not among them: a reverse lookup reads the hosts file or asks
+#: DNS, whatever its argument.
+RESOLVERLESS = {
+    "getaddrinfo": ("127.0.0.1", 9, socket.AF_INET, socket.SOCK_STREAM, 0, NUMERIC),
     "gethostbyname": ("127.0.0.1",),
     "gethostbyname_ex": ("127.0.0.1",),
-    "gethostbyaddr": ("127.0.0.1",),
     "getnameinfo": (("127.0.0.1", 9), socket.NI_NUMERICHOST | socket.NI_NUMERICSERV),
 }
+#: The lookups the unmarked test shows refused again.
+REFUSED = {**RESOLVERLESS, "gethostbyaddr": ("127.0.0.1",)}
 
 
 def _sendmsg(module, address):
@@ -271,20 +296,28 @@ def _sendmsg(module, address):
 @pytest.mark.network
 def test_marked_network_connects():
     with _listener() as server:
-        socket.create_connection(server.getsockname(), timeout=5).close()
-        raw = _socket.socket(_socket.AF_INET, _socket.SOCK_STREAM)
-        try:
-            raw.connect(server.getsockname())
-        finally:
-            raw.close()
+        host, port = server.getsockname()
+        for module in (socket, _socket):
+            [(family, kind, proto, _, address)] = module.getaddrinfo(
+                host, port, module.AF_INET, module.SOCK_STREAM, 0, NUMERIC)
+            assert address == (host, port)
+            raw = module.socket(family, kind, proto)
+            try:
+                raw.connect(address)
+            finally:
+                raw.close()
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as receiver:
         receiver.bind(("127.0.0.1", 0))
         for module in (socket, _socket):
             assert _sendmsg(module, receiver.getsockname()) == 1
             assert receiver.recv(16) == b"x"
     for module in (socket, _socket):
-        for name, args in LOOKUPS.items():
+        for name, args in RESOLVERLESS.items():
             getattr(module, name)(*args)
+        # Left alone, shown by identity and not by a call.
+        original = ORIGINAL[module.__name__]
+        assert isinstance(original, types.BuiltinFunctionType)
+        assert module.gethostbyaddr is original
 
 
 def test_unmarked_after_network_is_blocked_again():
@@ -294,9 +327,10 @@ def test_unmarked_after_network_is_blocked_again():
     for module in (socket, _socket):
         with pytest.raises(SocketBlocked):
             _sendmsg(module, ("127.0.0.1", 9))
-        for name, args in LOOKUPS.items():
+        for name, args in REFUSED.items():
             with pytest.raises(SocketBlocked):
                 getattr(module, name)(*args)
+        assert module.gethostbyaddr is not ORIGINAL[module.__name__]
 
 
 def test_unmarked_forgets_its_fake():
@@ -304,8 +338,17 @@ def test_unmarked_forgets_its_fake():
         socket.create_connection(server.getsockname(), timeout=5).close()
 '''
 
+#: A plugin the scratch session loads with ``-p`` before tests/conftest.py's
+#: ``pytest_configure`` installs the backstop: it keeps the original reverse lookup.
+INNER_ORIGINALS = '''
+import _socket
+import socket
+
+ORIGINAL = {"socket": socket.gethostbyaddr, "_socket": _socket.gethostbyaddr}
+'''
+
 INNER_INI = '''[pytest]
-addopts = --strict-markers -p no:cacheprovider
+addopts = --strict-markers -p no:cacheprovider -p originals
 markers =
     network: needs the network
     live: needs a secret
@@ -316,6 +359,7 @@ def test_a_test_marked_network_is_left_alone(tmp_path):
     shutil.copy(REPO / "tests" / "conftest.py", tmp_path / "conftest.py")
     (tmp_path / "pytest.ini").write_text(INNER_INI, encoding="utf-8")
     (tmp_path / "test_inner.py").write_text(INNER_TESTS, encoding="utf-8")
+    (tmp_path / "originals.py").write_text(INNER_ORIGINALS, encoding="utf-8")
     result = subprocess.run(
         [sys.executable, "-m", "pytest", "-rA", "test_inner.py"],
         cwd=tmp_path, capture_output=True, text=True, timeout=120, check=False,

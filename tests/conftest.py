@@ -23,7 +23,9 @@ fixtures of every scope, not only in function-scoped tests. It is a
 ``RuntimeError``, not an ``OSError``, so that no client code takes it for an
 ordinary connection failure. A Unix-domain socket stays open to every test: it
 never leaves the host. A test marked ``network`` or ``live`` is left alone while
-it runs (its setup, call and teardown).
+it runs (its setup, call and teardown); then the lookups of ``socket`` and
+``_socket`` are the original functions, and the guarded ones are put back after
+it (decision 67).
 """
 
 import _socket
@@ -110,8 +112,21 @@ def install_backstop() -> None:
         name: _guarded_method(getattr(base, name)) for name in _GUARDED_METHODS
     })
     for module in (socket, _socket):
-        for name in _GUARDED_LOOKUPS:
-            setattr(module, name, _guarded_lookup(getattr(module, name)))
+        guards = {n: _guarded_lookup(getattr(module, n)) for n in _GUARDED_LOOKUPS}
+        _ORIGINALS[module.__name__ + ".guards"] = guards
+        for name, guard in guards.items():
+            setattr(module, name, guard)
+
+
+def _put_lookups(original: bool) -> None:
+    """Put the original lookups of ``socket`` and ``_socket`` in place, or the
+    guarded ones back; nothing when the backstop is not installed."""
+    if not _ORIGINALS:
+        return
+    for module in (socket, _socket):
+        which = ".lookups" if original else ".guards"
+        for name, function in _ORIGINALS[module.__name__ + which].items():
+            setattr(module, name, function)
 
 
 def uninstall_backstop() -> None:
@@ -141,11 +156,17 @@ def pytest_unconfigure(config):
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_protocol(item, nextitem):
     """Name the running test to the backstop, and lift it for network and live tests."""
-    _BACKSTOP.update(nodeid=item.nodeid, allowed=network_allowed(item))
+    allowed = network_allowed(item)
+    _BACKSTOP.update(nodeid=item.nodeid, allowed=allowed)
+    lifted = allowed and bool(_ORIGINALS)
+    if lifted:
+        _put_lookups(original=True)
     try:
         yield
     finally:
         _BACKSTOP.update(nodeid="outside any test", allowed=False)
+        if lifted:
+            _put_lookups(original=False)
 
 
 def gate_marker_problem(item) -> str | None:

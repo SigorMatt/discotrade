@@ -1,11 +1,13 @@
 """The lifecycle: steps 1 to 4 and admission (DESIGN 10.3, 10.2, 9.1; decisions
-2026-10-12 22, 48, 62, 63; I-5, I-6).
+2026-10-12 22, 48, 62, 63, 66, 68; I-5, I-6).
 
 The setup is the fixture track ``test_mixed`` (``cell_slots`` 3; SYNX's
 always-open calendar makes every calendar date a trading day of the track)
 with the production ``config/thresholds.toml`` (``dormant_window_days`` 30,
 ``revival_min_dormant_days`` 5, ``retire_dormant_days`` 365,
-``admission.min_trades_t`` 30, asserted). Approaches are written with
+``admission.min_trades_t`` 30, asserted). The wait of step 3 in trading days
+(decision 66) is shown on the fixture track ``test_synth``, whose calendar
+``synth_week`` has weekends. Approaches are written with
 ``state.write_approach`` into a pytest temporary directory and their paper
 records are frames the test builds, so no bar is read, no strategy runs, no
 random draw is made and no clock is read.
@@ -24,6 +26,7 @@ from discotrade.cli import REPO_ROOT
 from discotrade.lifecycle import Candidate
 from discotrade.metrics import sharpe
 from discotrade.state import read_approaches, write_approach
+from discotrade.stats import trading_dates
 
 TRACK = "test_mixed"
 CELL = "trend/short"
@@ -170,6 +173,43 @@ def test_step_3_returns_into_a_free_slot_not_before_revival_min_dormant_days(tmp
     assert steps(tmp_path, setup, five, records) == [row(five, a, "dormant", "live", "returned")]
 
 
+@pytest.fixture(scope="module")
+def synth(tmp_path_factory):
+    """The fixture track ``test_synth`` (its instruments all on ``synth_week``,
+    which has weekends) with the production thresholds."""
+    path = tmp_path_factory.mktemp("lcfg_synth") / "config"
+    shutil.copytree(REPO_ROOT / "tests" / "fixtures" / "config", path)
+    shutil.copy(REPO_ROOT / "config" / "thresholds.toml", path / "thresholds.toml")
+    return journal.Setup.load(path, "test_synth")
+
+
+def test_step_3_waits_revival_min_dormant_days_trading_days_not_calendar_days(tmp_path,
+                                                                              synth):
+    # Decision 66: the wait counts trading days of the track after the dormant row.
+    assert synth.thresholds["lifecycle.revival_min_dormant_days"] == 5
+    assert sorted(synth.calendars) == ["synth_week"]
+    a = new(tmp_path, synth, 1)
+    since = date(2019, 6, 6)                    # a Thursday
+    ledger.append(tmp_path, "test_synth", ledger.LIFECYCLE,
+                  [row(since, a, "live", "dormant", "dormant")])
+    records = {a: dated(series(0.002, 40), first=date(2019, 4, 28))}
+    calendars = [synth.calendars[n] for n in sorted(synth.calendars)]
+
+    def waited(day):
+        return len(trading_dates(calendars, synth.track.bar_seconds,
+                                 since + timedelta(days=1), day))
+
+    for day in (date(2019, 6, 11), date(2019, 6, 12)):     # Tuesday, Wednesday
+        assert (day - since).days >= 5 and waited(day) < 5
+        assert steps(tmp_path, synth, day, records) == []
+    fifth = date(2019, 6, 13)                   # Fri, Mon, Tue, Wed, Thu
+    assert waited(fifth) == 5
+    assert steps(tmp_path, synth, fifth, records) == \
+        [row(fifth, a, "dormant", "live", "returned")]
+    assert ledger.read(tmp_path, "test_synth", ledger.LIFECYCLE)[-1] == \
+        row(fifth, a, "dormant", "live", "returned")
+
+
 def test_step_3_a_dormant_approach_with_no_positive_sharpe_stays(tmp_path, setup):
     a = new(tmp_path, setup, 1)
     since = START + timedelta(days=29)
@@ -223,6 +263,37 @@ def test_step_3_sees_the_slot_step_2_freed(tmp_path, setup):
     assert steps(tmp_path, setup, day, records) == [
         row(day, live[2], "live", "dormant", "dormant"),
         row(day, a, "dormant", "live", "returned")]
+
+
+def test_returned_and_displaced_on_one_day_both_rows_stand_and_dormancy_counts_from_the_second(
+        tmp_path, setup):
+    # Decision 68 (b): an approach that returns on D (step 3) and is displaced
+    # later on D by another approach's return has both rows dated D, in the order
+    # taken, and a later count of its dormancy starts from the second row.
+    held = [new(tmp_path, setup, 10 + k) for k in range(2)]      # two live: a free slot
+    first, second = sorted([new(tmp_path, setup, 1), new(tmp_path, setup, 2)])
+    since = START + timedelta(days=20)
+    put(tmp_path, row(since, first, "live", "dormant", "dormant"),
+        row(since, second, "live", "dormant", "dormant"))
+    records = {held[0]: dated(series(0.003, 50)), held[1]: dated(series(0.003, 50)),
+               first: dated(series(0.0005, 50)), second: dated(series(0.002, 50))}
+    d = START + timedelta(days=35)
+    taken = [row(d, first, "dormant", "live", "returned"),
+             row(d, second, "dormant", "live", "returned"),
+             row(d, first, "live", "dormant", "displaced")]
+    assert steps(tmp_path, setup, d, records) == taken
+    assert lifecycle_rows(tmp_path)[-3:] == taken
+    apps = read_approaches(tmp_path)
+    assert lifecycle.states(lifecycle_rows(tmp_path), apps, d + timedelta(days=1))[first] == \
+        lifecycle.Status("dormant", d)
+    # A failure frees a slot; ``first`` has waited 9 trading days since its first
+    # row to dormant but 4 since D, so it stays.
+    four = d + timedelta(days=4)
+    assert steps(tmp_path, setup, four, records, {held[0]: "boom"}) == \
+        [row(four, held[0], "live", "retired", "failure: boom")]
+    five = d + timedelta(days=5)
+    assert steps(tmp_path, setup, five, records) == \
+        [row(five, first, "dormant", "live", "returned")]
 
 
 # ------------------------------------------------------------------ step 4
