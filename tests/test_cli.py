@@ -216,3 +216,106 @@ def test_blank_state_from_the_console_script_exits_2(tmp_path):
     )
     assert proc.returncode == 2
     assert "--state is empty" in proc.stderr
+
+
+# --- the socket backstop (decision 20, I-11) ------------------------------------------
+
+
+def _listener():
+    """A loopback listener: a connection to it needs no network outside this host."""
+    import socket
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    return server
+
+
+def test_an_unmarked_test_cannot_open_a_socket():
+    import socket
+    with _listener() as server:
+        with pytest.raises(RuntimeError, match="socket backstop"):
+            socket.create_connection(server.getsockname(), timeout=5)
+        raw = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        try:
+            with pytest.raises(RuntimeError, match="socket backstop"):
+                raw.connect(server.getsockname())
+            with pytest.raises(RuntimeError, match="socket backstop"):
+                raw.connect_ex(server.getsockname())
+        finally:
+            raw.close()
+    with pytest.raises(RuntimeError, match="socket backstop"):
+        socket.getaddrinfo("example.invalid", 443)
+
+
+def test_an_unmarked_test_cannot_reach_a_server_through_httpx():
+    import httpx
+    with _listener() as server:
+        host, port = server.getsockname()
+        with pytest.raises(RuntimeError, match="socket backstop"):
+            httpx.get(f"http://{host}:{port}/", timeout=5)
+
+
+INNER_TESTS = '''
+import socket
+
+import pytest
+
+
+def _listener():
+    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    return server
+
+
+def test_unmarked_forgets_its_fake():
+    with _listener() as server:
+        socket.create_connection(server.getsockname(), timeout=5).close()
+
+
+@pytest.mark.network
+def test_marked_network():
+    with _listener() as server:
+        socket.create_connection(server.getsockname(), timeout=5).close()
+
+
+@pytest.mark.live
+def test_marked_live():
+    with _listener() as server:
+        socket.create_connection(server.getsockname(), timeout=5).close()
+
+
+def test_unix_socket_is_not_a_network_connection(tmp_path):
+    path = str(tmp_path / "s")
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as server:
+        server.bind(path)
+        server.listen(1)
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.connect(path)
+'''
+
+INNER_INI = '''[pytest]
+addopts = --strict-markers -p no:cacheprovider
+markers =
+    network: needs the network
+    live: needs a secret
+'''
+
+
+def test_the_backstop_fails_an_unmarked_test_and_leaves_network_and_live_alone(tmp_path):
+    (tmp_path / "conftest.py").write_text(
+        (REPO_ROOT / "tests" / "conftest.py").read_text(encoding="utf-8"), encoding="utf-8")
+    (tmp_path / "pytest.ini").write_text(INNER_INI, encoding="utf-8")
+    (tmp_path / "test_inner.py").write_text(INNER_TESTS, encoding="utf-8")
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "-rA", "test_inner.py"], cwd=tmp_path,
+        capture_output=True, text=True, timeout=120, check=False,
+    )
+    out = result.stdout
+    assert result.returncode == 1, out + result.stderr
+    assert "FAILED test_inner.py::test_unmarked_forgets_its_fake" in out
+    assert "socket backstop" in out
+    for name in ("test_marked_network", "test_marked_live",
+                 "test_unix_socket_is_not_a_network_connection"):
+        assert f"PASSED test_inner.py::{name}" in out
+    assert "1 failed, 3 passed" in out

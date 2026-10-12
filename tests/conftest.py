@@ -8,9 +8,19 @@ A test that lives under ``tests/gates/`` or carries a ``gate_m0`` to
 collection fails otherwise, naming the test (DESIGN 18.1; decision 9 of
 meta/decisions/decisions-2026-10-12.md). The check runs before ``-m``
 deselects anything, so it holds under every selection.
+
+A test not marked ``network`` or ``live`` cannot open a network connection
+(decision 20 of meta/decisions/decisions-2026-10-12.md, I-11): an autouse
+fixture makes ``socket.socket.connect``, ``connect_ex`` and ``sendto`` on any
+address family but ``AF_UNIX``, and ``socket.getaddrinfo``, raise
+``SocketBlocked``, which names the test. It is a ``RuntimeError``, not an
+``OSError``, so that no client code takes it for an ordinary connection
+failure. A Unix-domain socket stays open to every test: it never leaves the
+host. Tests marked ``network`` or ``live`` are left alone.
 """
 
 import os
+import socket
 from pathlib import Path
 
 import pytest
@@ -18,6 +28,46 @@ import pytest
 GATE_ENV = "DISCOTRADE_GATE"
 GATES_DIR = Path(__file__).resolve().parent / "gates"
 MILESTONES = tuple(f"gate_m{n}" for n in range(6))
+#: The markers under which a test may open a network connection (I-11).
+NETWORK_MARKERS = ("network", "live")
+
+
+class SocketBlocked(RuntimeError):
+    """A test not marked network or live tried to open a network connection."""
+
+
+def network_allowed(item) -> bool:
+    """Whether ``item`` may open a network connection: it is marked network or live."""
+    return any(item.get_closest_marker(name) is not None for name in NETWORK_MARKERS)
+
+
+@pytest.fixture(autouse=True)
+def socket_backstop(request, monkeypatch):
+    """Refuse every network connection in a test not marked network or live."""
+    if network_allowed(request.node):
+        yield
+        return
+    nodeid = request.node.nodeid
+
+    def refuse(target):
+        raise SocketBlocked(
+            f"socket backstop (I-11, decision 20): {nodeid} tried to reach {target!r}; "
+            f"inject a fake, or mark the test network or live"
+        )
+
+    def guarded(name):
+        real = getattr(socket.socket, name)
+
+        def method(self, *args):
+            if self.family == getattr(socket, "AF_UNIX", None):
+                return real(self, *args)
+            return refuse(args[-1] if args else None)
+        return method
+
+    for name in ("connect", "connect_ex", "sendto"):
+        monkeypatch.setattr(socket.socket, name, guarded(name))
+    monkeypatch.setattr(socket, "getaddrinfo", lambda host, *rest, **kw: refuse(host))
+    yield
 
 
 def gate_marker_problem(item) -> str | None:

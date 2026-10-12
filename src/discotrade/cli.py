@@ -179,7 +179,10 @@ def _add_config(subparsers: argparse._SubParsersAction, common: argparse.Argumen
 SUBCOMMANDS.append(_add_config)
 
 
-def _gap_day(ctx: Context, args: argparse.Namespace, command: str) -> date | None:
+def _notice_day(ctx: Context, args: argparse.Namespace, command: str) -> date | None:
+    """The date ``bars fetch`` gives its health notices: ``--day``, else the day
+    before the UTC date of ``--as-of`` (unchanged; decision 2026-10-12 19 moves
+    only the gap-check day). None, after a message, for a bad ``--day``."""
     try:
         return (date.fromisoformat(args.day) if args.day
                 else ctx.clock.now().date() - timedelta(days=1))
@@ -279,7 +282,7 @@ def _bars_fetch(ctx: Context, args: argparse.Namespace) -> int:
         print("bars fetch: FAIL: no state directory (--state or $DISCOTRADE_STATE)",
               file=sys.stderr)
         return 1
-    day = _gap_day(ctx, args, "bars fetch")
+    day = _notice_day(ctx, args, "bars fetch")
     if day is None:
         return 1
     try:
@@ -318,7 +321,10 @@ def _bars_fetch(ctx: Context, args: argparse.Namespace) -> int:
             written = 0 if bars is None else store.append(symbol, bars, until)
             print(f"fetched {symbol}: {written} bars written, {dropped} dropped as not "
                   f"finite, available until {until.isoformat()}")
-        report = check_gaps(ctx.state, tc, calendars, day, limit)
+        # With no --day, the gap check is for DESIGN 16.1's D at --as-of, the
+        # day `bars gaps` checks, by the same function (decision 2026-10-12 19).
+        gap_day = day if args.day else _closed_day(tc, calendars, now)
+        report = check_gaps(ctx.state, tc, calendars, gap_day, limit)
         # Rolls are found on the stored bars and recorded once (DESIGN 5.6).
         rolls = [update_rolls(ctx.state, tc.track.name, bar, inst, sources[inst.symbol], day)
                  for inst in tc.instruments]
@@ -364,8 +370,9 @@ def _add_bars(subparsers: argparse._SubParsersAction, common: argparse.ArgumentP
     )
     fetch.add_argument(
         "--day", metavar="YYYY-MM-DD", default=None,
-        help="trading day whose W and T the gap check reports (default: the day before "
-        "the UTC date of --as-of)",
+        help="trading day whose W and T the gap check reports, and the date of the "
+        "notices (default: for the gap check, the day bars gaps checks, DESIGN 16.1; for "
+        "the notices, the day before the UTC date of --as-of)",
     )
     fetch.set_defaults(handler=_bars_fetch)
 

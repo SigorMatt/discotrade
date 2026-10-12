@@ -34,8 +34,13 @@ changes no row, and returns one ``store_recovered`` health notice (DESIGN
 15.2, decision 16) per completed file, naming the instrument and the file.
 The writer runs it before every append and keeps the notices in
 ``notices`` for its caller. The reader does not repair: it refuses both
-cases, with an error that says which. The date of a notice is the caller's
-``day``; inside ``append`` it is the UTC date of ``available_until``.
+cases, with an error that says which. Every read of an instrument
+(``read_range`` and ``last_n``) first refuses when the instrument's directory
+holds a month file the index does not list, whatever range it asks for
+(decision 2026-10-12 18): an unlisted file may be an interrupted append into
+a new month, which a read would otherwise silently leave out. The date of a
+notice is the caller's ``day``; inside ``append`` it is the UTC date of
+``available_until``.
 """
 
 from __future__ import annotations
@@ -254,8 +259,26 @@ class BarStore:
         return frame
 
     def _months(self, symbol: str) -> dict[str, Any]:
+        """The indexed months of ``symbol``, after refusing an unlisted month file
+        (decision 2026-10-12 18). Every reader entry point goes through here."""
         entry = self.index().get(symbol)
-        return {} if entry is None else entry["months"]
+        months: dict[str, Any] = {} if entry is None else entry["months"]
+        folder = self.month_path(symbol, "x").parent
+        unlisted = (sorted(p.stem for p in folder.glob("*.parquet") if p.stem not in months)
+                    if folder.is_dir() else [])
+        if unlisted:
+            last = None if entry is None else pd.Timestamp(entry["last_ts"]).tz_convert("UTC")
+            for month in unlisted:
+                frame = pd.read_parquet(self.month_path(symbol, month))
+                if not self._interrupted(frame, None, last):
+                    raise BarStoreError(
+                        f"{symbol} {month}: month file not listed in the index "
+                        f"(a revised data point); refused")
+            raise BarStoreError(
+                f"{symbol} {', '.join(unlisted)}: month file not listed in the index holds "
+                f"an interrupted append; refused until the next append or bars fetch "
+                f"completes it")
+        return months
 
     def read_range(
         self, symbol: str, start: datetime | pd.Timestamp, end: datetime | pd.Timestamp

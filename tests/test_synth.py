@@ -442,7 +442,9 @@ def test_bars_fetch_runs_the_gap_check_and_says_what_it_wrote(tmp_path, capsys):
         assert any(ln.startswith(f"fetched {symbol}: ") for ln in out.splitlines())
     assert "missing SYNL " in out
     assert (state / "bars" / "test_null" / "gaps.jsonl").exists()
-    assert "day 2019-03-31" in out
+    # DESIGN 16.1's D at --as-of Monday 2019-04-01 10:30 UTC is Friday 03-29
+    # (decision 2026-10-12 19), no longer the UTC date minus one, Sunday 03-31.
+    assert "day 2019-03-29" in out
 
 
 def test_bars_fetch_is_incremental_and_rerunning_writes_nothing(tmp_path, capsys):

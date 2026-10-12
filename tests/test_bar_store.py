@@ -496,3 +496,71 @@ def test_fsync_is_called_on_the_new_file_before_each_rename(store, monkeypatch):
         assert log[i - 1] == ("fsync", log[i][1])                 # the file being renamed
         assert log[i + 1][0] == "fsync"                           # then its directory
         assert log[i + 1][1] == str(Path(log[i][1]).parent)
+
+
+# --- the reader and a month file the index does not list (decision 18) -------------
+
+
+def _unlisted_interrupted(store):
+    """March is stored and indexed; an April file was written but the index not
+    (a crash before the index write of an append into a new month)."""
+    store.append(SYM, bars("2026-03-30 00:00", 10), LATE)
+    stray = bars("2026-04-01 00:00", 5, base=200)
+    stray.to_parquet(store.month_path(SYM, "2026-04"), index=False)
+    return stray
+
+
+def _unlisted_revised(store):
+    """March and May are stored and indexed; an April file appears whose rows
+    are earlier than the indexed last bar: it fails decision 5's test."""
+    store.append(SYM, bars("2026-03-30 00:00", 10), LATE)
+    store.append(SYM, bars("2026-05-01 00:00", 5, base=300), LATE)
+    bars("2026-04-01 00:00", 5, base=200).to_parquet(store.month_path(SYM, "2026-04"),
+                                                     index=False)
+
+
+# Each read is the reader entry point and its arguments; the first two read
+# March only, a range that does not cover the unlisted month.
+READS = [
+    ("read_range", (_ts("2026-03-30"), _ts("2026-03-31"))),
+    ("last_n", (_ts("2026-03-30 05:00"), 3)),
+    ("read_range", (_ts("2026-03-01"), _ts("2026-07-01"))),
+    ("last_n", (_ts("2026-03-30 09:00"), 100)),
+]
+
+
+@pytest.mark.parametrize("method, args", READS)
+def test_reader_refuses_an_unlisted_month_file_that_is_an_interrupted_append(
+        store, method, args):
+    _unlisted_interrupted(store)
+    with pytest.raises(BarStoreError, match="2026-04.*interrupted append") as err:
+        getattr(store, method)(SYM, *args)
+    assert "revised" not in str(err.value)
+
+
+@pytest.mark.parametrize("method, args", READS)
+def test_reader_refuses_an_unlisted_month_file_that_is_a_revised_data_point(
+        store, method, args):
+    _unlisted_revised(store)
+    with pytest.raises(BarStoreError, match="2026-04.*revised data point") as err:
+        getattr(store, method)(SYM, *args)
+    assert "interrupted" not in str(err.value)
+
+
+def test_reader_repairs_nothing_and_reads_after_the_writer_completes(store):
+    stray = _unlisted_interrupted(store)
+    index_before = store.index_path.read_text()
+    with pytest.raises(BarStoreError, match="interrupted append"):
+        store.read_range(SYM, _ts("2026-03-30"), _ts("2026-03-31"))
+    assert store.index_path.read_text() == index_before
+    assert store.recover(SYM, date(2026, 4, 1))
+    got = store.read_range(SYM, _ts("2026-04-01"), _ts("2026-05-01"))
+    pd.testing.assert_frame_equal(got, stray, check_dtype=False)
+    assert len(store.last_n(SYM, _ts("2026-04-01 04:00"), 100)) == 15
+
+
+def test_an_unlisted_file_of_another_instrument_does_not_refuse_a_read(store):
+    _unlisted_interrupted(store)
+    store.append("SYNB", bars("2026-03-30 00:00", 3), LATE)
+    assert len(store.read_range("SYNB", _ts("2026-03-01"), _ts("2026-04-01"))) == 3
+    assert len(store.last_n("SYNB", _ts("2026-03-30 02:00"), 5)) == 3

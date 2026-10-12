@@ -14,7 +14,7 @@ import pandas as pd
 import pytest
 
 from discotrade.bars.gaps import GAPS_FILE, check_gaps, find_missing
-from discotrade.bars.store import BarStore
+from discotrade.bars.store import BarStore, BarStoreError
 from discotrade.cli import REPO_ROOT, main
 from discotrade.config import load_calendar, load_thresholds, load_track_config
 from discotrade.tradingcal import expected_bars, is_open, trading_date
@@ -513,3 +513,141 @@ def test_bars_gaps_default_day_is_the_latest_closed_trading_day(tmp_path, tc, ca
     assert main(["--state", str(state), "--config", str(config), "--track", TRACK,
                  "--as-of", as_of, "bars", "gaps"]) == 0
     assert f"track {TRACK}, day {day}" in capsys.readouterr().out
+
+
+# --- the default day of `bars fetch` is the same D (decision 19, DESIGN 16.1) -------
+
+
+class Lagged:
+    """The synthetic source with the vendor's lag: ``available_until(now) = now -
+    24 hours`` (DESIGN 5.5), and the bars at the times in ``hide`` never served."""
+
+    name = "lagged"
+
+    def __init__(self, inner, hide=()):
+        self.inner, self.hide = inner, set(hide)
+
+    def available_until(self, now):
+        return self.inner.available_until(now) - timedelta(hours=24)
+
+    def fetch(self, instrument, start, end):
+        bars = self.inner.fetch(instrument, start, end)
+        return bars[~bars["ts"].isin(self.hide)].reset_index(drop=True)
+
+    def fetch_contract(self, instrument, contract, start, end):
+        return self.inner.fetch_contract(instrument, contract, start, end)
+
+
+def _lag(monkeypatch, hide=()):
+    import discotrade.sources as sources
+    real = sources.source_for
+
+    def source_for(adapter, calendars, bar_seconds):
+        return Lagged(real(adapter, calendars, bar_seconds), hide)
+    monkeypatch.setattr(sources, "source_for", source_for)
+
+
+def _run(state, config, as_of, action, *extra):
+    return main(["--state", str(state), "--config", str(config), "--track", TRACK,
+                 "--as-of", as_of, "bars", action, *extra])
+
+
+def _day_line(out):
+    days = [ln for ln in out.splitlines() if ln.startswith(f"track {TRACK}, day ")]
+    assert len(days) == 1, out
+    return days[0].rsplit(" ", 1)[1]
+
+
+@pytest.mark.parametrize("lagged, as_of, day", [
+    # 19:00 New York on Thursday: the UTC date minus one is 07-10, D is 07-11.
+    (False, "2019-07-11T23:00:00+00:00", "2019-07-11"),
+    # Monday morning: the UTC date minus one is a Sunday, D is Friday.
+    (False, "2019-07-15T03:00:00+00:00", "2019-07-12"),
+    # Lagged by 24 hours: Friday's last bar (closing 21:00 UTC) is not yet
+    # available, so D is Thursday while the UTC date minus one is Friday.
+    (True, "2019-07-13T20:00:00+00:00", "2019-07-11"),
+    (True, "2019-07-13T21:00:00+00:00", "2019-07-12"),
+])
+def test_bars_fetch_default_day_is_the_day_bars_gaps_checks(tmp_path, monkeypatch, capsys,
+                                                            lagged, as_of, day):
+    if lagged:
+        _lag(monkeypatch)
+    state, config = tmp_path / "state", _cli_config(tmp_path)
+    assert _run(state, config, as_of, "fetch") == 0
+    fetched = _day_line(capsys.readouterr().out)
+    assert _run(state, config, as_of, "gaps") == 0
+    assert fetched == _day_line(capsys.readouterr().out) == day
+
+
+def test_a_replay_of_the_fetch_day_appends_nothing_to_gaps_jsonl(tmp_path, monkeypatch,
+                                                                 capsys):
+    """Friday's 18:00 UTC bar is never served. At the first --as-of the source
+    is available until Friday 18:00, so Friday is still open and the first run
+    must not check it; a later run checking the first run's day, once Friday's
+    later bars are stored, must then find nothing the first did not."""
+    hole = pd.Timestamp("2019-07-12T18:00:00+00:00")
+    _lag(monkeypatch, hide=[hole])
+    state, config = tmp_path / "state", _cli_config(tmp_path)
+    gaps = state / "bars" / TRACK / GAPS_FILE
+    assert _run(state, config, "2019-07-13T18:00:00+00:00", "fetch") == 0
+    day = _day_line(capsys.readouterr().out)
+    assert day == "2019-07-11"
+    before = gaps.read_bytes() if gaps.exists() else b""
+
+    assert _run(state, config, "2019-07-13T18:00:00+00:00", "fetch") == 0
+    assert _day_line(capsys.readouterr().out) == day
+    assert (gaps.read_bytes() if gaps.exists() else b"") == before
+
+    assert _run(state, config, "2019-07-16T12:00:00+00:00", "fetch", "--day", day) == 0
+    out = capsys.readouterr().out
+    assert _day_line(out) == day
+    assert "new in gaps.jsonl: 0" in out
+    assert (gaps.read_bytes() if gaps.exists() else b"") == before
+    # The hole now lies inside the stored span: a check of Friday finds it.
+    assert _run(state, config, "2019-07-16T12:00:00+00:00", "gaps", "--day",
+                "2019-07-12") == 0
+    assert f"missing SYNA {hole.isoformat()}" in capsys.readouterr().out
+
+
+# --- `bars fetch` completes an interrupted append; the reader then reads (decision 18) --
+
+
+def test_reads_refuse_an_unlisted_file_until_bars_fetch_completes_it(tmp_path, monkeypatch,
+                                                                    capsys):
+    state, config = tmp_path / "state", _cli_config(tmp_path)
+    assert _run(state, config, "2019-06-28T00:00:00+00:00", "fetch") == 0
+    store = BarStore(state, TRACK, 3600)
+    early = (pd.Timestamp("2019-02-01", tz="UTC"), pd.Timestamp("2019-02-08", tz="UTC"))
+    early_rows = store.read_range("SYNA", *early)
+    at = early_rows["ts"].iloc[-1]
+
+    def crash(self, index):
+        raise OSError("simulated crash before the index write")
+    with monkeypatch.context() as m:
+        m.setattr(BarStore, "_write_index", crash)
+        assert _run(state, config, "2019-07-03T00:00:00+00:00", "fetch") == 1
+    capsys.readouterr()
+    july = store.month_path("SYNA", "2019-07")
+    assert july.exists() and "2019-07" not in store.index()["SYNA"]["months"]
+    written = pd.read_parquet(july)
+
+    # Reads whose range does not cover June or July are refused too.
+    with pytest.raises(BarStoreError, match="interrupted append"):
+        store.read_range("SYNA", *early)
+    with pytest.raises(BarStoreError, match="interrupted append"):
+        store.last_n("SYNA", at, 10)
+
+    assert _run(state, config, "2019-07-03T00:00:00+00:00", "fetch") == 0
+    out = capsys.readouterr().out
+    assert "store_recovered" in out
+    pd.testing.assert_frame_equal(store.read_range("SYNA", *early), early_rows)
+    assert len(store.last_n("SYNA", at, 10)) == 10
+    got = store.read_range("SYNA", pd.Timestamp("2019-07-01", tz="UTC"),
+                           pd.Timestamp("2019-08-01", tz="UTC"))
+    pd.testing.assert_frame_equal(got, written)
+    # The completed store reads as one fetch to the same instant would.
+    clean = tmp_path / "clean"
+    assert _run(clean, config, "2019-07-03T00:00:00+00:00", "fetch") == 0
+    whole = (pd.Timestamp("2019-01-01", tz="UTC"), pd.Timestamp("2019-08-01", tz="UTC"))
+    pd.testing.assert_frame_equal(store.read_range("SYNA", *whole),
+                                  BarStore(clean, TRACK, 3600).read_range("SYNA", *whole))
