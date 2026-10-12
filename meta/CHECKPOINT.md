@@ -1,12 +1,14 @@
 # CHECKPOINT
 
 Mission: 6 (`meta/BUILDER-6-PROMPT.md`), roadmap step S0.4 repaired. Closes M0. Base 19196da.
-Done: (none yet)
+Done: U0 cdc031f, U1 c1a2100.
 
-Unit in progress: U0 Plan.
-Intent: write meta/plan.md, this checkpoint, a journal line, and the D-004..D-006 status lines in
-meta/findings/FINDINGS.md; one `plan:` commit, pushed.
-Done means: the four files committed and pushed in one `plan:` commit.
+Unit in progress: U2 The independent calculation's self-test: a position that changes at the roll
+(REVIEW-5 should-fix 1; D-005; decisions 24, 25, 39, 43 (a)). Own sub-agent, forbidden-files words.
+Intent: tests/gates/test_g0_1_calc_self.py gains hand cases (carried position changing size/sign at a
+roll; flat position opening at a roll) checking roll cost, row cost, net_1x, net_2x, breakeven_cost.
+Done means: calc roll cost on h(u) and rolled turnover on h(u) each seen to fail; existing cases
+unchanged; ./scripts/gate M0 G0.1 passes; check green x3; body states no forbidden file was opened.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
 (items 41-46 new, 1-40 still bind); no value of a frozen file changes (config/, existing entries

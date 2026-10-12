@@ -52,3 +52,4 @@
 - 2026-10-12 mission 5 U7 done dd55021: final report; gate M0 PASS at 62edb14; findings D-004 (answered, to be decision 41), D-005, D-006 open; mission finished.
 2026-10-12T11:34:50.342Z  consult 0mv5682vn-26un (architect done) on aux.done of aux job 0mv53wp8e-r6ez: VERDICT: next kit mission-6-kit
 - 2026-10-12 mission 6 U0 plan: base 19196da, units U1-U6, carried REVIEW-5 blocker 1 (U1), should-fix 1/D-005 (U2, U3), D-004 note (answered, decision 41), test_gate_script note (U4); D-004..D-006 status lines appended.
+- 2026-10-12 mission 6 U1 done c1a2100: G0.1 compares every key of backtest --json (55 tests, ~53s); five wrong changes fail (position_min-from-h only via added LOW case 2019-03-23..24); cli.py unchanged; check green 3/3.
