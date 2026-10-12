@@ -11,4 +11,4 @@ Roadmap step: S0.2 (milestone M0, not closed by this mission).
 - [x] U4 Rolls and the adjusted series (DESIGN §5.6, §5.5; decision 16). — 61e1c59
 - [x] U5 Vendor and crypto adapters, live check L1 offline (DESIGN §5.5, §19.3 L1; decisions 11, 12, 15). — 5995b92
 - [x] U6 Spread tables and their measurement, live check L2 offline (DESIGN §5.7, §19.3 L2; decisions 13-15). — a5245d0
-- [ ] U7 Final report (`meta/FINAL-REPORT-2.md`).
+- [x] U7 Final report (`meta/FINAL-REPORT-2.md`). — 0cf4db1

@@ -19,3 +19,4 @@
 - 2026-10-12 mission 2 U4 done 61e1c59: rolls.py: detection on stored bars, atomic append of roll files, measured or estimated gap with roll_gap_estimated notice, adjusted series as of t; bars fetch records rolls; 14 tests.
 - 2026-10-12 mission 2 U5 done 5995b92: vendor adapter (lazy client, cost refusal, embargo, symbology, fetch_contract) with fake client; crypto adapter over httpx MockTransport; doctor --live vendor refuses without key; vendor extra pins databento 0.87.0; CRYA fixture + test_crypto track.
 - 2026-10-12 mission 2 U6 done a5245d0: spreads.py rule (table hour or main/off), config/spreads loading + frozen rule + marginal warning, spreads measure, doctor --live spreads refuses without key; 53 tests. Acceptance run by orchestrator: check green x3, gate M0 FAIL exit 1, gate M0 G0.3 FAIL, config check ok, bars fetch test_mixed writes SYNA rolls.
+- 2026-10-12 mission 2 U7 done 0cf4db1: final report; mission finished.
