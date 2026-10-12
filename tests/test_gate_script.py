@@ -15,8 +15,10 @@ GATE = REPO / "scripts" / "gate"
 
 
 def run_gate(*args, cwd=REPO):
+    # Decision 45: every run below is of an item or milestone that takes
+    # seconds, and the timeout is generous so that load cannot turn it red.
     return subprocess.run(
-        [str(GATE), *args], capture_output=True, text=True, cwd=cwd, timeout=600
+        [str(GATE), *args], capture_output=True, text=True, cwd=cwd, timeout=1200
     )
 
 
@@ -106,12 +108,13 @@ def test_a_skip_is_a_failure_under_discotrade_gate(tmp_path):
 
 
 def test_one_item_run_never_prints_the_milestone_verdict():
-    proc = run_gate("M0", "G0.3")
+    # G0.4 (decision 45): its tests take seconds; G0.3 replays for minutes.
+    proc = run_gate("M0", "G0.4")
     lines = proc.stdout.splitlines()
-    assert lines[-1] in ("gate M0 G0.3: PASS", "gate M0 G0.3: FAIL")
+    assert lines[-1] in ("gate M0 G0.4: PASS", "gate M0 G0.4: FAIL")
     assert "gate M0: PASS" not in proc.stdout
     assert "gate M0: FAIL" not in proc.stdout
-    assert (proc.returncode == 0) == (lines[-1] == "gate M0 G0.3: PASS")
+    assert (proc.returncode == 0) == (lines[-1] == "gate M0 G0.4: PASS")
 
 
 def _gate_module():
