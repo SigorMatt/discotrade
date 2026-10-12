@@ -1,11 +1,10 @@
 # CHECKPOINT
 
 Mission: 5 (`meta/BUILDER-5-PROMPT.md`), roadmap step S0.4. Closes M0. Base 3854c96.
-Done: U0 9d2d781, U1 8e8215c, U2 8d27fe1, U3 3be4e9b, U5 2c64e8d, U6 tests 80ffc78, U4 calc fix de9fc09, U4 2881ee0.
+Done: U0 9d2d781, U1 8e8215c, U2 8d27fe1, U3 3be4e9b, U5 2c64e8d, U6 tests 80ffc78, U4 calc fix de9fc09, U4 2881ee0, U6 gate run at 62edb14 (gate M0: PASS).
 
-Unit in progress: U6 gate run at the tip (tests already at 80ffc78): check green x3, then
-`./scripts/gate M0`; output saved verbatim to meta/drafts/gate-M0.txt for the report.
-Done means: `gate M0: PASS` with G0.1 holding the reference test, each item under 15 minutes.
+Unit in progress: U7 final report (draft meta/drafts/FINAL-REPORT-5.md, moved in by the commit).
+Done means: meta/FINAL-REPORT-5.md committed and pushed with ## Gate, NOT PROVEN, review-items table.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
 (items 34-40 new, 1-33 still bind); no value of a frozen file changes (config/, existing entries
