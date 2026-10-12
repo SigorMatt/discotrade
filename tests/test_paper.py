@@ -7,11 +7,16 @@ rebuild from the journal and with the module's daily series
 (``metrics.daily_series`` of ``backtest.evaluate`` over the span, decision 23).
 ``run-day`` runs in-process on a pytest temporary state directory made by
 ``init-state``; approaches are written with ``state.write_approach`` (decision
-48). The synthetic instruments' seeds are those of their fixture records
+48). The ``clean`` column (DESIGN 9.3, 11.3; decision 61) is tested on the
+hand frame with cutoffs the test gives, on a control-kind row the test
+builds, and on a rebuild of the run-day state after the test rewrites one
+approach's recorded ``cutoff`` in a copy under its temporary directory. The
+synthetic instruments' seeds are those of their fixture records
 (``SEEDS``, asserted); no other random draw is made. Time comes only from
 ``--as-of``.
 """
 
+import json
 import math
 import shutil
 from datetime import date, timedelta
@@ -19,11 +24,11 @@ from datetime import date, timedelta
 import pandas as pd
 import pytest
 
-from discotrade import journal, metrics, paper
+from discotrade import journal, metrics, paper, stats
 from discotrade.backtest import evaluate
 from discotrade.cli import REPO_ROOT, main
 from discotrade.config import DateRange
-from discotrade.state import content_hash, write_approach
+from discotrade.state import META_FILE, approach_dir, canonical_json, content_hash, write_approach
 from discotrade.strategy import load_strategy_file
 
 FIXTURE_CONFIG = REPO_ROOT / "tests" / "fixtures" / "config"
@@ -72,8 +77,12 @@ def hand_rows() -> pd.DataFrame:
     return frame[list(journal.COLUMNS)]
 
 
+#: The model cutoffs of the hand subjects (decision 61: from meta.json; here given).
+CUTOFFS = {"a1": date(2020, 1, 6), "a2": date(2020, 1, 5)}
+
+
 def test_build_is_decision_23s_daily_mean_and_counts_trades_above_the_floor():
-    out = paper.build(hand_rows(), 3)
+    out = paper.build(hand_rows(), 3, CUTOFFS)
     assert tuple(out.columns) == paper.COLUMNS
     got = {(r.subject, r.date): r for r in out.itertuples(index=False)}
     assert sorted(got) == [("a1", date(2020, 1, 6)), ("a1", date(2020, 1, 7)),
@@ -91,15 +100,40 @@ def test_build_is_decision_23s_daily_mean_and_counts_trades_above_the_floor():
 
 
 def test_build_of_no_rows_is_an_empty_table_with_the_columns():
-    out = paper.build(hand_rows().iloc[:0], 3)
+    out = paper.build(hand_rows().iloc[:0], 3, CUTOFFS)
     assert tuple(out.columns) == paper.COLUMNS and len(out) == 0
 
 
 def test_build_does_not_depend_on_the_row_order():
     rows = hand_rows()
     shuffled = rows.sample(frac=1.0, random_state=7).reset_index(drop=True)   # seed 7
-    assert content_hash(paper.build(shuffled, 3), paper.KEY) == \
-        content_hash(paper.build(rows, 3), paper.KEY)
+    assert content_hash(paper.build(shuffled, 3, CUTOFFS), paper.KEY) == \
+        content_hash(paper.build(rows, 3, CUTOFFS), paper.KEY)
+
+
+def test_an_approach_is_clean_only_on_days_after_its_cutoff():
+    out = paper.build(hand_rows(), 3, CUTOFFS)
+    got = {(r.subject, r.date): r.clean for r in out.itertuples(index=False)}
+    assert got == {("a1", date(2020, 1, 6)): False,    # on the cutoff: exposed
+                   ("a1", date(2020, 1, 7)): True,     # after it: clean
+                   ("a2", date(2020, 1, 6)): True}
+    assert out["clean"].dtype == bool
+    before = paper.build(hand_rows(), 3, {"a1": date(2020, 1, 7), "a2": date(2020, 1, 6)})
+    assert not before["clean"].any()                   # on or before the cutoff: exposed
+
+
+def test_a_control_row_is_always_clean():
+    rows = hand_rows()
+    rows.loc[rows["subject"] == "a1", "kind"] = "control_random"
+    rows.loc[rows["subject"] == "a2", "kind"] = "control_bh"
+    out = paper.build(rows, 3, {})                     # no cutoff is needed for a control
+    assert out["clean"].tolist() == [True, True, True]
+    assert stats.clean_counts(out, "a1") == (2, 0)
+
+
+def test_an_approach_without_a_cutoff_is_refused():
+    with pytest.raises(ValueError, match="cutoff"):
+        paper.build(hand_rows(), 3, {"a1": date(2020, 1, 1)})
 
 
 # ------------------------------------------------------------------ as run-day writes it
@@ -187,3 +221,26 @@ def test_paper_is_the_module_daily_series_and_counts_journal_trades(ran, setup):
             day_rows = rows[(rows["subject"] == aid) & (rows["date"] == d)]
             assert mine["trades"][k] == int((day_rows["trade"] > 1e-9).sum())
     assert stored["trades"].sum() > 0
+
+
+def test_the_clean_column_follows_each_approachs_recorded_cutoff(ran, setup, tmp_path):
+    state, subjects = ran
+    stored = paper.read(state, TRACK)
+    for aid in subjects:                              # cutoff 2019-01-01: every row clean
+        assert stored[stored["subject"] == aid]["clean"].all()
+    copy = tmp_path / "state"
+    shutil.copytree(state, copy)
+    (aid, _), = [(a, v) for a, v in subjects.items() if v[0] == "zscore_reversal.py"]
+    meta_path = approach_dir(copy, aid) / META_FILE
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    cutoff = date(2019, 6, 11)
+    meta["cutoff"] = cutoff.isoformat()
+    meta_path.write_text(canonical_json(meta) + "\n", encoding="utf-8")
+    rebuilt = paper.rebuild(copy, TRACK, len(setup.instruments))
+    mine = rebuilt[rebuilt["subject"] == aid]
+    assert list(mine["clean"]) == [d > cutoff for d in mine["date"]]
+    assert stats.clean_counts(rebuilt, aid) == (sum(d > cutoff for d in mine["date"]),
+                                                sum(d <= cutoff for d in mine["date"]))
+    assert 0 < stats.clean_counts(rebuilt, aid)[0] < len(mine)
+    other = rebuilt[rebuilt["subject"] != aid]
+    assert other["clean"].all()
