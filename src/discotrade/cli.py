@@ -197,7 +197,8 @@ def _notice_day(ctx: Context, args: argparse.Namespace, command: str) -> date | 
         return None
 
 
-def _closed_day(tc: Any, calendars: dict[str, Any], now: datetime) -> date:
+def _closed_day(tc: Any, calendars: dict[str, Any], now: datetime,
+                used: Any = None) -> date:
     """DESIGN 16.1's ``D`` at ``now`` (decision 2026-10-12 3): per instrument, the
     latest trading day whose last expected bar closed at or before its source's
     ``available_until(now)``; for the track, the earliest of these, so that
@@ -205,7 +206,7 @@ def _closed_day(tc: Any, calendars: dict[str, Any], now: datetime) -> date:
     instruments differ in calendar or source; the simplest safe choice)."""
     from discotrade.daily import closed_day
 
-    return closed_day(tc, calendars, now)
+    return closed_day(tc, calendars, now, used)
 
 
 def _load_for_gaps(ctx: Context) -> tuple[Any, dict[str, Any], float]:
@@ -275,7 +276,7 @@ def _bars_fetch(ctx: Context, args: argparse.Namespace) -> int:
     from discotrade.bars.store import BarStore, BarStoreError, finite_rows
     from discotrade.config import ConfigError
     from discotrade.rolls import update_rolls
-    from discotrade.sources import NotBuiltError, source_for
+    from discotrade.sources import NotBuiltError, sources_for
 
     if ctx.state is None:
         print("bars fetch: FAIL: no state directory (--state or $DISCOTRADE_STATE)",
@@ -289,18 +290,23 @@ def _bars_fetch(ctx: Context, args: argparse.Namespace) -> int:
         bar = tc.track.bar_seconds
         store = BarStore(ctx.state, tc.track.name, bar)
         now = ctx.clock.now()
+        # One source per adapter, for every instrument and step of the run.
+        sources = sources_for(tc.instruments, calendars, bar)
         # An interrupted append is completed before any fetch (decision
         # 2026-10-12 5); a revised data point stops the fetch.
         notices = [event for inst in tc.instruments
                    for event in store.recover(inst.symbol, day)]
         for event in notices:
             print(f"notice {event.to_json()}")
+        # Every stored file is checked before anything is written: a revised
+        # data point anywhere stops the fetch with nothing written.
+        for inst in tc.instruments:
+            store._verify_stored(inst.symbol)
         # Every instrument's bars are asked for before any is written, so a
         # source that cannot serve one instrument leaves the store untouched.
         batches = []
-        sources = {}
         for inst in tc.instruments:
-            source = source_for(inst.source.adapter, calendars, bar)
+            source = sources[inst.symbol]
             until = source.available_until(now)
             # The index, after recover() above (decision 2026-10-12 31).
             last = store._indexed_last_ts(inst.symbol)
@@ -316,14 +322,13 @@ def _bars_fetch(ctx: Context, args: argparse.Namespace) -> int:
                 dropped = int((~finite).sum())
                 bars = bars[finite]
             batches.append((inst.symbol, bars, until, dropped))
-            sources[inst.symbol] = source
         for symbol, bars, until, dropped in batches:
             written = 0 if bars is None else store.append(symbol, bars, until)
             print(f"fetched {symbol}: {written} bars written, {dropped} dropped as not "
                   f"finite, available until {until.isoformat()}")
         # With no --day, the gap check is for DESIGN 16.1's D at --as-of, the
         # day `bars gaps` checks, by the same function (decision 2026-10-12 19).
-        gap_day = day if args.day else _closed_day(tc, calendars, now)
+        gap_day = day if args.day else _closed_day(tc, calendars, now, sources)
         report = check_gaps(ctx.state, tc, calendars, gap_day, limit)
         # Rolls are found on the stored bars and recorded once (DESIGN 5.6).
         rolls = [update_rolls(ctx.state, tc.track.name, bar, inst, sources[inst.symbol], day)

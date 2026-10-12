@@ -579,3 +579,173 @@ def test_bars_fetch_drops_bars_that_are_not_finite_and_the_gap_check_lists_them(
     assert np.isfinite(stored[["open", "high", "low", "close", "volume"]].to_numpy()).all()
     missing = {ln.split(" ", 2)[2] for ln in out if ln.startswith("missing SYNB ")}
     assert {t.isoformat() for t in poisoned} <= missing
+
+
+# --- a fetch generates only what it needs (mission 9 U3; DESIGN 5.5, 17.1) -----------
+#
+# The series of an instrument starts at its trusted_from. "The full generation"
+# is one fetch from trusted_from to FULL_END on a fresh source; every fetch, on a
+# fresh source or on one that has already served other ranges (a source is
+# built once per run and serves every fetch of the run), must give exactly that
+# generation's slice. SYNA (synth_week, quarterly roll on the 14th), SYNL
+# (synth_week, drops bars) and SYNX (always_open, drops bars) cover both fixture
+# calendars and a roll.
+SLICED = ("SYNA", "SYNL", "SYNX")
+FULL_END = datetime(2019, 10, 1, tzinfo=UTC)
+WINDOWS = (
+    (datetime(2019, 1, 7, tzinfo=UTC), datetime(2019, 1, 8, 5, tzinfo=UTC)),
+    (datetime(2019, 3, 12, 13, 30, tzinfo=UTC), datetime(2019, 3, 16, tzinfo=UTC)),  # roll
+    (datetime(2019, 6, 28, tzinfo=UTC), datetime(2019, 7, 2, 7, tzinfo=UTC)),       # month
+    (datetime(2019, 9, 13, tzinfo=UTC), datetime(2019, 9, 17, tzinfo=UTC)),         # roll
+    (datetime(2019, 9, 30, 20, tzinfo=UTC), FULL_END),
+)
+
+
+def _slice(full, lo, hi):
+    return full[(full["ts"] >= lo) & (full["ts"] < hi)].reset_index(drop=True)
+
+
+@pytest.mark.parametrize("symbol", SLICED)
+def test_a_fetch_is_the_slice_of_the_full_generation(calendars, symbol):
+    rec = inst(symbol)
+    full = SynthSource(calendars, HOUR).fetch(rec, START, FULL_END)
+    shared = SynthSource(calendars, HOUR)
+    for lo, hi in WINDOWS:                                   # ascending, as a replay asks
+        want = _slice(full, lo, hi)
+        assert len(want) > 0
+        for source in (SynthSource(calendars, HOUR), shared):
+            pd.testing.assert_frame_equal(source.fetch(rec, lo, hi), want, check_exact=True)
+    for lo, hi in reversed(WINDOWS):                         # then shorter ones, again
+        pd.testing.assert_frame_equal(shared.fetch(rec, lo, hi), _slice(full, lo, hi),
+                                      check_exact=True)
+    pd.testing.assert_frame_equal(shared.fetch(rec, START, FULL_END), full, check_exact=True)
+
+
+def test_a_day_by_day_fetch_is_the_slice_of_the_full_generation(calendars):
+    """Consecutive one-day fetches on one source, as bars fetch makes them day by
+    day, give the full generation's bars, every column, for every instrument."""
+    shared = SynthSource(calendars, HOUR)
+    for symbol in SLICED:
+        rec = inst(symbol)
+        full = SynthSource(calendars, HOUR).fetch(rec, START, FULL_END)
+        days = [datetime(2019, 3, 1, tzinfo=UTC) + timedelta(days=k) for k in range(31)]
+        got = pd.concat([shared.fetch(rec, a, b) for a, b in zip(days[:-1], days[1:], strict=True)],
+                        ignore_index=True)
+        pd.testing.assert_frame_equal(got, _slice(full, days[0], days[-1]), check_exact=True)
+
+
+@pytest.mark.parametrize("contract", ["SYNA-2019-03", "SYNA-2019-06", "SYNA-2019-09"])
+def test_a_contract_fetch_is_the_slice_of_the_full_generation(calendars, contract):
+    rec = inst("SYNA")
+    full = SynthSource(calendars, HOUR).fetch_contract(rec, contract, START, FULL_END)
+    shared = SynthSource(calendars, HOUR)
+    shared.fetch(rec, START, datetime(2019, 3, 13, tzinfo=UTC))
+    for lo, hi in WINDOWS:
+        want = _slice(full, lo, hi)
+        for source in (SynthSource(calendars, HOUR), shared):
+            got = source.fetch_contract(rec, contract, lo, hi)
+            if want.empty:          # outside the contract's life: no bar either way
+                assert got.empty
+            else:
+                pd.testing.assert_frame_equal(got, want, check_exact=True)
+
+
+def test_a_source_serves_a_changed_record_from_that_record(calendars):
+    """A source that has served one record of a symbol generates a record with
+    other settings from those settings, not from what it generated before."""
+    rec = inst("SYNL")
+    other = with_seed(rec, rec.source.get("seed") + 1)
+    shared = SynthSource(calendars, HOUR)
+    shared.fetch(rec, START, FULL_END)
+    want = SynthSource(calendars, HOUR).fetch(other, START, FULL_END)
+    pd.testing.assert_frame_equal(shared.fetch(other, START, FULL_END), want, check_exact=True)
+
+
+# --- bars fetch: once per run, and day by day equals at once (mission 9 U3) -----------
+#
+# On the gate configuration (decision 72: a copy of tests/fixtures/config/ under
+# tmp, thresholds_gate.toml copied unchanged) and the gate track test_synth. The
+# first fetch, at FIRST_FETCH, stores every bar from trusted_from; then one fetch
+# a day at 21:30 UTC to LAST_FETCH (31 days: February into March, across SYNA's
+# roll on 2019-03-14). A second state takes one fetch at LAST_FETCH.
+FIRST_FETCH = datetime(2019, 2, 25, 21, 30, tzinfo=UTC)
+LAST_FETCH = datetime(2019, 3, 27, 21, 30, tzinfo=UTC)
+GATE_TRACK = "test_synth"
+
+
+def _gate_config(tmp_path):
+    config = tmp_path / "gate"
+    shutil.copytree(FIXTURE_CONFIG, config)
+    shutil.copy(FIXTURE_CONFIG / "thresholds_gate.toml", config / "thresholds.toml")
+    assert (config / "thresholds.toml").read_bytes() == \
+        (FIXTURE_CONFIG / "thresholds_gate.toml").read_bytes()
+    return config
+
+
+def _fetch_at(state, config, instant):
+    return main(_argv(state, config, "bars", "fetch", as_of=instant.isoformat(),
+                      track=GATE_TRACK))
+
+
+def _store_bytes(state):
+    """Every month file and the index of the track's bar store, with its bytes."""
+    root = state / "bars" / GATE_TRACK
+    out = {p.relative_to(root).as_posix(): p.read_bytes() for p in root.rglob("*.parquet")}
+    out["index.json"] = (root / "index.json").read_bytes()
+    return out
+
+
+def test_bars_fetch_day_by_day_writes_the_store_one_fetch_writes(tmp_path, capsys):
+    config = _gate_config(tmp_path)
+    daily, once = tmp_path / "daily", tmp_path / "once"
+    instant = FIRST_FETCH
+    count = 0
+    while instant <= LAST_FETCH:
+        assert _fetch_at(daily, config, instant) == 0, instant
+        instant += timedelta(days=1)
+        count += 1
+    assert count == 31
+    assert _fetch_at(once, config, LAST_FETCH) == 0
+    capsys.readouterr()
+    got, want = _store_bytes(daily), _store_bytes(once)
+    assert sorted(want) == sorted(got)
+    for symbol in ("SYNA", "SYNB", "SYNC", "SYND"):
+        assert {f"{symbol}/2019-02.parquet", f"{symbol}/2019-03.parquet"} <= set(want)
+    assert got == want
+    rolls = state_rolls = (daily / "rolls" / GATE_TRACK / "SYNA.jsonl").read_text()
+    assert rolls == (once / "rolls" / GATE_TRACK / "SYNA.jsonl").read_text()
+    assert "SYNA-2019-06" in state_rolls
+
+
+def test_bars_fetch_builds_one_source_and_recovers_and_generates_once_per_instrument(
+        tmp_path, monkeypatch, capsys):
+    import discotrade.sources as sources
+    from discotrade.sources import synth
+
+    config = _gate_config(tmp_path)
+    state = tmp_path / "state"
+    assert _fetch_at(state, config, FIRST_FETCH) == 0
+    built, recovered, generated = [], [], []
+    real_for, real_recover, real_generate = sources.source_for, BarStore.recover, synth._generate
+
+    def counted_for(adapter, calendars, bar_seconds):
+        built.append(adapter)
+        return real_for(adapter, calendars, bar_seconds)
+
+    def counted_recover(self, symbol, day):
+        recovered.append(symbol)
+        return real_recover(self, symbol, day)
+
+    def counted_generate(times, src, bar_seconds):
+        generated.append(src.get("seed"))
+        return real_generate(times, src, bar_seconds)
+    monkeypatch.setattr(sources, "source_for", counted_for)
+    monkeypatch.setattr(BarStore, "recover", counted_recover)
+    monkeypatch.setattr(synth, "_generate", counted_generate)
+    # Across SYNA's roll of 2019-03-14: the roll's gap is measured from the
+    # contracts' bars, served by the same source.
+    assert _fetch_at(state, config, datetime(2019, 3, 20, 21, 30, tzinfo=UTC)) == 0
+    assert "roll SYNA" in capsys.readouterr().out
+    assert built == ["synth"]
+    assert sorted(recovered) == ["SYNA", "SYNB", "SYNC", "SYND"]
+    assert sorted(generated) == [101, 102, 103, 104]

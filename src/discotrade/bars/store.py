@@ -32,8 +32,14 @@ mismatch is a revised data point. ``recover`` completes an interrupted
 append: it records the file in the index (rows, last ``ts``, content hash),
 changes no row, and returns one ``store_recovered`` health notice (DESIGN
 15.2, decision 16) per completed file, naming the instrument and the file.
-The writer runs it before every append and keeps the notices in
-``notices`` for its caller. The reader does not repair: it refuses both
+It reads and hashes only the files an interrupted append can leave: the
+instrument's month files the index does not list and the file holding its
+indexed last bar (mission 9 U3); a listed earlier file that no longer
+matches is a revised data point the reader refuses. The writer runs it
+before every append, unless it has just run on the same store for that
+instrument with nothing written since (``bars fetch`` and step 1 run it
+before they fetch, so it runs once per instrument per fetch), and keeps the
+notices in ``notices`` for its caller. The reader does not repair: it refuses both
 cases, with an error that says which. Every read of an instrument
 (``read_range``, ``last_n``, ``last_ts``, decision 2026-10-12 31, and
 ``index_entry``, decision 2026-10-12 35) first refuses when the
@@ -136,6 +142,11 @@ class BarStore:
         self.index_path = self.root / "index.json"
         #: Health notices of the interrupted appends the writer completed.
         self.notices: list[HealthEvent] = []
+        # Symbols ``recover`` has checked with nothing written since, and the
+        # month frames it verified against the index, for the append that
+        # follows it on this store (mission 9 U3: recovery once per fetch).
+        self._checked: set[str] = set()
+        self._verified: dict[tuple[str, str], tuple[str, pd.DataFrame]] = {}
 
     # --- paths and the index ---------------------------------------------------
 
@@ -212,8 +223,14 @@ class BarStore:
     def recover(self, symbol: str, day: date) -> tuple[HealthEvent, ...]:
         """Complete an interrupted append of ``symbol`` (decision 2026-10-12 5).
 
-        Returns one ``store_recovered`` notice dated ``day`` per completed file;
-        refuses a revised data point; writes nothing when nothing is to complete.
+        Reads and hashes only the files an interrupted append can leave: the
+        month file holding the indexed last bar and the month files the index
+        does not list (an append adds only rows later than the indexed last
+        bar and writes the index after every month file). Returns one
+        ``store_recovered`` notice dated ``day`` per completed file; refuses a
+        revised data point among those files; writes nothing when nothing is
+        to complete. A listed earlier file that no longer matches the index is
+        left to the reader, which refuses it (decisions 18, 31).
         """
         folder = self.month_path(symbol, "x").parent
         index = self.index()
@@ -221,8 +238,13 @@ class BarStore:
         months: dict[str, Any] = {} if entry is None else entry["months"]
         last = None if entry is None else pd.Timestamp(entry["last_ts"]).tz_convert("UTC")
         on_disk = sorted(p.stem for p in folder.glob("*.parquet")) if folder.is_dir() else []
+        candidates = {m for m in on_disk if m not in months}
+        if months:
+            candidates.add(max(months))          # the file holding the indexed last bar
+        self._checked.discard(symbol)
         completed: dict[str, dict[str, Any]] = {}
-        for month in sorted(set(on_disk) | set(months)):
+        verified: dict[str, tuple[str, pd.DataFrame]] = {}
+        for month in sorted(candidates):
             listed = months.get(month)
             path = self.month_path(symbol, month)
             if not path.exists():
@@ -230,6 +252,7 @@ class BarStore:
                                     f"index (a revised data point); refused")
             frame = pd.read_parquet(path)
             if listed is not None and self._matches(frame, listed):
+                verified[month] = (listed["hash"], frame)
                 continue
             if not self._interrupted(frame, listed, last):
                 raise BarStoreError(self._revised(symbol, month))
@@ -240,22 +263,37 @@ class BarStore:
                 "hash": content_hash(frame, KEY),
                 "before": 0 if listed is None else listed["rows"],
             }
-        if not completed:
-            return ()
-        entry = entry if entry is not None else {"months": {}}
+            verified[month] = (completed[month]["hash"], frame)
         events = []
-        for month, done in completed.items():
-            before = done.pop("before")
-            entry["months"][month] = done
-            events.append(HealthEvent(
-                date=day, level="notice", kind=STORE_RECOVERED, subject=symbol,
-                detail={"file": f"{symbol}/{month}.parquet", "rows_before": before,
-                        "rows": done["rows"], "last_ts": done["last_ts"]},
-            ))
-        self._summarize(entry)
-        index[symbol] = entry
-        self._write_index(index)
+        if completed:
+            entry = entry if entry is not None else {"months": {}}
+            for month, done in completed.items():
+                before = done.pop("before")
+                entry["months"][month] = done
+                events.append(HealthEvent(
+                    date=day, level="notice", kind=STORE_RECOVERED, subject=symbol,
+                    detail={"file": f"{symbol}/{month}.parquet", "rows_before": before,
+                            "rows": done["rows"], "last_ts": done["last_ts"]},
+                ))
+            self._summarize(entry)
+            index[symbol] = entry
+            self._write_index(index)
+        self._checked.add(symbol)
+        for month, done_frame in verified.items():
+            self._verified[(symbol, month)] = done_frame
         return tuple(events)
+
+    def _verify_stored(self, symbol: str) -> None:
+        """Check every stored month file of ``symbol`` against the index, as a
+        reader does and with its errors, reading again no file ``recover`` has
+        just verified on this store. ``bars fetch`` and step 1 call it after
+        ``recover`` and before they write, so that a revised data point in any
+        file stops them with nothing written (recover reads only the files an
+        interrupted append can leave)."""
+        for month, listed in sorted(self._months(symbol).items()):
+            seen = self._verified.get((symbol, month))
+            if seen is None or seen[0] != listed["hash"]:
+                self._read_month(symbol, month, listed)
 
     @staticmethod
     def _revised(symbol: str, month: str) -> str:
@@ -384,7 +422,18 @@ class BarStore:
         if not finite.all():
             raise BarStoreError(f"{symbol}: bar {_iso(ts[~finite].iloc[0])} has a value that "
                                 f"is not finite (NaN or infinite); nothing written")
-        self.notices.extend(self.recover(symbol, until.date()))
+        # Decision 5's check before the append, unless ``recover`` has just run
+        # on this store for ``symbol`` with nothing written since (``bars fetch``
+        # and step 1 run it before they fetch), so that it runs once per fetch.
+        if symbol not in self._checked:
+            self.notices.extend(self.recover(symbol, until.date()))
+        try:
+            return self._append_checked(symbol, new, ts)
+        finally:
+            self._checked.discard(symbol)
+            self._verified = {k: v for k, v in self._verified.items() if k[0] != symbol}
+
+    def _append_checked(self, symbol: str, new: pd.DataFrame, ts: pd.Series) -> int:
         index = self.index()
         entry = index.get(symbol)
         if entry is not None:
@@ -402,7 +451,10 @@ class BarStore:
         for month, _ in groups:
             path = self.month_path(symbol, month)
             if month in entry["months"]:
-                old[month] = self._read_month(symbol, month, entry["months"][month])
+                listed = entry["months"][month]
+                seen = self._verified.get((symbol, month))
+                old[month] = (seen[1] if seen is not None and seen[0] == listed["hash"]
+                              else self._read_month(symbol, month, listed))
             elif path.exists():   # recover() has just listed every completable file
                 raise BarStoreError(f"{symbol} {month}: month file exists but is not in the "
                                     f"index; refused")

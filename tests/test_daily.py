@@ -550,3 +550,62 @@ def test_an_approach_made_dormant_on_d_is_journaled_on_d_plus_1(tmp_path, config
     before = files(state)
     assert run(state, low, "--day", d.isoformat()) == 0
     assert files(state) == before
+
+
+# ------------------------------------------------------------ step 1, once per run (mission 9 U3)
+
+
+def test_a_day_builds_one_source_and_recovers_and_generates_once_per_instrument(
+        state, config, setup, monkeypatch):
+    import discotrade.sources as sources
+    from discotrade.sources import synth
+
+    built, recovered, generated = [], [], []
+    real_for, real_recover, real_generate = sources.source_for, BarStore.recover, synth._generate
+
+    def counted_for(adapter, calendars, bar_seconds):
+        built.append(adapter)
+        return real_for(adapter, calendars, bar_seconds)
+
+    def counted_recover(self, symbol, day):
+        recovered.append(symbol)
+        return real_recover(self, symbol, day)
+
+    def counted_generate(times, src, bar_seconds):
+        generated.append(src.get("seed"))
+        return real_generate(times, src, bar_seconds)
+    monkeypatch.setattr(sources, "source_for", counted_for)
+    monkeypatch.setattr(BarStore, "recover", counted_recover)
+    monkeypatch.setattr(synth, "_generate", counted_generate)
+    # NEXT is 2019-06-13, the day before SYNA's roll of 2019-06-14; the day
+    # after it measures the roll's gap from the contracts' bars.
+    for d in (NEXT, NEXT + timedelta(days=1)):
+        built.clear(), recovered.clear(), generated.clear()
+        assert run(state, config, "--day", d.isoformat()) == 0
+        assert built == ["synth"]
+        assert sorted(recovered) == sorted(SEEDS)
+        assert sorted(generated) == sorted(SEEDS.values())
+    rolls = [json.loads(line) for line in
+             (state / "rolls" / TRACK / "SYNA.jsonl").read_text().splitlines()]
+    assert [(r["old"], r["new"]) for r in rolls][-1] == ("SYNA-2019-06", "SYNA-2019-09")
+
+
+def test_a_revised_earlier_month_fails_the_day_before_any_bar_is_written(state, config, setup):
+    """recover reads only the files an interrupted append can leave; step 1
+    still checks every stored file before it writes, so a revised data point
+    in an earlier month fails the day with revised_data and no bar written."""
+    store = BarStore(state, TRACK, setup.track.bar_seconds)
+    month = store.month_path("SYNL", "2019-05")
+    assert month.exists() and max(store.index()["SYNL"]["months"]) == "2019-06"
+    frame = pd.read_parquet(month)
+    frame.loc[3, "close"] += 0.25
+    frame.to_parquet(month, index=False, engine="pyarrow")
+    bars_before = {p: p.read_bytes() for p in sorted((state / "bars").rglob("*"))
+                   if p.is_file()}
+    head = commits(state)
+    assert run(state, config, "--day", NEXT.isoformat()) == 1
+    events = [e for e in health(state) if e["kind"] == "revised_data"]
+    assert len(events) == 1 and "SYNL 2019-05" in events[0]["detail"]["error"]
+    assert {p: p.read_bytes() for p in sorted((state / "bars").rglob("*"))
+            if p.is_file()} == bars_before
+    assert journal.read_day(state, TRACK, NEXT) is None and commits(state) == head

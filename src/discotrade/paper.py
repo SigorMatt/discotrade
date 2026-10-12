@@ -36,6 +36,13 @@ The API:
   (a staging directory), its index and day files are read in place of the
   state directory's where they exist, so that a staged day is included before
   it is moved into place.
+- ``update(state_dir, track, n_instruments, day, overlay=None)``: the stored
+  records with ``build`` of ``day``'s journal file (read from ``overlay``
+  first) merged in, in ``KEY`` order: what ``rebuild`` gives when the stored
+  records are a rebuild of the journal before ``day``, since a day's records
+  depend only on that day's rows (mission 9 U3: the day no longer rebuilds
+  every day from the whole journal). When no records are stored, or they
+  hold a day on or after ``day``, it is ``rebuild``.
 - ``write(root, track, frame)`` writes the file under ``root`` atomically;
   ``read(state_dir, track)`` reads it back (None when there is none);
   ``paper_path(root, track)``.
@@ -142,6 +149,27 @@ def rebuild(state_dir: Path, track: str, n_instruments: int,
         return _empty()
     cutoffs = {a.id: date.fromisoformat(a.meta["cutoff"]) for a in read_approaches(state_dir)}
     return build(pd.concat(frames, ignore_index=True), n_instruments, cutoffs)
+
+
+def update(state_dir: Path, track: str, n_instruments: int, day: date,
+           overlay: Path | None = None) -> pd.DataFrame:
+    """The stored paper records with ``day``'s journal rows added, sorted by ``KEY``."""
+    stored = read(state_dir, track)
+    if stored is None or (len(stored) and max(stored["date"]) >= day):
+        return rebuild(state_dir, track, n_instruments, overlay=overlay)
+    rows = None if overlay is None else journal.read_day(overlay, track, day)
+    if rows is None:
+        rows = journal.read_day(state_dir, track, day)
+    if rows is None:
+        raise journal.JournalError(f"{track} has no journal file for {day.isoformat()}")
+    if not len(rows):
+        return stored
+    cutoffs = {a.id: date.fromisoformat(a.meta["cutoff"]) for a in read_approaches(state_dir)}
+    new = build(rows, n_instruments, cutoffs)
+    if not len(stored):
+        return new
+    merged = pd.concat([stored, new], ignore_index=True)
+    return merged.sort_values(list(KEY), kind="stable").reset_index(drop=True)
 
 
 def write(root: Path, track: str, frame: pd.DataFrame) -> Path:

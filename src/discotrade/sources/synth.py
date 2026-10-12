@@ -58,6 +58,16 @@ underlying's: a dropped bar time is missing from every contract. The first
 contract is the one current at the first bar; earlier ones are unknown.
 Whether an instrument can be shorted is a field of its record; its bars are
 generated like any other.
+
+Generation (mission 9 U3). A request still generates the series from its
+start, ``trusted_from``, since every bar's price depends on every draw
+before it; it generates no further than the request's end, and builds the
+rows and contract names of the requested range only. A source keeps, per
+instrument record, the longest series it has generated and serves every
+later request whose end it covers from that series' prefix (a prefix of the
+generation is the generation of the prefix: each draw of bar ``k`` depends
+only on the seed and ``k``, and the cumulative sum is sequential), so a run
+that builds its source once generates each series once.
 """
 
 from __future__ import annotations
@@ -119,6 +129,10 @@ class SynthSource:
             raise ValueError(f"bar_seconds must be a positive integer, not {bar_seconds!r}")
         self.calendars = dict(calendars)
         self.bar_seconds = bar_seconds
+        # Per symbol: the record, the end it was generated to, the expected bar
+        # times to that end plus the look-ahead, and the underlying before it.
+        self._cache: dict[str, tuple[Instrument, datetime, list[datetime], pd.DataFrame,
+                                     np.ndarray]] = {}
 
     def available_until(self, now: datetime) -> datetime:
         return _aware(now, "now")
@@ -169,6 +183,24 @@ class SynthSource:
                              f"named {prefix}YYYY-MM for March, June, September, December")
         return 4 * int(match.group(1)) + int(match.group(2)) // 3 - 1
 
+    def _underlying(self, instrument: Instrument, src: Source, cal: Calendar,
+                    origin: datetime, stop: datetime
+                    ) -> tuple[list[datetime], pd.DataFrame, np.ndarray]:
+        """The expected bar times from ``origin`` to ``stop`` plus the look-ahead,
+        and the underlying series over those before ``stop``, from the series
+        this source generated for the record when it reaches ``stop``."""
+        cached = self._cache.get(instrument.symbol)
+        if cached is None or cached[0] != instrument or cached[1] < stop:
+            ahead = expected_bars(cal, origin, stop + _LOOKAHEAD, self.bar_seconds)
+            frame, dropped = _generate(ahead[:bisect.bisect_left(ahead, stop)], src,
+                                       self.bar_seconds)
+            cached = (instrument, stop, ahead, frame, dropped)
+            self._cache[instrument.symbol] = cached
+        _, _, ahead, frame, dropped = cached
+        ahead = ahead[:bisect.bisect_left(ahead, stop + _LOOKAHEAD)]
+        n = bisect.bisect_left(ahead, stop)
+        return ahead, frame.iloc[:n], dropped[:n]
+
     def _series(
         self, instrument: Instrument, start: datetime, end: datetime, contract: str | None
     ) -> tuple[pd.DataFrame, np.ndarray]:
@@ -178,23 +210,29 @@ class SynthSource:
         cal = self.calendars[instrument.calendar]
         origin = datetime.combine(instrument.trusted_from, time(), tzinfo=UTC)
         stop = max(origin, end)
+        ahead, frame, dropped = self._underlying(instrument, src, cal, origin, stop)
+        n = len(frame)
+        lo = min(n, bisect.bisect_left(ahead, start))      # the first bar at or after start
         if src.get("roll_schedule", "none") == "none":
             if contract is not None and contract != symbol:
                 raise ValueError(f"{symbol}: no contract {contract!r}; the instrument does "
                                  "not roll")
-            times = expected_bars(cal, origin, stop, self.bar_seconds)
-            frame, dropped = _generate(times, src, self.bar_seconds)
-            frame["contract"] = [symbol] * len(frame)
-        else:
-            ahead = expected_bars(cal, origin, stop + _LOOKAHEAD, self.bar_seconds)
-            n = bisect.bisect_left(ahead, stop)
-            frame, dropped = _generate(ahead[:n], src, self.bar_seconds)
-            frame, dropped = _contracts(frame, dropped, ahead, src, instrument,
-                                        None if contract is None
-                                        else self._quarter(instrument, contract))
+            out = frame.iloc[lo:].reset_index(drop=True)
+            out["contract"] = _names([symbol] * len(out))
+            return out, dropped[lo:]
+        if contract is None:
+            return _contracts(frame, dropped, ahead, src, instrument, None, lo)
+        frame, dropped = _contracts(frame, dropped, ahead, src, instrument,
+                                    self._quarter(instrument, contract))
         keep = ((frame["ts"] >= pd.Timestamp(start)).to_numpy()
                 & (frame["ts"] < pd.Timestamp(end)).to_numpy())
         return frame[keep].reset_index(drop=True), dropped[keep]
+
+
+def _names(names: list[str]) -> Any:
+    """The contract column of ``names``, in the type a column of names takes even
+    when ``names`` is empty (as a slice of a longer column of names keeps it)."""
+    return pd.array(names, dtype=pd.Series(["x"]).dtype)
 
 
 def _constant(src: Source, tick: float, quarter: int) -> float:
@@ -203,9 +241,10 @@ def _constant(src: Source, tick: float, quarter: int) -> float:
 
 
 def _contracts(frame: pd.DataFrame, dropped: np.ndarray, ahead: list[datetime], src: Source,
-               instrument: Instrument, quarter: int | None) -> tuple[pd.DataFrame, np.ndarray]:
-    """The continuous series (``quarter`` None) or one contract's bars, from the
-    underlying ``frame`` over ``ahead[:len(frame)]``."""
+               instrument: Instrument, quarter: int | None,
+               lo: int = 0) -> tuple[pd.DataFrame, np.ndarray]:
+    """The continuous series from bar ``lo`` on (``quarter`` None) or one
+    contract's bars, from the underlying ``frame`` over ``ahead[:len(frame)]``."""
     n, roll_day = len(frame), src.get("roll_day")
     overlap = src.get("contract_overlap_bars")
     if not ahead:                            # no expected bar at all
@@ -221,14 +260,15 @@ def _contracts(frame: pd.DataFrame, dropped: np.ndarray, ahead: list[datetime], 
     while not rolls or rolls[-1] < n:
         rolls.append(bisect.bisect_left(ahead, _roll_instant(first + len(rolls), roll_day)))
     if quarter is None:
-        current = first + np.searchsorted(np.array(rolls), np.arange(n), side="right")
+        current = first + np.searchsorted(np.array(rolls), np.arange(lo, n), side="right")
         constants = {q: _constant(src, instrument.tick_size, q) for q in set(current.tolist())}
         add = np.array([constants[q] for q in current], dtype=float)
-        out = frame.copy()
+        out = frame.iloc[lo:].reset_index(drop=True)
         for col in _PRICES:
-            out[col] = frame[col].to_numpy() + add
-        out["contract"] = [_contract_name(instrument.symbol, q) for q in current]
-        return out, dropped
+            out[col] = frame[col].to_numpy()[lo:] + add
+        names = {q: _contract_name(instrument.symbol, q) for q in constants}
+        out["contract"] = _names([names[q] for q in current])
+        return out, dropped[lo:]
     if quarter < first:
         raise ValueError(f"{instrument.symbol}: no contract "
                          f"{_contract_name(instrument.symbol, quarter)!r}; it was current "

@@ -22,6 +22,8 @@ import shutil
 from datetime import date, timedelta
 
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 import pytest
 
 from discotrade import journal, metrics, paper, stats
@@ -169,10 +171,35 @@ def ran(tmp_path_factory, config, setup):
     assert main(["init-state", "--state", str(state), "--as-of", AS_OF]) == 0
     first = admit(state, setup, "trend_ma.py", FIRST)
     second = admit(state, setup, "zscore_reversal.py", LATER)
+    after = []
     for d in DAYS:
         assert main(["--state", str(state), "--config", str(config), "--track", TRACK,
                      "--as-of", AS_OF, "run-day", "--day", d.isoformat()]) == 0
+        after.append((d, paper.paper_path(state, TRACK).read_bytes(),
+                      paper.rebuild(state, TRACK, len(setup.instruments))))
+    AFTER_EACH_DAY[:] = after
     return state, {first: ("trend_ma.py", FIRST), second: ("zscore_reversal.py", LATER)}
+
+
+#: Filled by ``ran``: per day of ``DAYS``, the stored paper file's bytes and a
+#: full rebuild from the journal, taken right after that day's run.
+AFTER_EACH_DAY: list = []
+
+
+def test_after_every_day_the_paper_file_equals_a_full_rebuild(ran, setup, tmp_path):
+    """The day updates the paper file from its own journal file (mission 9 U3);
+    after every day of the run the file has the content hash of a full rebuild
+    from the whole journal, and the bytes ``paper.write`` gives that rebuild."""
+    assert [d for d, _, _ in AFTER_EACH_DAY] == list(DAYS)
+    for d, stored_bytes, rebuilt in AFTER_EACH_DAY:
+        root = tmp_path / d.isoformat()
+        paper.write(root, TRACK, rebuilt)
+        assert paper.paper_path(root, TRACK).read_bytes() == stored_bytes, d
+        stored = pq.read_table(pa.BufferReader(stored_bytes)).to_pandas()
+        assert content_hash(stored, paper.KEY) == content_hash(rebuilt, paper.KEY), d
+        assert max(stored["date"]) == d
+    # Approach rows begin after their admission, so later days add subjects.
+    assert len(set(AFTER_EACH_DAY[0][2]["subject"])) < len(set(AFTER_EACH_DAY[-1][2]["subject"]))
 
 
 def test_seeds_are_the_fixture_records(setup):

@@ -36,7 +36,8 @@ releasing it on success and on failure:
   the controls of decision 64, with a new draw's line of
   ``controls/<track>/pools.jsonl``) into the staging
   directory ``state.STAGING``, and, when the day is new, the paper records
-  rebuilt from the journal with the staged day (``paper.rebuild``); then the
+  with the staged day's records added (``paper.update``, equal to a rebuild
+  from the whole journal; mission 9 U3); then the
   lifecycle's steps 1 to 4 (DESIGN 10.3; decision 63; ``lifecycle.run_steps``)
   on those paper records (the stored ones on a re-run), their rows appended
   to ``ledger/<track>/lifecycle.jsonl`` in the staging directory (decision
@@ -56,7 +57,10 @@ releasing it on success and on failure:
 
 Sources are looked up through ``discotrade.sources.source_for`` at call
 time, as ``bars fetch`` and ``bars gaps`` look them up, so that decision 19's
-``D`` is computed by one function for the three commands.
+``D`` is computed by one function for the three commands. A day builds one
+source per adapter (``sources.sources_for``) and uses it for every step of
+the day, so that each instrument's source is built once per run (mission 9
+U3).
 
 No wall clock is read (I-12): the instant is the clock's, and the commit's
 dates are its.
@@ -102,14 +106,21 @@ class DayRun:
     changes: tuple[Mapping[str, object], ...] = ()   # lifecycle rows appended by this run
 
 
-def closed_day(tc: TrackConfig, calendars: Mapping[str, Calendar], now: datetime) -> date:
+def _sources(tc: TrackConfig, calendars: Mapping[str, Calendar]) -> dict[str, BarSource]:
+    return sources.sources_for(tc.instruments, calendars, tc.track.bar_seconds)
+
+
+def closed_day(tc: TrackConfig, calendars: Mapping[str, Calendar], now: datetime,
+               used: Mapping[str, BarSource] | None = None) -> date:
     """Decision 19's ``D`` at ``now``: per instrument, the latest trading day
     whose last expected bar closed by its source's ``available_until(now)``;
-    for the track, the earliest of these."""
+    for the track, the earliest of these. ``used`` gives each instrument's
+    source (built here when None)."""
     bar = tc.track.bar_seconds
+    used = _sources(tc, calendars) if used is None else used
     days = []
     for inst in tc.instruments:
-        source = sources.source_for(inst.source.adapter, calendars, bar)
+        source = used[inst.symbol]
         days.append(latest_closed_day(calendars[inst.calendar], source.available_until(now),
                                       bar))
     return min(days)
@@ -126,7 +137,7 @@ def is_trading_day(tc: TrackConfig, calendars: Mapping[str, Calendar], day: date
 
 
 def _unclosed(tc: TrackConfig, calendars: Mapping[str, Calendar], day: date,
-              now: datetime) -> tuple[str, date] | None:
+              now: datetime, used: Mapping[str, BarSource]) -> tuple[str, date] | None:
     """The first instrument, with its latest closed trading day, that has an
     expected bar of a trading day on or before ``day`` not closed by its
     source's ``available_until(now)``; None when every one has closed. A day
@@ -136,7 +147,7 @@ def _unclosed(tc: TrackConfig, calendars: Mapping[str, Calendar], day: date,
     bar = tc.track.bar_seconds
     for inst in tc.instruments:
         cal = calendars[inst.calendar]
-        source = sources.source_for(inst.source.adapter, calendars, bar)
+        source = used[inst.symbol]
         last = latest_closed_day(cal, source.available_until(now), bar)
         if day > last and expected_bars(cal, day_end(cal, last), day_end(cal, day), bar):
             return inst.symbol, last
@@ -161,16 +172,17 @@ def _missing_day(tc: TrackConfig, calendars: Mapping[str, Calendar], journaled: 
 
 
 def _fetch(state_dir: Path, tc: TrackConfig, calendars: Mapping[str, Calendar], day: date,
-           now: datetime) -> tuple[list[HealthEvent], dict[str, BarSource]]:
+           now: datetime, used: Mapping[str, BarSource]) -> list[HealthEvent]:
     """Complete interrupted appends and fetch each instrument's bars to the end
-    of ``day``; return the notices and each instrument's source."""
+    of ``day`` from its source in ``used``; return the notices."""
     bar = tc.track.bar_seconds
     store = BarStore(state_dir, tc.track.name, bar)
     notices = [event for inst in tc.instruments for event in store.recover(inst.symbol, day)]
+    for inst in tc.instruments:          # a revised data point stops step 1 before a write
+        store._verify_stored(inst.symbol)
     batches = []
-    used: dict[str, BarSource] = {}
     for inst in tc.instruments:
-        source = sources.source_for(inst.source.adapter, calendars, bar)
+        source = used[inst.symbol]
         until = min(source.available_until(now), day_end(calendars[inst.calendar], day))
         last = store._indexed_last_ts(inst.symbol)   # after recover() (decision 31)
         start = (datetime.combine(inst.trusted_from, time(), tzinfo=UTC) if last is None
@@ -180,17 +192,17 @@ def _fetch(state_dir: Path, tc: TrackConfig, calendars: Mapping[str, Calendar], 
             bars = bars[bars["ts"] + pd.Timedelta(seconds=bar) <= pd.Timestamp(until)]
             bars = bars[finite_rows(bars)]
         batches.append((inst.symbol, bars, until))
-        used[inst.symbol] = source
     for symbol, bars, until in batches:
         if bars is not None:
             store.append(symbol, bars, until)
     notices.extend(store.notices)
-    return notices, used
+    return notices
 
 
 def _step_1(state_dir: Path, tc: TrackConfig, calendars: Mapping[str, Calendar], day: date,
-            now: datetime, max_fraction: float) -> list[HealthEvent]:
-    events, used = _fetch(state_dir, tc, calendars, day, now)
+            now: datetime, max_fraction: float,
+            used: Mapping[str, BarSource]) -> list[HealthEvent]:
+    events = _fetch(state_dir, tc, calendars, day, now, used)
     report = check_gaps(state_dir, tc, calendars, day, max_fraction)
     if report.event is not None:
         events.append(report.event)
@@ -228,9 +240,10 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
     tc = load_track_config(config_dir, track)
     calendars = dict(setup.calendars)
     now = clock.now()
-    latest = closed_day(tc, calendars, now)
+    used = _sources(tc, calendars)
+    latest = closed_day(tc, calendars, now, used)
     d = latest if day is None else day
-    unclosed = _unclosed(tc, calendars, d, now)
+    unclosed = _unclosed(tc, calendars, d, now, used)
     if unclosed is not None:
         symbol, last = unclosed
         raise DailyError(f"{d.isoformat()} has not closed at {now.isoformat()}: the latest "
@@ -251,7 +264,7 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
     staging = state_dir / state.STAGING
     try:
         events = _step_1(state_dir, tc, calendars, d, now,
-                         float(setup.thresholds["gaps.max_fraction"]))
+                         float(setup.thresholds["gaps.max_fraction"]), used)
         appended += state.append_health(state_dir, track, events)
         shutil.rmtree(staging, ignore_errors=True)
         staging.mkdir()
@@ -263,7 +276,7 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
                              f"{', '.join(e.subject for e in result.events)}); the journal "
                              f"is left untouched")
         if result.status == journal.WRITTEN:
-            records = paper.rebuild(state_dir, track, len(setup.instruments), overlay=staging)
+            records = paper.update(state_dir, track, len(setup.instruments), d, overlay=staging)
             paper.write(staging, track, records)
         else:
             records = paper.read(state_dir, track)

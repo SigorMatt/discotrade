@@ -724,3 +724,112 @@ def test_index_entry_is_none_only_when_the_directory_holds_no_month_file(store):
     assert store.index_entry(SYM) is None
     store.append(SYM, bars("2026-03-30 00:00", 3), LATE)
     assert store.index_entry(SYM) == store.index()[SYM]
+
+
+# --- recovery reads only what can be an interrupted append (decision 5; mission 9 U3) ---
+#
+# An append adds only rows later than the indexed last bar, and writes the index
+# once, after every month file. So the files an interrupted append can leave are
+# the month file holding the indexed last bar (listed, its hash now different)
+# and month files the index does not list. ``recover`` reads and hashes those
+# and no other; a listed earlier file that no longer matches its hash is a
+# revised data point that every reader still refuses (decisions 18, 31).
+
+
+def _reads(monkeypatch):
+    """The month files ``pd.read_parquet`` is asked for, in order."""
+    seen = []
+    real = pd.read_parquet
+
+    def spy(path, *args, **kwargs):
+        seen.append(Path(path).stem)
+        return real(path, *args, **kwargs)
+    monkeypatch.setattr(pd, "read_parquet", spy)
+    return seen
+
+
+def _three_months(store):
+    """January, February and March stored; the indexed last bar in March."""
+    store.append(SYM, bars("2026-01-30 00:00", 24 * 40), LATE)   # Jan 30 to Mar 10
+    assert sorted(store.index()[SYM]["months"]) == ["2026-01", "2026-02", "2026-03"]
+
+
+def test_recover_reads_only_the_file_holding_the_indexed_last_bar(store, monkeypatch):
+    _three_months(store)
+    seen = _reads(monkeypatch)
+    assert store.recover(SYM, date(2026, 3, 11)) == ()
+    assert seen == ["2026-03"]
+
+
+def test_recover_reads_the_unlisted_files_and_the_last_bar_file_and_completes_them(
+        store, tmp_path, monkeypatch):
+    _three_months(store)
+    first = bars("2026-01-30 00:00", 24 * 40)
+    crossing = bars("2026-03-11 00:00", 24 * 60, base=150)        # March, April and May
+    with monkeypatch.context() as m:
+        crash_at_index_write(m, store)
+        with pytest.raises(Crash):
+            store.append(SYM, crossing, LATE)
+    before = snapshot(store)
+    seen = _reads(monkeypatch)
+    events = store.recover(SYM, date(2026, 5, 9))
+    assert sorted(seen) == ["2026-03", "2026-04", "2026-05"]
+    assert [e.detail["file"] for e in events] == [
+        f"{SYM}/{month}.parquet" for month in ("2026-03", "2026-04", "2026-05")]
+    assert snapshot(store) == before                               # no row changed
+    clean = clean_store(tmp_path, first, crossing)
+    assert store.index_path.read_text() == clean.index_path.read_text()
+
+
+def test_recover_reads_an_unlisted_file_of_an_instrument_with_no_entry(store, monkeypatch):
+    rows = unlisted_first_append(store)
+    seen = _reads(monkeypatch)
+    events = store.recover(SYM, date(2026, 4, 2))
+    assert seen == ["2026-04"]
+    assert [e.detail["file"] for e in events] == [f"{SYM}/2026-04.parquet"]
+    assert store.last_ts(SYM) == rows["ts"].iloc[-1]
+
+
+def test_an_unlisted_revised_file_is_still_refused_by_recover(store):
+    _unlisted_revised(store)
+    with pytest.raises(BarStoreError, match="2026-04.*revised data point"):
+        store.recover(SYM, date(2026, 5, 2))
+
+
+@pytest.mark.parametrize("revise", [_change_old_row, _remove_row, _insert_earlier_row])
+def test_a_revised_earlier_month_is_left_to_the_reader_which_refuses_it(
+        store, monkeypatch, revise):
+    _three_months(store)
+    path = store.month_path(SYM, "2026-01")
+    revise(pd.read_parquet(path)).to_parquet(path, index=False)
+    index_before = store.index_path.read_text()
+    seen = _reads(monkeypatch)
+    assert store.recover(SYM, date(2026, 3, 11)) == ()            # not a file it reads
+    assert seen == ["2026-03"]
+    assert store.index_path.read_text() == index_before
+    for read in (lambda: store.read_range(SYM, _ts("2026-01-01"), _ts("2026-04-01")),
+                 lambda: store.last_n(SYM, _ts("2026-03-10 23:00"), 24 * 40),
+                 lambda: store.last_ts(SYM)):
+        with pytest.raises(BarStoreError, match="2026-01.*revised data point") as err:
+            read()
+        assert "interrupted" not in str(err.value)
+
+
+def test_append_after_recover_on_the_same_store_reads_the_last_bar_file_once(
+        store, monkeypatch):
+    _three_months(store)
+    seen = _reads(monkeypatch)
+    calls = []
+    real = BarStore.recover
+
+    def counted(self, symbol, day):
+        calls.append(symbol)
+        return real(self, symbol, day)
+    monkeypatch.setattr(BarStore, "recover", counted)
+    assert store.recover(SYM, date(2026, 3, 11)) == ()
+    assert store.append(SYM, bars("2026-03-11 00:00", 3, base=500), LATE) == 3
+    assert calls == [SYM]
+    assert seen == ["2026-03"]
+    # A second append on the same store checks again before it writes (decision 5).
+    assert store.append(SYM, bars("2026-03-11 03:00", 3, base=600), LATE) == 3
+    assert calls == [SYM, SYM]
