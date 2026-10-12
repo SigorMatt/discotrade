@@ -9,24 +9,46 @@ owner.
 
 Each item names the review it came from and the step that takes it.
 REVIEW-1 should-fix 1 to 4, 6 and 7 are taken by mission 2 (step S0.2,
-units U1 to U3); item 5 is the owner's (below).
+units U1 to U3); item 5 is the owner's (below). REVIEW-2 should-fix 1 and
+2, and its note that no conftest blocks sockets (I-11), are taken by
+mission 3 (step S0.3, unit U1; decisions-2026-10-12 items 18 to 20).
 
 - REVIEW-1 note: DESIGN §18.1's rule that tests marked `container` skip,
   with the reason printed, when no runtime is found is not built. The
   mission that adds the first `container` test builds it: step S2.2.
 - REVIEW-1 note: every seed a gate test uses is written in the test file,
-  not only in a fixture TOML (DESIGN §18.2). Step S0.3 (the first gate
+  not only in a fixture TOML (DESIGN §18.2). Step S0.4 (the first gate
   tests) and every closing step.
 - REVIEW-1 should-fix (U6, performance only): `bars fetch` builds a source
   per instrument and the synthetic source regenerates its series from
   `trusted_from` on every fetch. Take it when a replay gate's time limit
   (DESIGN §18.2, 15 minutes) is at risk: step S1.2 at the latest.
+- REVIEW-2 note (U1, performance only): `recover` reads and hashes every
+  month file of an instrument on every append, and `bars fetch` runs it
+  twice per instrument. Take it with the item above: step S1.2 at the
+  latest.
 - REVIEW-1 note: `tradingcal.in_main_session` cannot represent a main
   session that crosses midnight. No instrument has one; the step that adds
   such an instrument takes it.
 - REVIEW-1 note: `config.py` bounds `drop_fraction` at 0.5 without a
   DESIGN source. Harmless for fixtures; no step takes it unless a fixture
   needs more.
+- REVIEW-2 note (U4): when `update_rolls` fails after `bars fetch` wrote
+  the bars, the command exits 1 and the next fetch records the roll,
+  measuring its gap from a later source state. The daily run's staging and
+  retry (step S4.2) take it.
+- REVIEW-2 notes (U5, U6), for step S5.1, which builds the doctor and
+  runs a day through the vendor adapter (G5.2): `vendor.py` passes the key
+  to the client unstripped while its presence check strips it;
+  `doctor --live spreads --days` is not range-checked (0 becomes 20);
+  `spreads.py` calls `vendor.py`'s private `_guard`; the marginal-spread
+  warning counts any hour that touches the main session while the spread
+  rule treats the 09:00 bar as off-session; no test hits an even-count
+  median in `spreads measure`.
+- REVIEW-2 notes (U3): the 120-day roll look-ahead of `synth.py` is untested
+  on sparse calendars, and only `roll_day` is tested for "contract key
+  without a schedule". No step takes them unless a fixture calendar needs
+  it.
 
 ## For the owner, before the first builder mission that needs it
 
@@ -65,8 +87,9 @@ units U1 to U3); item 5 is the owner's (below).
 - The architect's decisions of 2026-10-12
   (`meta/decisions/decisions-2026-10-12.md`), in particular item 2 (a
   stopped feed counts as missing bars to the end of the day, so generation
-  is skipped) and item 5 (an interrupted bar append is completed, not
-  refused), to confirm or replace.
+  is skipped), item 5 (an interrupted bar append is completed, not
+  refused) and item 23 (how a basket's daily return is formed when its
+  instruments have different calendars), to confirm or replace.
 
 ## Deferred to v2 (SPEC §15)
 
