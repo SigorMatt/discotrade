@@ -57,3 +57,4 @@
 - 2026-10-12 mission 6 U3 done 9e16050: executor/metrics unit tests for roll at a changing position; roll_probe.py (h 1.0 -> -0.5 at SYNA roll 2019-06-14T00:00Z) compared in G0.1; roll cost and rolled turnover on h(u) each fail unit test and probe; no mismatch; G0.1 62 pass 64s; check green 3/3.
 - 2026-10-12 mission 6 U4 done b268252: test_gate_script.py runs M0 G0.4 instead of G0.3, gate subprocess timeout 600->1200s; file 180.2s -> 11.3s; PASS-for-failing-item change turns it red (3 fail); check green 3/3. Scratch-pytest helpers keep 120s timeouts (outside decision 45).
 - 2026-10-12 mission 6 U5 gate run at 65718c5: check green x3 (orchestrator); gate M0: PASS (G0.1 62/63.5s, G0.2 7/119.5s, G0.3 13/171.3s, G0.4 4/0.25s), 357s, exit 0.
+- 2026-10-12 mission 6 U6 done: final report meta/FINAL-REPORT-6.md; gate M0 PASS at 65718c5; no product change, no mismatch; D-004/D-005 answered, D-006 deferred S2.1; mission finished.

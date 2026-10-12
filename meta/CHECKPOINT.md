@@ -1,12 +1,11 @@
 # CHECKPOINT
 
 Mission: 6 (`meta/BUILDER-6-PROMPT.md`), roadmap step S0.4 repaired. Closes M0. Base 19196da.
-Done: U0 cdc031f, U1 c1a2100, U2 9ca8575, U3 9e16050, U4 b268252, U5 gate run at 65718c5 (gate M0: PASS).
+Done: U0 cdc031f, U1 c1a2100, U2 9ca8575, U3 9e16050, U4 b268252, U5 gate run at 65718c5 (gate M0: PASS), U6 final report.
 
-Unit in progress: U6 Final report (meta/FINAL-REPORT-6.md, drafted under meta/drafts/).
-Intent: what changed per unit, ## Gate with the output at 65718c5 verbatim, correction of
-FINAL-REPORT-5, mismatches, what the tests prove, NOT PROVEN, findings, ## Review items table.
-Done means: report committed and pushed; verdict line.
+Unit in progress: none. Mission 6 finished; meta/FINAL-REPORT-6.md exists. M0 gate PASS at 65718c5.
+Intent: next: the cold review of mission 6, then the architect's next kit.
+Done means: n/a
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
 (items 41-46 new, 1-40 still bind); no value of a frozen file changes (config/, existing entries
