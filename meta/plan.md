@@ -1,14 +1,19 @@
-# PLAN — mission 2 (roadmap step S0.2)
+# PLAN — mission 3 (roadmap step S0.3)
 
-Base commit: 1151e55 (`plan: mission 2 kit (S0.2, sources, rolls, spreads, review 1 items)`).
-Brief: `meta/BUILDER-2-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-12.md`.
-Roadmap step: S0.2 (milestone M0, not closed by this mission).
+Base commit: ef2e9f1 (`plan: mission 3 kit (S0.3, strategy loop, costs, metrics, backtest)`).
+Brief: `meta/BUILDER-3-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-12.md` (items 18-29 new; 1-17 still bind).
+Roadmap step: S0.3 (milestone M0, not closed by this mission; S0.4 / mission 4 closes it, decision 28).
 
-- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (D-001/D-002 answered, D-003 filed). — 87d4a23
-- [x] U1 Store and gap-check repairs (REVIEW-1 should-fix 1, 4; decisions 2-6, 16; DESIGN §5.1, §5.2, §5.4, §15.2). — f3f8c2d
-- [x] U2 Command-line, config-check and gate-script repairs (REVIEW-1 should-fix 3, 6, 7; decisions 7-9; DESIGN §3, §4.3, §18.1, §18.2). — 8e423c1
-- [x] U3 Synthetic market with contracts and configured generator settings (REVIEW-1 should-fix 2; decision 10; DESIGN §4.2, §5.1, §5.5, §17.1). — cb9c21d
-- [x] U4 Rolls and the adjusted series (DESIGN §5.6, §5.5; decision 16). — 61e1c59
-- [x] U5 Vendor and crypto adapters, live check L1 offline (DESIGN §5.5, §19.3 L1; decisions 11, 12, 15). — 5995b92
-- [x] U6 Spread tables and their measurement, live check L2 offline (DESIGN §5.7, §19.3 L2; decisions 13-15). — a5245d0
-- [x] U7 Final report (`meta/FINAL-REPORT-2.md`). — 0cf4db1
+Carried items (taken by U1):
+- REVIEW-2 should-fix 1: the reader does not refuse a month file the index does not list (decision 18).
+- REVIEW-2 should-fix 2: `bars fetch` defaults its gap-check day to UTC `--as-of` minus one, not §16.1's `D` (decision 19).
+- REVIEW-2 note on U5: no socket backstop in `tests/conftest.py` (decision 20).
+
+- [ ] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`.
+- [ ] U1 Reader, `bars fetch` default day and socket backstop (REVIEW-2 should-fix 1, 2, note on U5; decisions 3, 5, 18-20; DESIGN §5.2, §5.4, §16.1).
+- [ ] U2 Strategy contract, loader and indicator library (DESIGN §6.1, §6.2 result check, §6.3; decisions 21, 22).
+- [ ] U3 Evaluation loop and returns (DESIGN §6.2, §7.1, §7.2, §5.6; decisions 22-24; R-20).
+- [ ] U4 Cost model and executor (DESIGN §7.3, §7.4, §5.7; decisions 24-26; R-3, R-5).
+- [ ] U5 Metrics (DESIGN §8; decisions 23, 25; R-7).
+- [ ] U6 Reference strategies and the `backtest` command (DESIGN §3, §6.1, §18.3 G0.1; decisions 21, 27).
+- [ ] U7 Final report (`meta/FINAL-REPORT-3.md`).

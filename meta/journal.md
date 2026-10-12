@@ -20,3 +20,5 @@
 - 2026-10-12 mission 2 U5 done 5995b92: vendor adapter (lazy client, cost refusal, embargo, symbology, fetch_contract) with fake client; crypto adapter over httpx MockTransport; doctor --live vendor refuses without key; vendor extra pins databento 0.87.0; CRYA fixture + test_crypto track.
 - 2026-10-12 mission 2 U6 done a5245d0: spreads.py rule (table hour or main/off), config/spreads loading + frozen rule + marginal warning, spreads measure, doctor --live spreads refuses without key; 53 tests. Acceptance run by orchestrator: check green x3, gate M0 FAIL exit 1, gate M0 G0.3 FAIL, config check ok, bars fetch test_mixed writes SYNA rolls.
 - 2026-10-12 mission 2 U7 done 0cf4db1: final report; mission finished.
+2026-10-12T00:32:57.846Z  consult 0mv4igsfu-lvd2 (architect done) on aux.done of aux job 0mv4i57ep-knqj: VERDICT: next kit mission-3-kit
+- 2026-10-12 mission 3 U0: plan written (base ef2e9f1, S0.3; REVIEW-2 should-fix 1, 2 and the U5 socket note carried to U1).
