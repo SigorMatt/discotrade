@@ -982,3 +982,231 @@ step is named, and the part stays the roadmap's for that step.
     two performance items `meta/BACKLOG.md` sets for "the latest" step
     before a one-year replay, and the gate tests of G1.1 to G1.4; it
     closes M1. No gate item moves.
+
+## Added at consultation 11, after REVIEW-8
+
+Items 1 to 65 above are unchanged. REVIEW-8 recorded no blocker and the
+mission closed no milestone, so step S1.2 is ticked (item 75). Items 66 to
+75 below bind mission 9 (step S1.3) and every later mission until a newer
+decisions file says otherwise; the same rules apply to them (no invariant
+broken, no gate moved, no threshold or frozen value changed). Where an
+item states how a gate item of DESIGN §18.3 is tested, it says what the
+item's words mean; it never asserts less than they say.
+
+66. **REVIEW-8 should-fix 1, decision 63 (3): revival counts trading days,
+    shown by a test.** A test of step 3 of §10.3 uses a track whose
+    calendars have a day that is not a trading day inside the waiting span
+    (the fixture track `test_synth`, whose instruments are all on
+    `synth_week`, has weekends; or a configuration copied under the test's
+    temporary directory, said so), at the production value
+    `revival_min_dormant_days = 5`: the approach stays dormant on the day
+    on which five or more calendar days, but fewer than five trading days
+    of the track, have passed since its row to `dormant`, and returns on
+    the fifth trading day. Counting calendar days (`(D - since).days`) is
+    the wrong change made, seen to fail the test, reverted and named in
+    the commit body. Reason: `test_mixed` holds an always-open instrument,
+    so every calendar day was a trading day of its track and the two
+    counts could not be told apart.
+
+67. **REVIEW-8 should-fix 2, decisions 47 and 58 with I-11: no lookup in
+    the scratch session can reach a resolver.** In the scratch pytest
+    session of `tests/test_offline.py`, the `network`-marked test calls
+    for real only lookups that Python or the C library answer without a
+    resolver (a numeric address with `AI_NUMERICHOST`, `getnameinfo`
+    with `NI_NUMERICHOST | NI_NUMERICSERV`, `gethostbyname` and
+    `gethostbyname_ex` of a dotted numeric address), and its comment says
+    exactly that, with the reason for each. `gethostbyaddr`, a reverse
+    lookup that reads the hosts file or asks DNS, is not called there: the
+    test shows it is left alone in a `network`-marked test by identity
+    (the attribute of `socket` and `_socket` is the original function
+    while the test runs), and refused again in the following unmarked
+    test as today. Every other assertion of the file keeps what it
+    asserts. Reason: `gethostbyaddr("127.0.0.1")` is answered without a
+    query only on a host whose hosts file lists that address with
+    `files` first; on another host the scratch session could send a PTR
+    query or change its outcome.
+
+68. **REVIEW-8 notes on U3 and U4: two readings confirmed.** (a) Decision
+    64's matched draw takes place when at least `controls.match_min_live`
+    of the approaches live at the start of the draw's day each have at
+    least `controls.match_window_days` paper rows before that day, and
+    takes its pairs from those approaches only; a live approach with
+    fewer rows neither blocks the draw nor contributes a pair. This is
+    the reading `controls.measured_pairs` implements. (b) Under decision
+    63, an approach that returns earlier on `D` (step 3) may be displaced
+    later on the same `D` by another approach's return or by the day's
+    admission; both lifecycle rows dated `D` stand, in the order they
+    were taken, and the date of its last row to `dormant` is the one any
+    later count uses. Mission 9 adds a test of (b) through the lifecycle
+    functions, and changes no code for either. Reason: REVIEW-8 found the
+    code consistent with both readings and the design silent; recording
+    them makes the reviewer's question an answer.
+
+69. **DESIGN §10.5 with §9.3, decisions 53, 61 and 63: the combined
+    portfolio in the paper records.** `paper/<track>/daily.parquet` gains
+    rows for two subjects, `portfolio` and `portfolio_clean`. The members
+    of `D` are the approaches whose state at the start of `D` (from the
+    lifecycle rows dated before `D`, decision 63) is `live` and that have
+    a paper row on `D`; `portfolio_clean`'s members are those of them
+    whose row on `D` is `clean`. Each series' `gross`, `net_1x` and
+    `net_2x` on `D` are the equal-weight means of its members' values,
+    and `trades` the sum of its members' trades. `portfolio` has a row on
+    every trading day of the track (decision 51) from the first journaled
+    day, with 0 for `gross`, `net_1x`, `net_2x` and `trades` on a day with
+    no member; `portfolio_clean` has a row only on a day with at least one
+    member. `clean` is true on every `portfolio_clean` row, and on a
+    `portfolio` row true exactly when every member's row is clean (true
+    with no member). The rows are derived like every paper row: rebuilding
+    the file from the journal, the lifecycle ledger and the approaches'
+    `meta.json` gives the same content hash. The rank-persistence
+    population, the control moments of decision 60, the matched draw of
+    decision 64 and the paper-record Sharpes of decision 63 never take a
+    portfolio row. Tests that assert the paper file's subjects equal the
+    journal's change with this item, and the commit body names each one.
+
+70. **DESIGN §11.1 and §16.1 step 6 with decisions 59 and 62: rank
+    persistence in the day loop.** On the run of a new day `D`, after the
+    lifecycle steps and the day's admission, for every block `k >= 1`
+    whose last calendar day is on or before `D`, whose block `k - 1`
+    starts on or after the state's first journaled day, and which has no
+    row yet, in ascending `k`, decision 59's row is appended to
+    `stats/<track>/rank_persistence.jsonl` under decision 62's append
+    rules (sorted keys, atomic, staged with the day, a row already present
+    not appended). The population is the approaches whose state after
+    `D`'s steps is `live` or `dormant`, under decision 59's rule. A
+    re-run of a finished day appends nothing.
+
+71. **DESIGN §10.4 with §8, §11.2, decisions 25, 30, 41, 60 and 62: the
+    table.** On the run of a new day `D`, after rank persistence, the
+    day writes `table/<track>/table.json` and `table.md` to the staging
+    directory with the day; a re-run of a finished day writes nothing.
+    `table.json` is one JSON object (keys sorted, a float that is not
+    finite written as `null`) holding the track, `D`, the trial count `N`,
+    and a list of rows in this order: the live approaches (state after
+    `D`'s steps) grouped by cell, cells in ascending string order and ids
+    ascending within a cell; then the dormant approaches by ascending id;
+    then the controls, `bh:<symbol>` in the track's instrument order and
+    then `rc:0` to the last slot in slot order; then `portfolio` and
+    `portfolio_clean`. Retired approaches are not listed. Each row holds
+    `section` (`live`, `dormant`, `control` or `portfolio`), `subject`,
+    `cell`, `description`, `model_id`, `model_version`, `admitted` (the
+    admission date), `admission_score` (the `sharpe` of its trial row's
+    `metrics_t`), the paper record over all its paper days (`days`,
+    `clean_days`, `sharpe`, `sharpe_2x`, `trades`, `max_drawdown`, by the
+    §8 formulas of `metrics.py` with decisions 30 and 41), `breakeven_cost`
+    (decision 25, from its journal rows of its paper days), the deflated
+    figures over its paper days (`S`, `E_N`, `excess`, decision 60), and
+    `state_history` (its lifecycle rows, `date`, `from`, `to`, `reason`,
+    in ledger order). A field that does not apply to a row is `null`: the
+    approach fields and the deflated figures for controls and the
+    portfolio series, and `breakeven_cost` for the portfolio series.
+    `table.md` renders the same rows, in the same order, as Markdown
+    tables, one per section, with every real number printed to four
+    decimals and `null` printed as `-`; it carries no wall-clock time.
+
+72. **DESIGN §16.4 with decisions 19, 51 and 55: the replay command in
+    step S1.3.** `discotrade replay --from A --to B` (with the common
+    options `--state`, `--track` and `--config`) runs, for each trading
+    day `D` of the track from `A` to `B` in ascending order, the same day
+    function as `run-day` for `D`, with the injected clock set to the
+    instant at which the last expected bar of `D` among the track's
+    instruments closes. It prints one line per day, stops at the first
+    day that fails, exits 1 naming it (the days before it stay
+    committed), and exits 0 when every day succeeds; `A` after `B` is a
+    usage error (exit 2). A day already journaled is a re-run and writes
+    nothing (I-6); a day after a gap is refused as `run-day` refuses it
+    (decision 51). The provider, coordinator, issue sink and sandbox
+    options of §16.4 are added by the steps that build those roles (S2.2,
+    S3.2, S4.2); until then the command takes the source from the track's
+    records and refuses an unknown option. The gate configuration of
+    DESIGN §18.2 is a configuration directory built under the test's
+    temporary directory from `tests/fixtures/config/`, with
+    `tests/fixtures/config/thresholds_gate.toml` copied in, unchanged, as
+    its thresholds file. Two replays of the same span on the same
+    configuration and options, each into a fresh state directory, give
+    identical bytes for every file outside `.git/` and the same tree at
+    `HEAD`.
+
+73. **DESIGN §10.3, §16.1 step 5 and §18.3 G1.3 with decisions 48 and 63:
+    scripted candidates.** `replay` takes `--candidates <file>`, a JSON
+    lines file whose lines each hold `day`, `source` (a file under the
+    repository's `reference/` or `tests/fixtures/`, decision 48),
+    `params`, `cell`, `model_id`, `model_version`, `cutoff`,
+    `description`, `profile_version` and `metrics_t` (the §8 metrics on T,
+    `sharpe` and `trades` included). On day `D`, after lifecycle steps 1
+    to 4, the day calls decision 63's admission function with the
+    candidate dated `D`, if any, with T's trading days those §4.1 gives
+    for `D`; its trial row, its approach and its lifecycle row are staged
+    with the day. A file with two candidates for one day, or a line
+    missing a key, is refused before any day runs (exit 2). The candidate
+    carries no grid and no W metrics, so those trial fields are `null`.
+    `run-day` takes no candidate. Scoring a real candidate on T stays step
+    S3.2's.
+
+74. **DESIGN §18.2 and §18.3 (M1): the gate tests.** Each item's tests are
+    `tests/gates/test_g1_<n>_*.py` (the files `./scripts/gate` runs), and
+    each item builds its own replays, since `./scripts/gate` runs each
+    item in its own pytest process. Every replay runs on the gate
+    configuration (item 72) and the fixture track `test_synth`, in-process
+    through the function the console script calls, with every seed and
+    date written in the test file. (G1.1) A controls-only replay from
+    `2019-06-03` (the track's `epoch`) to `2020-06-01`, one year: over the
+    `controls.random_pool` slots, with each slot's sums taken over its
+    paper rows of the year, the mean summed `gross` is within four
+    standard errors (the sample standard deviation over the slots divided
+    by the square root of their number) of 0; the mean summed cost
+    (`gross - net_1x`) is positive; the mean summed `net_1x` is within
+    four standard errors (of the slots' summed `net_1x`, the same way) of
+    minus the mean summed cost; decision 59's statistic, computed for each block completed in
+    the year with the random slots as the population, has a mean over its
+    non-missing values within four standard errors of 0, with at least 40
+    non-missing values; and `stats/test_synth/rank_persistence.jsonl`
+    holds one row per completed block. (G1.2) The scenario of G1.3,
+    replayed from `2019-06-03` over at least 60 calendar days (so the
+    state holds approaches, controls, a monthly redraw, completed blocks
+    and lifecycle rows): `journal recompute --all` exits 0 and reports
+    every (day, subject) pair of the journal equal, their count asserted;
+    running the last day again (through `run-day` or `replay`) leaves
+    every file's bytes and `HEAD` unchanged; and a second replay into a
+    fresh state directory gives what item 72's last sentence says. (G1.3)
+    A replay of a scripted candidates file under
+    `tests/fixtures/scenarios/` long enough for the dormant limit
+    (`retire_dormant_days`, 365 calendar days, unchanged in the gate
+    configuration) shows, as lifecycle and trial rows the test lists in
+    full and in order: admission into a free slot, admission displacing
+    the weakest (which goes dormant, `displaced`), refusal for too few
+    trades, refusal for a score that is not positive, dormancy (step 2),
+    return (step 3), retirement on failure and retirement after the
+    dormant limit; one trial row per candidate and one lifecycle row per
+    event; the ledgers never rewritten (the test replays in segments and
+    finds each ledger's earlier bytes a prefix of its later bytes); the
+    two portfolio series on every day equal to the test's own count from
+    the paper rows and the lifecycle rows; and `table.json` on at least
+    two days (one mid-scenario, the last) equal, row for row and field
+    for field under decision 39's rule, to the test's own count, the §8
+    figures computed in the test with decisions 30 and 41 written there.
+    A scenario on fixed seeds is deterministic; the test asserts the
+    transitions the scenario is built to produce, and the fixture
+    strategies under `tests/fixtures/strategies/` that it needs are new
+    files (for example an always-flat strategy, whose paper Sharpe is not
+    a number, so that once displaced it never returns and is retired at
+    the dormant limit; the existing `breaks_thursday_noon.py` for the
+    failure). (G1.4) For fixed inputs written in the test (a list of
+    control-slot Sharpes, `S`, and `N` in 0, 1, 2, 10 and 1000), `E(N)`,
+    the excess, `p(N)` at the production thresholds and the threshold of
+    §11.4 equal literal values to `1e-12`, each literal worked out in the
+    test file's comments from the formulas of §11.2 and §11.4 and
+    decision 60, not produced by `stats.py`. The whole `./scripts/gate M1`
+    run should finish within DESIGN §18.2's 15 minutes; when it cannot,
+    the builder files a finding with the measured time of each item and
+    weakens nothing.
+
+75. **`meta/ROADMAP.md`: steps S1.1 and S1.2 ticked; mission 9 is step
+    S1.3.** Item 65 ticked step S1.1, but the roadmap's box was left
+    unticked on the branch; this consultation ticks it. REVIEW-8 has no
+    blocker and mission 8 closed no milestone (`meta/ARCHITECT.md` §3
+    case 2), so step S1.2 is ticked. Mission 9 builds step S1.3 as items
+    66 to 74 cut it, with REVIEW-8's two should-fix items and the two
+    performance items of `meta/BACKLOG.md`, and closes M1: it ends with
+    the gate run, and M1 is marked met when its review has no blocker and
+    records `gate M1: PASS`. No gate item moves.

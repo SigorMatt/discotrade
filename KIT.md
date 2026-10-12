@@ -1,1 +1,1 @@
-plan: mission 8 kit (S1.2, controls, ledgers, lifecycle, stats)
+plan: mission 9 kit (S1.3, table, portfolio, replay, M1 gate)

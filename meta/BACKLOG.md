@@ -29,7 +29,19 @@ REVIEW-3 note on the socket backstop (I-11) by mission 7 (unit U1; item
 47). REVIEW-7 should-fix 1 (the network paths the backstop does not
 guard) and 2 (no test separates the whole-span recompute from one chained
 through stored positions) are taken by mission 8 (step S1.2, unit U1;
-item 58).
+item 58). REVIEW-8 should-fix 1 (no test shows revival counts trading
+days) and 2 (the scratch session's unguarded reverse lookup) are taken by
+mission 9 (step S1.3, unit U1; items 66 and 67); its notes on the matched
+draw's reading and on two transitions for one approach on one day are
+answered by item 68 (a test of the second in U1).
+
+- REVIEW-8 notes, not carried as work: a state journaled before the
+  controls existed would fail `journal.py`'s carry check (no state of this
+  series predates the controls; no step takes it unless one does); the
+  `if not dates` branch of the rank-persistence population rule is
+  untested; a month whose 1st is a non-trading day on every calendar is
+  met by G1.1's one-year replay on `test_synth` (all `synth_week`), not by
+  a unit test.
 
 - REVIEW-7 notes, not carried as work; the step that next touches the
   file may take them: `init_state` is not atomic (a failed first commit
@@ -74,11 +86,12 @@ item 58).
   per instrument and the synthetic source regenerates its series from
   `trusted_from` on every fetch. Take it when a replay gate's time limit
   (DESIGN §18.2, 15 minutes) is at risk: step S1.3 (the one-year replay
-  of G1.1) at the latest (item 65).
+  of G1.1) at the latest (item 65). Taken by mission 9 (step S1.3, unit
+  U3).
 - REVIEW-2 note (U1, performance only): `recover` reads and hashes every
   month file of an instrument on every append, and `bars fetch` runs it
   twice per instrument. Take it with the item above: step S1.3 at the
-  latest.
+  latest. Taken by mission 9 (step S1.3, unit U3).
 - REVIEW-1 note: `tradingcal.in_main_session` cannot represent a main
   session that crosses midnight. No instrument has one; the step that adds
   such an instrument takes it.
