@@ -1,11 +1,11 @@
 # CHECKPOINT
 
 Mission: 7 (`meta/BUILDER-7-PROMPT.md`), roadmap step S1.1. Closes no milestone. Base c73a695.
-Done: U0 057f9d2, U1 de2a5b2, U2 c8342c4, U3 e44866d, U4 1fbf800, U5 073a5bd.
+Done: U0 057f9d2, U1 de2a5b2, U2 c8342c4, U3 e44866d, U4 1fbf800, U5 073a5bd, U6 853cd12 (gate M0 PASS at 6aea7c0).
 
-Unit in progress: U6 Final report (meta/FINAL-REPORT-7.md), with ./scripts/gate M0 at the pushed tip.
-Intent: check green x3 at the tip, gate M0 once (timeout >= 30 min), report drafted under meta/drafts/ and moved in by the report commit.
-Done means: FINAL-REPORT-7.md committed and pushed with ## M0 still passes, decisions 47-55 map, Correction of FINAL-REPORT-6, NOT PROVEN, findings, Review items table; verdict line.
+Unit in progress: none. Mission 7 finished; meta/FINAL-REPORT-7.md exists.
+Intent: next: the cold review of mission 7, then the architect's next kit.
+Done means: n/a
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
 (items 47-57 new, 1-46 still bind); no value of a frozen file changes (config/, existing entries

@@ -15,4 +15,4 @@ Carried items:
 - [x] U3 Approaches and the decision journal (decisions 24, 25, 39, 48, 49, 51; DESIGN §6.2, §7, §9.1, §9.2). — e44866d
 - [x] U4 `run-day` and the paper records (decisions 2, 3, 19, 50-53, 55; DESIGN §9.3, §15.2, §16.1 steps 1-2, §16.2). — 1fbf800
 - [x] U5 `journal recompute` (decision 54; DESIGN §9.4, §15.2). — 073a5bd
-- [ ] U6 Final report (`meta/FINAL-REPORT-7.md`), with `./scripts/gate M0` at the pushed tip.
+- [x] U6 Final report (`meta/FINAL-REPORT-7.md`), with `./scripts/gate M0` at the pushed tip. — 853cd12
