@@ -13,7 +13,7 @@ Carried items:
 
 - [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`. — 9d2d781
 - [x] U1 The store's readers, and callers that look at the index first (REVIEW-4 should-fix 1 and note on U3; decisions 5, 18, 31, 34, 35; DESIGN §5.2, §5.4, §5.6; I-5, I-6). — 8e8215c
-- [ ] U2 Rolls and `backtest`: `trusted_from`, roll records, cost labels (REVIEW-3 notes; decisions 23, 24, 27, 36, 37, 38; DESIGN §4.2, §5.6, §7.1, §7.3; I-4).
+- [x] U2 Rolls and `backtest`: `trusted_from`, roll records, cost labels (REVIEW-3 notes; decisions 23, 24, 27, 36, 37, 38; DESIGN §4.2, §5.6, §7.1, §7.3; I-4). — 8d27fe1
 - [ ] U3 The independent calculation (DESIGN §18.3 G0.1, §5.6, §6.2, §7, §8, §5.3; decisions 22-26, 29, 30, 36, 37, 39). Own sub-agent, forbidden-files words verbatim.
 - [ ] U4 Gate G0.1: reference strategies against the independent calculation (decisions 23-27, 39).
 - [ ] U5 Gate G0.2: the cheating strategy (DESIGN §18.3 G0.2, §6.2, §7.1, §12.1; I-2; decision 40).

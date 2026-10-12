@@ -39,3 +39,4 @@
 2026-10-12T04:15:41.877Z  consult 0mv4qedfr-bdyj (architect done) on aux.done of aux job 0mv4pnr0t-zgjp: VERDICT: next kit mission-5-kit
 - 2026-10-12 mission 5 U0: plan, checkpoint for S0.4 (closes M0), base 3854c96.
 - 2026-10-12 mission 5 U1 done 8e8215c: BarStore.index_entry reader; classification test over every public name incl. properties; gaps/update_rolls/adjusted_as_of refuse on unlisted month with no index entry (decision 35).
+- 2026-10-12 mission 5 U2 done 8d27fe1: rolls/adjusted_as_of/context/sigma start at trusted_from, no roll across it (36); roll record matches ts+contracts (37); plain-output cost labels (38).

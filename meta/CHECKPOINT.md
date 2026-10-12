@@ -1,14 +1,13 @@
 # CHECKPOINT
 
 Mission: 5 (`meta/BUILDER-5-PROMPT.md`), roadmap step S0.4. Closes M0. Base 3854c96.
-Done: U0 9d2d781, U1 8e8215c.
+Done: U0 9d2d781, U1 8e8215c, U2 8d27fe1.
 
-Unit in progress: U2 (next).
-Intent: U2 — reads before trusted_from (roll gap both paths, adjusted_as_of, evaluation context,
-sigma) refused; a contract change across trusted_from is no roll (decision 36); backtest exits 1
-on a roll record with right ts and wrong contracts (decision 37); plain-output cost labels
-(decision 38).
-Done means: one commit pushed, tests seen to fail first or by wrong change, check green x3.
+Unit in progress: U3 (next).
+Intent: U3 — tests/gates/independent_calc.py written blind to src/discotrade and the listed tests
+(decisions 29, 39), plus tests/gates/test_g0_1_calc_self.py (ast import check, hand values).
+Done means: one commit pushed stating the forbidden files were not opened; ./scripts/gate M0 G0.1
+passes; check green x3.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
 (items 34-40 new, 1-33 still bind); no value of a frozen file changes (config/, existing entries
