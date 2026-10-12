@@ -14,6 +14,6 @@ Carried items (taken by U1):
 - [x] U2 Strategy contract, loader and indicator library (DESIGN §6.1, §6.2 result check, §6.3; decisions 21, 22). — 542c171
 - [x] U3 Evaluation loop and returns (DESIGN §6.2, §7.1, §7.2, §5.6; decisions 22-24; R-20). — 833aa25, ec1c8a4
 - [x] U4 Cost model and executor (DESIGN §7.3, §7.4, §5.7; decisions 24-26; R-3, R-5). — 3c24e5f
-- [ ] U5 Metrics (DESIGN §8; decisions 23, 25; R-7).
+- [x] U5 Metrics (DESIGN §8; decisions 23, 25; R-7). — 8cfd390
 - [ ] U6 Reference strategies and the `backtest` command (DESIGN §3, §6.1, §18.3 G0.1; decisions 21, 27).
 - [ ] U7 Final report (`meta/FINAL-REPORT-3.md`).
