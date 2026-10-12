@@ -1,13 +1,12 @@
 # CHECKPOINT
 
 Mission: 5 (`meta/BUILDER-5-PROMPT.md`), roadmap step S0.4. Closes M0. Base 3854c96.
-Done: U0 9d2d781, U1 8e8215c, U2 8d27fe1.
+Done: U0 9d2d781, U1 8e8215c, U2 8d27fe1, U3 3be4e9b.
 
-Unit in progress: U3 (next).
-Intent: U3 — tests/gates/independent_calc.py written blind to src/discotrade and the listed tests
-(decisions 29, 39), plus tests/gates/test_g0_1_calc_self.py (ast import check, hand values).
-Done means: one commit pushed stating the forbidden files were not opened; ./scripts/gate M0 G0.1
-passes; check green x3.
+Unit in progress: U4 (next).
+Intent: U4 — tests/gates/test_g0_1_reference.py: three reference strategies on test_mixed, window
+with SYNA roll and synth_week closure, discotrade vs independent_calc to 1e-12; mismatch rule.
+Done means: one commit pushed; >= 2 wrong changes in product code seen to fail; check green x3.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
 (items 34-40 new, 1-33 still bind); no value of a frozen file changes (config/, existing entries
