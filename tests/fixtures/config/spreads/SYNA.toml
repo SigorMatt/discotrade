@@ -1,0 +1,15 @@
+# Fixture spread table (DESIGN 5.7; decisions 2026-10-12 13, 14): SYNA's
+# spread in ticks per exchange-local hour of day (index 0 is 00:00 to 01:00 in
+# the calendar's time zone). Every value is invented for tests. Hour 10 lies
+# in the main session (09:30 to 16:00) and is above one tick, so `config
+# check` warns for SYNA (decision 14). Hour 17 is the daily break.
+symbol = "SYNA"
+spread_ticks = [
+    2.0, 2.0, 2.0, 2.5, 2.5, 2.5, 2.0, 2.0,     # 00 to 07
+    1.5, 1.0, 1.25, 1.0, 1.0, 1.0, 1.0, 1.0,    # 08 to 15
+    1.5, 3.0, 3.0, 2.0, 2.0, 2.0, 2.0, 2.0,     # 16 to 23
+]
+description = "invented for tests: no quote sample; hour 17 (the daily break) is never open and takes the largest value"
+checked = "2026-10-12"
+source = "invented for tests"
+verified = false

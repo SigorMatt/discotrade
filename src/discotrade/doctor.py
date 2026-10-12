@@ -13,6 +13,14 @@ fetched (the latest whose bars closed by ``available_until``), with the
 contracts it resolved; and that day's gap fraction (missing over expected
 bars of the calendar). Without ``DATABENTO_API_KEY`` it refuses before any
 request and exits 1. A check that fails prints why and the command exits 1.
+
+L2, ``--live spreads``, measures, for every instrument of the track whose
+adapter is ``vendor``, the median quoted spread per exchange-local hour from a
+sample of the vendor's quotes (``--days`` calendar days ending at the vendor's
+``available_until``), writes ``<config>/spreads/<symbol>.toml`` (never over an
+existing table), and reports every instrument with a main-session hour above
+one tick (SPEC decision 14). Without ``DATABENTO_API_KEY`` it refuses before
+any request, writes nothing and exits 1.
 """
 
 from __future__ import annotations
@@ -29,8 +37,6 @@ from discotrade.config import ConfigError, load_calendar, load_track_config
 LATER_STEP = "S5.1"
 #: The checks of DESIGN 19.3 built in step S0.2 (decision 2026-10-12 15), by name.
 LIVE: dict[str, Callable[..., int]] = {}
-#: Every check step S0.2 builds, whether or not it is registered yet.
-STEP_CHECKS = ("vendor", "spreads")
 
 
 def usage_error(message: str) -> int:
@@ -45,15 +51,13 @@ def run(ctx: Any, args: argparse.Namespace) -> int:
         return usage_error(f"plain 'doctor' (the offline checks) is built by step "
                            f"{LATER_STEP}; in this step give --live vendor or --live spreads")
     check = LIVE.get(name)
-    if check is None and name in STEP_CHECKS:
-        return usage_error(f"--live {name} is not built yet; step S0.2 builds it")
     if check is None:
         return usage_error(f"no live check {name!r} in this step; the live checks other than "
                            f"vendor and spreads are built by step {LATER_STEP} (DESIGN 19.3)")
-    return check(ctx, out=sys.stdout, err=sys.stderr)
+    return check(ctx, out=sys.stdout, err=sys.stderr, args=args)
 
 
-def live_vendor(ctx: Any, out: TextIO, err: TextIO) -> int:
+def live_vendor(ctx: Any, out: TextIO, err: TextIO, args: Any = None) -> int:
     """Live check L1 (DESIGN 19.3) against the real vendor."""
     from discotrade.bars.gaps import day_end, latest_closed_day
     from discotrade.sources.base import SourceError
@@ -126,3 +130,68 @@ def live_vendor(ctx: Any, out: TextIO, err: TextIO) -> int:
 
 
 LIVE["vendor"] = live_vendor
+
+
+def live_spreads(ctx: Any, out: TextIO, err: TextIO, args: Any = None) -> int:
+    """Live check L2 (DESIGN 19.3) against the real vendor's quotes."""
+    from discotrade.sources.base import SourceError
+    from discotrade.sources.vendor import VendorSource, key_present, no_key_message
+    from discotrade.spreads import (
+        COMMIT_NOTE,
+        DEFAULT_DAYS,
+        SpreadError,
+        marginal_line,
+        measure_and_write,
+        refuse_existing,
+        vendor_quotes,
+    )
+
+    if not key_present():
+        print(f"doctor --live spreads: FAIL: {no_key_message()}", file=err)
+        return 1
+    days = getattr(args, "days", None) or DEFAULT_DAYS
+    try:
+        tc = load_track_config(ctx.config, ctx.track)
+        calendars = {name: load_calendar(ctx.config / "calendars" / f"{name}.toml")
+                     for name in sorted({i.calendar for i in tc.instruments})}
+    except (ConfigError, OSError) as exc:
+        print(f"doctor --live spreads: FAIL: {exc}", file=err)
+        return 1
+    vendors = [i for i in tc.instruments if i.source.adapter == "vendor"]
+    if not vendors:
+        print(f"doctor --live spreads: FAIL: track {tc.track.name} has no instrument whose "
+              "adapter is vendor", file=err)
+        return 1
+    now = ctx.clock.now()
+    source = VendorSource(tc.track.bar_seconds)
+    until = source.available_until(now)
+    start = until - timedelta(days=days)
+    print(f"L2 spreads: track {tc.track.name}, quotes {start.isoformat()} to "
+          f"{until.isoformat()}", file=out)
+    failed = 0
+    marginal = []
+    for inst in vendors:
+        try:
+            refuse_existing(ctx.config, inst.symbol)
+            quotes, text = vendor_quotes(inst, start, until, source)
+            path, table = measure_and_write(ctx.config, inst, calendars[inst.calendar],
+                                            quotes, text, now.date())
+        except (SpreadError, SourceError, OSError, ValueError) as exc:
+            print(f"{inst.symbol}: FAIL: {exc}", file=out)
+            failed += 1
+            continue
+        print(f"{inst.symbol}: wrote {path}", file=out)
+        line = marginal_line(inst, table)
+        print(line, file=out)
+        if table.marginal(inst.main_session):
+            marginal.append(inst.symbol)
+    print(f"marginal instruments (SPEC decision 14): {', '.join(marginal) or 'none'}",
+          file=out)
+    if failed < len(vendors):
+        print(f"note: {COMMIT_NOTE}", file=out)
+    print(f"doctor --live spreads: {'FAIL' if failed else 'ok'}, {failed} of {len(vendors)} "
+          "instruments failed", file=out)
+    return 1 if failed else 0
+
+
+LIVE["spreads"] = live_spreads

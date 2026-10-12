@@ -157,9 +157,10 @@ def _config_check(ctx: Context, args: argparse.Namespace) -> int:
     except ConfigError as exc:
         print(f"config check: FAIL: {exc}", file=sys.stderr)
         return 1
-    for line in (*report.lines, *report.unverified):
+    for line in (*report.lines, *report.unverified, *report.warnings):
         print(line)
-    print(f"config check: ok, {len(report.unverified)} unverified values")
+    warned = f", {len(report.warnings)} warnings" if report.warnings else ""
+    print(f"config check: ok, {len(report.unverified)} unverified values{warned}")
     return 0
 
 
@@ -372,6 +373,77 @@ def _add_bars(subparsers: argparse._SubParsersAction, common: argparse.ArgumentP
 SUBCOMMANDS.append(_add_bars)
 
 
+def _spreads_measure(ctx: Context, args: argparse.Namespace) -> int:
+    from discotrade.config import ConfigError, load_calendar, load_instrument
+    from discotrade.sources.base import SourceError
+    from discotrade.sources.vendor import VendorSource
+    from discotrade.spreads import (
+        COMMIT_NOTE,
+        DEFAULT_DAYS,
+        SpreadError,
+        marginal_line,
+        measure_and_write,
+        read_quotes,
+        refuse_existing,
+        vendor_quotes,
+    )
+
+    def fail(why: object) -> int:
+        print(f"spreads measure: FAIL: {why}", file=sys.stderr)
+        return 1
+
+    days = DEFAULT_DAYS if args.days is None else args.days
+    if days < 1:
+        return fail(f"--days must be at least 1, not {days}")
+    try:
+        inst = load_instrument(ctx.config / "instruments" / f"{args.symbol}.toml")
+        cal = load_calendar(ctx.config / "calendars" / f"{inst.calendar}.toml")
+        refuse_existing(ctx.config, inst.symbol)
+        if args.quotes:
+            quotes = read_quotes(Path(args.quotes))
+            source = f"quote sample file {Path(args.quotes).name}"
+        else:
+            vendor = VendorSource(3600)   # the bar length only picks a bar schema
+            until = vendor.available_until(ctx.clock.now())
+            quotes, source = vendor_quotes(inst, until - timedelta(days=days), until,
+                                           vendor)
+        path, table = measure_and_write(ctx.config, inst, cal, quotes, source,
+                                        ctx.clock.now().date())
+    except (ConfigError, SpreadError, SourceError, OSError) as exc:
+        return fail(exc)
+    print(f"spreads measure: wrote {path}")
+    print(" ".join(f"{h:02d}:{v:g}" for h, v in enumerate(table.ticks)))
+    print(marginal_line(inst, table))
+    print(f"note: {COMMIT_NOTE}")
+    return 0
+
+
+def _add_spreads(subparsers: argparse._SubParsersAction, common: argparse.ArgumentParser) -> None:
+    spreads = subparsers.add_parser("spreads", parents=[common],
+                                    help="measured spread tables (DESIGN 5.7)")
+    actions = spreads.add_subparsers(dest="action", metavar="action", required=True)
+    measure = actions.add_parser(
+        "measure", parents=[common],
+        help="measure the median quoted spread per exchange-local hour, in ticks, and "
+        "write <config>/spreads/<symbol>.toml; never overwrites (decision 2026-10-12 13)",
+    )
+    measure.add_argument("--symbol", required=True, help="the instrument to measure")
+    measure.add_argument(
+        "--quotes", metavar="FILE", default=None,
+        help="a Parquet quote sample with columns ts (UTC), bid, ask (default: the "
+        "vendor's quotes, which need DATABENTO_API_KEY)",
+    )
+    measure.add_argument(
+        "--days", type=int, default=None,
+        help="calendar days of vendor quotes, ending at the vendor's available_until at "
+        "--as-of (default: 20)",
+    )
+    measure.set_defaults(handler=_spreads_measure)
+
+
+SUBCOMMANDS.append(_add_spreads)
+
+
 def _doctor(ctx: Context, args: argparse.Namespace) -> int:
     from discotrade.doctor import run
 
@@ -386,8 +458,14 @@ def _add_doctor(subparsers: argparse._SubParsersAction, common: argparse.Argumen
     )
     doctor.add_argument(
         "--live", metavar="NAME", default=None,
-        help="the live check to run: vendor (L1) needs DATABENTO_API_KEY and refuses, "
-        "exit 1, without it; plain doctor and the other checks are built by step S5.1",
+        help="the live check to run: vendor (L1) and spreads (L2) need DATABENTO_API_KEY "
+        "and refuse, exit 1, without it; plain doctor and the other checks are built by "
+        "step S5.1",
+    )
+    doctor.add_argument(
+        "--days", type=int, default=None,
+        help="spreads (L2): calendar days of vendor quotes, ending at the vendor's "
+        "available_until at --as-of (default: that of spreads measure)",
     )
     doctor.set_defaults(handler=_doctor)
 

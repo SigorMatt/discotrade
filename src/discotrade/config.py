@@ -647,6 +647,59 @@ def load_calendar(path: Path) -> Calendar:
     )
 
 
+# --- spread tables (DESIGN 5.7) ------------------------------------------------
+
+HOURS = 24
+#: SPEC decision 14 (decision 2026-10-12 14): an instrument whose measured spread
+#: table has a main-session hour above this many ticks is reported by ``config
+#: check`` as marginal. A fixed rule of the spec, not a tunable threshold.
+MARGINAL_SPREAD_TICKS = 1.0
+_SPREAD_KEYS = ("symbol", "spread_ticks", "description", *COMPANIONS)
+
+
+@dataclass(frozen=True)
+class SpreadTable:
+    """A measured spread table: ticks per exchange-local hour of day, index 0 to 23."""
+
+    symbol: str
+    ticks: tuple[float, ...]
+    description: str
+    provenance: Provenance
+
+    def main_session_hours(self, main_session: tuple[str, str]) -> tuple[int, ...]:
+        """The hours of day whose hour [h:00, h+1:00) overlaps ``main_session``."""
+        start, end = (int(t[:2]) * 60 + int(t[3:]) for t in main_session)
+        return tuple(h for h in range(HOURS) if h * 60 < end and (h + 1) * 60 > start)
+
+    def marginal(self, main_session: tuple[str, str]) -> list[tuple[int, float]]:
+        """The main-session hours above ``MARGINAL_SPREAD_TICKS``, with their spread."""
+        return [(h, self.ticks[h]) for h in self.main_session_hours(main_session)
+                if self.ticks[h] > MARGINAL_SPREAD_TICKS]
+
+
+def load_spread_table(path: Path) -> SpreadTable:
+    """Load ``spreads/<symbol>.toml``: 24 spreads in ticks, a description and companions."""
+    path = Path(path)
+    t = _Table(path, read_toml(path), "", _SPREAD_KEYS)
+    symbol = t.text("symbol")
+    if path.stem != symbol:
+        t.fail("symbol", f"is {symbol!r} but the file name says {path.stem!r}")
+    values = t.raw("spread_ticks")
+    if (
+        not isinstance(values, list) or len(values) != HOURS
+        or not all(isinstance(v, int | float) and not isinstance(v, bool) for v in values)
+    ):
+        t.fail("spread_ticks", f"must be a list of {HOURS} numbers, one per exchange-local "
+               "hour of day")
+    ticks = tuple(float(v) for v in values)
+    if not all(math.isfinite(v) and v >= 0 for v in ticks):
+        t.fail("spread_ticks", "must hold finite numbers of at least 0")
+    provenance = t.provenance(required=True)
+    assert provenance is not None
+    return SpreadTable(symbol=symbol, ticks=ticks, description=t.text("description"),
+                       provenance=provenance)
+
+
 # --- thresholds (DESIGN 4.3) ---------------------------------------------------
 
 #: Every threshold's table, name and type. Values live in the TOML only (I-10).
@@ -907,6 +960,7 @@ def frozen_drift(
 class CheckReport:
     lines: tuple[str, ...]
     unverified: tuple[str, ...]
+    warnings: tuple[str, ...] = ()
 
 
 def _show(value: Any) -> str:
@@ -965,6 +1019,30 @@ def check(config_dir: Path, track_name: str) -> CheckReport:
                 f"(checked {prov.checked.isoformat()}; source: {prov.source})"
             )
 
+    # Measured spread tables (DESIGN 5.7) and the marginal-spread warning
+    # (decision 2026-10-12 14): a warning, never a failure.
+    warnings: list[str] = []
+    for path in sorted((config_dir / "spreads").glob("*.toml")):
+        table = load_spread_table(path)
+        if table.symbol not in instruments:
+            raise ConfigError(f"{path}: 'symbol' names {table.symbol!r}, which has no "
+                              f"instrument record under {config_dir / 'instruments'}")
+        lines.append(f"spread table {table.symbol}: {HOURS} hours, {min(table.ticks):g} to "
+                     f"{max(table.ticks):g} ticks")
+        prov = table.provenance
+        if not prov.verified:
+            unverified.append(
+                f"unverified spreads/{path.name} spread_ticks = {list(table.ticks)!r} "
+                f"(checked {prov.checked.isoformat()}; source: {prov.source})"
+            )
+        over = table.marginal(instruments[table.symbol].main_session)
+        if over:
+            hours = ", ".join(f"hour {h:02d} {v:g} ticks" for h, v in over)
+            warnings.append(
+                f"warning: spreads/{path.name}: {table.symbol} has a main-session spread "
+                f"above {MARGINAL_SPREAD_TICKS:g} tick ({hours}); SPEC decision 14 applies"
+            )
+
     track_paths = sorted((config_dir / "tracks").glob("*.toml"))
     names = [p.stem for p in track_paths]
     if track_name not in names:
@@ -986,4 +1064,5 @@ def check(config_dir: Path, track_name: str) -> CheckReport:
     history = config_dir / "HISTORY.toml"
     changes = load_changes(history) if history.is_file() else ()
     lines.append(f"history: {len(changes)} changes")
-    return CheckReport(lines=tuple(lines), unverified=tuple(unverified))
+    return CheckReport(lines=tuple(lines), unverified=tuple(unverified),
+                       warnings=tuple(warnings))
