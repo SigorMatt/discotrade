@@ -5,9 +5,11 @@ judged against ``available_until``, computed here from a ``FixedClock`` the
 way the synthetic source does (``available_until(now) = now``, DESIGN 5.5).
 """
 
+import inspect
 import io
 import json
 import os
+import shutil
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -564,3 +566,116 @@ def test_an_unlisted_file_of_another_instrument_does_not_refuse_a_read(store):
     store.append("SYNB", bars("2026-03-30 00:00", 3), LATE)
     assert len(store.read_range("SYNB", _ts("2026-03-01"), _ts("2026-04-01"))) == 3
     assert len(store.last_n("SYNB", _ts("2026-03-30 02:00"), 5)) == 3
+
+
+# --- last_ts is a reader entry point (decision 31) ---------------------------------
+
+
+def test_last_ts_refuses_an_unlisted_month_file_that_is_an_interrupted_append(store):
+    _unlisted_interrupted(store)
+    index_before = store.index_path.read_text()
+    with pytest.raises(BarStoreError, match="2026-04.*interrupted append") as err:
+        store.last_ts(SYM)
+    assert "revised" not in str(err.value)
+    assert store.index_path.read_text() == index_before          # repairs nothing
+
+
+def test_last_ts_refuses_an_unlisted_month_file_that_is_a_revised_data_point(store):
+    _unlisted_revised(store)
+    with pytest.raises(BarStoreError, match="2026-04.*revised data point") as err:
+        store.last_ts(SYM)
+    assert "interrupted" not in str(err.value)
+
+
+def test_last_ts_refuses_a_listed_month_file_whose_hash_differs(store):
+    store.append(SYM, bars("2026-03-31 20:00", 8), LATE)
+    path = store.month_path(SYM, "2026-03")
+    _change_old_row(pd.read_parquet(path)).to_parquet(path, index=False)
+    with pytest.raises(BarStoreError, match="2026-03.*revised data point") as err:
+        store.last_ts(SYM)
+    assert "interrupted" not in str(err.value)
+
+
+def test_last_ts_refuses_a_listed_month_file_holding_an_interrupted_append(store,
+                                                                           monkeypatch):
+    store.append(SYM, bars("2026-03-02 00:00", 5), LATE)
+    with monkeypatch.context() as m:
+        crash_at_index_write(m, store)
+        with pytest.raises(Crash):
+            store.append(SYM, bars("2026-03-02 05:00", 3), LATE)
+    with pytest.raises(BarStoreError, match="2026-03.*interrupted append") as err:
+        store.last_ts(SYM)
+    assert "revised" not in str(err.value)
+
+
+def _fetch_config(tmp_path):
+    """The fixture config, the repository's thresholds and a track of the
+    fixture instruments without contracts, as tests/test_synth.py builds it."""
+    from discotrade.cli import REPO_ROOT
+
+    fixture = REPO_ROOT / "tests" / "fixtures" / "config"
+    config = tmp_path / "config"
+    shutil.copytree(fixture, config)
+    shutil.copy(REPO_ROOT / "config" / "thresholds.toml", config / "thresholds.toml")
+    track = (fixture / "tracks" / "test_mixed.toml").read_text(encoding="utf-8")
+    track = track.replace('name = "test_mixed"', 'name = "test_null"').replace(
+        'instruments = ["SYNA", "SYNL", "SYNX"]', 'instruments = ["SYNB", "SYNL", "SYNX"]')
+    (config / "tracks" / "test_null.toml").write_text(track, encoding="utf-8")
+    return config
+
+
+def test_last_ts_after_bars_fetch_completes_an_interrupted_append(tmp_path, monkeypatch,
+                                                                   capsys):
+    from discotrade.cli import main
+
+    state, config = tmp_path / "state", _fetch_config(tmp_path)
+    argv = ["--state", str(state), "--config", str(config), "--track", "test_null",
+            "--as-of", "2019-02-15T00:00:00+00:00", "bars", "fetch"]
+    # The first fetch crashes after SYNB's month files are renamed, before
+    # any index is written: every SYNB file is unlisted, and passes decision
+    # 5's test with r = 0.
+    with monkeypatch.context() as m:
+        def crash(self, index):
+            raise Crash("simulated crash before the index write")
+        m.setattr(BarStore, "_write_index", crash)
+        assert main(argv) == 1
+    fetched = BarStore(state, "test_null", HOUR)
+    files = sorted(fetched.month_path("SYNB", "x").parent.glob("*.parquet"))
+    assert files and not fetched.index_path.exists()
+    written_last = pd.read_parquet(files[-1])["ts"].iloc[-1]
+    with pytest.raises(BarStoreError, match="interrupted append") as err:
+        fetched.last_ts("SYNB")
+    assert "revised" not in str(err.value)
+
+    capsys.readouterr()
+    assert main(argv) == 0
+    assert "store_recovered" in capsys.readouterr().out
+    assert BarStore(state, "test_null", HOUR).last_ts("SYNB") == written_last
+
+
+# Every public method of BarStore is either a reader of bars, which refuses an
+# unlisted or mismatched month file (decision 18 and 31), or a method that does
+# not read bars: a writer, recovery, a path or the raw index. A method added
+# later fails the test below until it is classified here.
+READER_ARGS = {
+    "read_range": (_ts("2026-03-30"), _ts("2026-03-31")),
+    "last_n": (_ts("2026-03-30 05:00"), 3),
+    "last_ts": (),
+}
+NOT_READERS = {"append", "recover", "month_path", "index"}
+
+
+def test_every_public_bar_store_method_is_classified():
+    public = {name for name, value in inspect.getmembers(BarStore)
+              if not name.startswith("_") and callable(value)}
+    assert not set(READER_ARGS) & NOT_READERS
+    assert public == set(READER_ARGS) | NOT_READERS
+
+
+@pytest.mark.parametrize("setup, case", [(_unlisted_interrupted, "interrupted append"),
+                                         (_unlisted_revised, "revised data point")])
+@pytest.mark.parametrize("method", sorted(READER_ARGS))
+def test_every_reader_refuses_an_unlisted_month_file(store, method, setup, case):
+    setup(store)
+    with pytest.raises(BarStoreError, match=f"2026-04.*{case}"):
+        getattr(store, method)(SYM, *READER_ARGS[method])

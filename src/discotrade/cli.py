@@ -309,7 +309,8 @@ def _bars_fetch(ctx: Context, args: argparse.Namespace) -> int:
         for inst in tc.instruments:
             source = source_for(inst.source.adapter, calendars, bar)
             until = source.available_until(now)
-            last = store.last_ts(inst.symbol)
+            # The index, after recover() above (decision 2026-10-12 31).
+            last = store._indexed_last_ts(inst.symbol)
             start = (datetime.combine(inst.trusted_from, time(), tzinfo=UTC) if last is None
                      else last.to_pydatetime() + timedelta(seconds=bar))
             bars = source.fetch(inst, start, until) if start < until else None

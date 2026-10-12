@@ -35,10 +35,12 @@ changes no row, and returns one ``store_recovered`` health notice (DESIGN
 The writer runs it before every append and keeps the notices in
 ``notices`` for its caller. The reader does not repair: it refuses both
 cases, with an error that says which. Every read of an instrument
-(``read_range`` and ``last_n``) first refuses when the instrument's directory
-holds a month file the index does not list, whatever range it asks for
-(decision 2026-10-12 18): an unlisted file may be an interrupted append into
-a new month, which a read would otherwise silently leave out. The date of a
+(``read_range``, ``last_n`` and ``last_ts``, decision 2026-10-12 31) first
+refuses when the instrument's directory holds a month file the index does
+not list, whatever range it asks for (decision 2026-10-12 18): an unlisted
+file may be an interrupted append into a new month, which a read would
+otherwise silently leave out. The writer and ``bars fetch`` read the indexed
+last ``ts`` through ``_indexed_last_ts``, which does not refuse. The date of a
 notice is the caller's ``day``; inside ``append`` it is the UTC date of
 ``available_until``.
 """
@@ -147,6 +149,19 @@ class BarStore:
         return json.loads(self.index_path.read_text(encoding="utf-8"))
 
     def last_ts(self, symbol: str) -> pd.Timestamp | None:
+        """The last stored ``ts`` of ``symbol``, or None when none is stored.
+
+        A reader entry point (decision 2026-10-12 31): it refuses, as
+        ``read_range`` and ``last_n`` do and with the same errors, when the
+        instrument's directory holds a month file the index does not list or a
+        listed file that does not match the index."""
+        for month, entry in sorted(self._months(symbol).items()):
+            self._read_month(symbol, month, entry)
+        return self._indexed_last_ts(symbol)
+
+    def _indexed_last_ts(self, symbol: str) -> pd.Timestamp | None:
+        """The last ``ts`` the index records for ``symbol``, checking no file.
+        For the writer's and ``bars fetch``'s own use (decision 2026-10-12 31)."""
         entry = self.index().get(symbol)
         return None if entry is None else pd.Timestamp(entry["last_ts"]).tz_convert("UTC")
 
@@ -249,7 +264,7 @@ class BarStore:
             raise BarStoreError(f"{symbol} {month}: month file missing, listed in the index")
         frame = pd.read_parquet(path)
         if not self._matches(frame, entry):
-            last = self.last_ts(symbol)
+            last = self._indexed_last_ts(symbol)
             if self._interrupted(frame, entry, last):
                 raise BarStoreError(
                     f"{symbol} {month}: file holds an interrupted append not yet in the "
