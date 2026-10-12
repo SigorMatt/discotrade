@@ -556,7 +556,10 @@ def _fmt(value: Any) -> str:
 
 def _print_backtest(r: dict[str, Any]) -> None:
     """The plain report. I-4: the one figure read from gross returns,
-    ``breakeven_cost``, is printed on the line of the net totals at 1x and 2x."""
+    ``breakeven_cost``, is printed on the line of the net totals at 1x and 2x.
+    The subject's cost totals (divided by ``N``, decision 23) are labelled as
+    the subject's, and each per-instrument line as that instrument's undivided
+    sums (decision 2026-10-12 38); the figures are those of ``--json``."""
     net = f"net_1x total_return {_fmt(r['total_return'])}, " \
           f"net_2x total_return_2x {_fmt(r['total_return_2x'])}"
     params = " ".join(f"{k}={_fmt(v)}" for k, v in r["params"].items())
@@ -567,9 +570,12 @@ def _print_backtest(r: dict[str, Any]) -> None:
     print(f"max_drawdown {_fmt(r['max_drawdown'])}, trades {r['trades']}, "
           f"avg_holding_bars {_fmt(r['avg_holding_bars'])}, fragile {r['fragile']}")
     print(f"breakeven_cost {_fmt(r['breakeven_cost'])} bps, beside {net}")
-    print("costs at 1x: " + ", ".join(f"{k} {_fmt(r['costs'][k])}" for k in _COSTS))
+    n = len(r["instruments"])
+    print(f"subject costs at 1x (each instrument's sum over its bars, summed and divided "
+          f"by N={n}): " + ", ".join(f"{k} {_fmt(r['costs'][k])}" for k in _COSTS))
     for symbol, p in r["instruments"].items():
-        print(f"{symbol}: {p['bars']} bars, trades {p['trades']}, position "
+        print(f"instrument {symbol} (its own sums over its bars, not divided by N): "
+              f"{p['bars']} bars, trades {p['trades']}, position "
               f"{_fmt(p['position_min'])} to {_fmt(p['position_max'])}, "
               + ", ".join(f"{k} {_fmt(p[k])}" for k in _COSTS)
               + f", net_1x {_fmt(p['net_1x'])}, net_2x {_fmt(p['net_2x'])}")

@@ -470,3 +470,91 @@ def test_positions_up_to_t_do_not_depend_on_later_bars(
         assert a.rows["p"].nunique() > 10
         head = b.rows[b.rows["ts"] <= last].reset_index(drop=True)
         pd.testing.assert_frame_equal(a.rows, head, check_exact=True)
+
+
+# --- no bar before trusted_from, a roll record must match (decisions 2026-10-12 36, 37) ---
+
+
+@pytest.mark.parametrize("trusted_day, offset", [
+    (date(2019, 3, 14), 4),    # the March roll bar's date; the context crosses it
+    (date(2019, 3, 15), 4),    # a day after the roll
+    (date(2019, 2, 15), 0),    # no roll near; sigma's 24 returns would reach before it
+])
+def test_context_and_sigma_read_no_bar_before_trusted_from(
+        tmp_path, track, instruments, calendars, trusted_day, offset):
+    # SYNA's bars from its fixture trusted_from are written through the store's
+    # writer; a test-local record moves trusted_from later than its first bar.
+    # The evaluation must equal the one on a store holding only the trusted bars,
+    # slippage (sigma) included, and must not meet the contract change across it.
+    from discotrade.costs import SIGMA_RETURNS
+    from discotrade.rolls import update_rolls
+
+    src = SynthSource(calendars, HOUR)
+    syna = src.fetch(instruments["SYNA"], START, datetime(2019, 4, 1, tzinfo=UTC))
+    inst = replace(instruments["SYNA"], trusted_from=trusted_day)
+    trusted = pd.Timestamp(trusted_day, tz="UTC")
+    roll_bar = pd.Timestamp("2019-03-14 00:00", tz="UTC")
+    k = int(syna["ts"].searchsorted(roll_bar))
+    assert syna["contract"].iloc[k] != syna["contract"].iloc[k - 1]
+    full, only = tmp_path / "full", tmp_path / "only"
+    until = datetime(2019, 4, 1, tzinfo=UTC)
+    BarStore(full, TRACK, HOUR).append("SYNA", syna, until)
+    BarStore(only, TRACK, HOUR).append("SYNA", syna[syna["ts"] >= trusted], until)
+    class Fixture:
+        """The synthetic source holding the fixture record's data (it would
+        otherwise start its series at the test-local trusted_from)."""
+        name = "fixture"
+
+        def fetch_contract(self, instrument, contract, start, end):
+            return src.fetch_contract(instruments["SYNA"], contract, start, end)
+
+    for state in (full, only):
+        update_rolls(state, TRACK, HOUR, inst, Fixture(), date(2019, 3, 31))
+        # No roll at or before the first trusted bar (the March roll is after
+        # 2019-02-15 and is recorded there).
+        assert all(r.ts > trusted for r in read_rolls(roll_path(state, TRACK, "SYNA")))
+    win = window(trusted_day + timedelta(days=offset),
+                 trusted_day + timedelta(days=offset + 4))
+
+    def flip(bars, params):
+        return 1.0 if bars["hour"].iloc[-1] % 2 else -1.0
+
+    runs = []
+    for state in (full, only):
+        strat, frames = recording(flip)
+        runs.append((evaluate(state, track, inst, calendars["synth_week"], strat, win),
+                     frames))
+    (a, fa), (b, fb) = runs
+    assert len(a.rows) > SIGMA_RETURNS and (a.rows["slippage"] > 0).sum() > SIGMA_RETURNS
+    # sigma first: the slippage of every window bar is the trusted-only store's.
+    assert a.rows["slippage"].tolist() == b.rows["slippage"].tolist()
+    for ev in (a, b):
+        assert (ev.bars["ts"] >= trusted).all() and ev.bars["ts"].iloc[0] == trusted
+        assert not ev.rolled.any()
+    pd.testing.assert_frame_equal(a.rows, b.rows, check_exact=True)
+    pd.testing.assert_frame_equal(a.bars, b.bars, check_exact=True)
+    assert len(fa) == len(fb)
+    for x, y in zip(fa, fb, strict=True):
+        pd.testing.assert_frame_equal(x, y, check_exact=True)
+
+
+
+def test_a_roll_record_with_the_right_ts_and_other_contracts_is_missing(
+        tmp_path, track, instruments, calendars):
+    _hand_store(tmp_path, roll=False)
+    path = roll_path(tmp_path, TRACK, "SYNX")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    ts = pd.Timestamp("2020-01-06 04:00", tz="UTC")
+    for old, new in (("B", "A"), ("A", "C"), ("C", "B")):
+        wrong = Roll(ts=ts, old=old, new=new, gap=10.0, estimated=False, measured_at=None)
+        path.write_text(wrong.to_json() + "\n", encoding="utf-8")
+        with pytest.raises(MissingRollError, match="no record of that roll"):
+            run(tmp_path, track, instruments, calendars, "SYNX", strategy(lambda b, p: 1.0),
+                window(date(2020, 1, 6)))
+    # The matching record is used even when a record of other contracts shares its ts.
+    right = Roll(ts=ts, old="A", new="B", gap=10.0, estimated=False, measured_at=None)
+    wrong = Roll(ts=ts, old="A", new="C", gap=99.0, estimated=False, measured_at=None)
+    path.write_text(right.to_json() + "\n" + wrong.to_json() + "\n", encoding="utf-8")
+    ev = run(tmp_path, track, instruments, calendars, "SYNX", strategy(lambda b, p: 1.0),
+             window(date(2020, 1, 6)))
+    assert ev.gaps.tolist() == [0.0] * 5 + [10.0, 0.0]

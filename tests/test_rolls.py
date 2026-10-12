@@ -180,7 +180,7 @@ def test_the_adjusted_series_read_from_the_state_equals_adjust(long_state, store
     u = int(stored["ts"].searchsorted(rolls[3].ts))
     for k in (u - 1, u, len(stored) - 1):
         t = stored["ts"].iloc[k]
-        got = adjusted_as_of(long_state, TRACK, HOUR, "SYNA", t)
+        got = adjusted_as_of(long_state, TRACK, HOUR, inst("SYNA"), t)
         pd.testing.assert_frame_equal(got, adjust(stored, rolls, t), check_exact=True)
 
 
@@ -192,8 +192,8 @@ def test_the_adjusted_series_as_of_t_does_not_depend_on_later_bars(long_state, s
     assert len(rolls) == 4
     u = int(bars["ts"].searchsorted(rolls[-1].ts))
     for t in (bars["ts"].iloc[u - 1], bars["ts"].iloc[u], end):
-        a = adjusted_as_of(short_state, TRACK, HOUR, "SYNA", t)
-        b = adjusted_as_of(long_state, TRACK, HOUR, "SYNA", t)
+        a = adjusted_as_of(short_state, TRACK, HOUR, inst("SYNA"), t)
+        b = adjusted_as_of(long_state, TRACK, HOUR, inst("SYNA"), t)
         pd.testing.assert_frame_equal(a, b, check_exact=True)
     # The roll file of the shorter store is the start of the longer one's.
     assert roll_lines(long_state).startswith(roll_lines(short_state))
@@ -398,8 +398,8 @@ def test_update_rolls_and_adjusted_as_of_refuse_an_unlisted_file_with_no_entry(
     month = "2019-03" if revised else "2019-01"
     for call in (lambda: update_rolls(tmp_path, TRACK, HOUR, inst("SYNA"), source,
                                       date(2019, 3, 31)),
-                 lambda: adjusted_as_of(tmp_path, TRACK, HOUR, "SYNA", syna["ts"].iloc[u]),
-                 lambda: adjusted_as_of(tmp_path, TRACK, HOUR, "SYNA", syna["ts"].iloc[u],
+                 lambda: adjusted_as_of(tmp_path, TRACK, HOUR, inst("SYNA"), syna["ts"].iloc[u]),
+                 lambda: adjusted_as_of(tmp_path, TRACK, HOUR, inst("SYNA"), syna["ts"].iloc[u],
                                         start=syna["ts"].iloc[0])):
         with pytest.raises(BarStoreError, match=f"SYNA .*{month}.*{case}") as err:
             call()
@@ -416,7 +416,7 @@ def test_with_no_month_file_update_rolls_and_adjusted_as_of_report_no_stored_bar
     assert update_rolls(tmp_path, TRACK, HOUR, inst("SYNA"), source, date(2019, 3, 31)) == (
         (), ())
     with pytest.raises(BarStoreError, match="SYNA: no stored bar"):
-        adjusted_as_of(tmp_path, TRACK, HOUR, "SYNA", START)
+        adjusted_as_of(tmp_path, TRACK, HOUR, inst("SYNA"), START)
 
 
 def test_rolls_after_bars_fetch_completes_an_interrupted_first_append(
@@ -436,7 +436,7 @@ def test_rolls_after_bars_fetch_completes_an_interrupted_first_append(
     t = pd.Timestamp(read_parquet_last(store))
     for call in (lambda: update_rolls(state, TRACK, HOUR, inst("SYNA"), source,
                                       date(2019, 3, 31)),
-                 lambda: adjusted_as_of(state, TRACK, HOUR, "SYNA", t)):
+                 lambda: adjusted_as_of(state, TRACK, HOUR, inst("SYNA"), t)):
         with pytest.raises(BarStoreError, match="SYNA .*interrupted append") as err:
             call()
         assert "revised" not in str(err.value)
@@ -449,11 +449,116 @@ def test_rolls_after_bars_fetch_completes_an_interrupted_first_append(
     assert roll_lines(state) == roll_lines(clean) != b""
     for s in (state, clean):
         assert update_rolls(s, TRACK, HOUR, inst("SYNA"), source, date(2019, 3, 31)) == ((), ())
-    pd.testing.assert_frame_equal(adjusted_as_of(state, TRACK, HOUR, "SYNA", t),
-                                  adjusted_as_of(clean, TRACK, HOUR, "SYNA", t))
+    pd.testing.assert_frame_equal(adjusted_as_of(state, TRACK, HOUR, inst("SYNA"), t),
+                                  adjusted_as_of(clean, TRACK, HOUR, inst("SYNA"), t))
     assert roll_lines(state) == roll_lines(clean)
 
 
 def read_parquet_last(store):
     files = sorted(store.month_path("SYNA", "x").parent.glob("*.parquet"))
     return pd.read_parquet(files[-1])["ts"].iloc[-1]
+
+
+# --- no bar before trusted_from (decision 2026-10-12 36) ------------------------------
+#
+# Each test writes SYNA's synthetic bars from its fixture trusted_from (2019-01-07)
+# through the store's writer, then uses a test-local copy of the record whose
+# trusted_from is later than the first stored bar. The first roll is at
+# 2019-03-14 00:00 UTC, the 24 stored bars before it reach back to 2019-03-12
+# 23:00 (21:00 is the daily break), and the June roll is at 2019-06-14 00:00.
+
+ROLL_1 = pd.Timestamp("2019-03-14 00:00", tz="UTC")
+
+
+def trusted_at(day):
+    return replace(inst("SYNA"), trusted_from=day), pd.Timestamp(day, tz="UTC")
+
+
+class Asking:
+    """A source holding the fixture record's data, from before the test-local
+    ``trusted_from`` too (as a vendor does; the synthetic source would start its
+    series at the record's ``trusted_from``), recording the ``start`` of every
+    ``fetch_contract``."""
+
+    name = "asking"
+
+    def __init__(self, inner):
+        self.inner, self.starts, self.record = inner, [], inst("SYNA")
+
+    def available_until(self, now):
+        return self.inner.available_until(now)
+
+    def fetch(self, instrument, start, end):
+        return self.inner.fetch(self.record, start, end)
+
+    def fetch_contract(self, instrument, contract, start, end):
+        self.starts.append(pd.Timestamp(start))
+        return self.inner.fetch_contract(self.record, contract, start, end)
+
+
+def test_a_gap_is_measured_on_no_bar_before_trusted_from(tmp_path, source, first_roll):
+    syna, u = first_roll
+    assert syna["ts"].iloc[u] == ROLL_1 and syna["ts"].iloc[u - 24] < ROLL_1 - pd.Timedelta(days=1)
+    _store_through(tmp_path, source, syna)
+    rec, trusted = trusted_at(date(2019, 3, 13))
+    assert syna["ts"].iloc[0] < trusted
+    # The old contract's bars at or after trusted_from are hidden, so the only
+    # common bars within 24 stored bars lie before it: none may be used.
+    hide = list(syna["ts"][(syna["ts"] >= trusted) & (syna["ts"] < ROLL_1)])
+    asking = Asking(Hiding(source, {"SYNA-2019-03": hide}))
+    rolls, notices = update_rolls(tmp_path, TRACK, HOUR, rec, asking, date(2019, 3, 31))
+    assert [(r.ts, r.old, r.new) for r in rolls] == [(ROLL_1, "SYNA-2019-03", "SYNA-2019-06")]
+    assert rolls[0].estimated is True and rolls[0].measured_at is None and len(notices) == 1
+    assert asking.starts and min(asking.starts) >= trusted
+    # With them shown, v is the last common bar, at or after trusted_from.
+    clean = tmp_path / "clean"
+    _store_through(clean, source, syna)
+    asking = Asking(source)
+    rolls, _ = update_rolls(clean, TRACK, HOUR, rec, asking, date(2019, 3, 31))
+    assert rolls[0].estimated is False and rolls[0].measured_at >= trusted
+    assert min(asking.starts) >= trusted
+
+
+@pytest.mark.parametrize("hide", [{}, {"SYNA-2019-06": "all"}])   # measured, estimated
+def test_a_contract_change_across_trusted_from_is_not_a_roll(tmp_path, source, hide):
+    syna = source.fetch(inst("SYNA"), START, datetime(2019, 7, 1, tzinfo=UTC))
+    BarStore(tmp_path, TRACK, HOUR).append("SYNA", syna, datetime(2019, 7, 1, tzinfo=UTC))
+    # trusted_from is the date of the March roll bar: the bar before it is untrusted.
+    rec, trusted = trusted_at(date(2019, 3, 14))
+    assert trusted == ROLL_1
+    asking = Asking(Hiding(source, hide))
+    rolls, notices = update_rolls(tmp_path, TRACK, HOUR, rec, asking, date(2019, 6, 30))
+    assert [(r.ts, r.old, r.new) for r in rolls] == [
+        (pd.Timestamp("2019-06-14 00:00", tz="UTC"), "SYNA-2019-06", "SYNA-2019-09")]
+    assert all(r.ts >= trusted for r in read_rolls(roll_path(tmp_path, TRACK, "SYNA")))
+    assert all(e.detail["ts"] != iso(ROLL_1) for e in notices)
+    # Every bar stored before trusted_from gives no roll at all.
+    other = tmp_path / "other"
+    march = syna[syna["ts"] < pd.Timestamp("2019-04-01", tz="UTC")]
+    BarStore(other, TRACK, HOUR).append("SYNA", march, datetime(2019, 4, 1, tzinfo=UTC))
+    assert min(asking.starts) >= trusted
+    assert update_rolls(other, TRACK, HOUR, rec, Asking(Hiding(source, hide)),
+                        date(2019, 3, 31)) == ((), ())
+    assert not roll_path(other, TRACK, "SYNA").exists()
+
+
+def test_adjusted_as_of_reads_no_bar_before_trusted_from_for_any_start(
+        tmp_path, source, first_roll):
+    syna, u = first_roll
+    _store_through(tmp_path, source, syna)
+    rec, trusted = trusted_at(date(2019, 3, 13))
+    assert update_rolls(tmp_path, TRACK, HOUR, rec, Asking(source), date(2019, 3, 31))[0]
+    rolls = read_rolls(roll_path(tmp_path, TRACK, "SYNA"))
+    trusted_bars = syna[syna["ts"] >= trusted].reset_index(drop=True)
+    for k in (u - 1, u, len(syna) - 1):
+        t = syna["ts"].iloc[k]
+        for start in (None, syna["ts"].iloc[0], trusted - pd.Timedelta(hours=1), trusted,
+                      trusted + pd.Timedelta(hours=5)):
+            got = adjusted_as_of(tmp_path, TRACK, HOUR, rec, t, start=start)
+            assert (got["ts"] >= trusted).all(), (k, start)
+            lo = trusted if start is None or start <= trusted else start
+            want = adjust(trusted_bars[trusted_bars["ts"] >= lo].reset_index(drop=True),
+                          rolls, t)
+            pd.testing.assert_frame_equal(got, want, check_exact=True)
+    # A bar t before trusted_from has nothing trusted up to it.
+    assert adjusted_as_of(tmp_path, TRACK, HOUR, rec, syna["ts"].iloc[10]).empty

@@ -318,3 +318,57 @@ def test_an_unlisted_month_file_exits_1(tmp_path, config, state, capsys):
     assert backtest(copy, config, REPO_ROOT / "reference" / "trend_ma.py") == 1
     err = capsys.readouterr().err
     assert "SYNX" in err and month in err and "not listed in the index" in err
+
+
+@pytest.mark.parametrize("which", ["old", "new"])
+def test_a_roll_record_with_the_right_ts_and_other_contracts_exits_1(
+        which, tmp_path, config, state, capsys):
+    # Decision 2026-10-12 37: the record of the June roll keeps its ts and names
+    # another old or new contract; it is a missing roll record.
+    roll_ts = "2019-06-14T00:00:00+00:00"
+    copy = tmp_path / "state"
+    shutil.copytree(state, copy)
+    rolls = copy / "rolls" / TRACK / "SYNA.jsonl"
+    lines = rolls.read_text(encoding="utf-8").splitlines(keepends=True)
+    out = []
+    for line in lines:
+        row = json.loads(line)
+        if row["ts"] == roll_ts:
+            row[which] = "SYNA-2019-12"
+            line = json.dumps(row, sort_keys=True) + "\n"
+        out.append(line)
+    assert out != lines
+    rolls.write_text("".join(out), encoding="utf-8")
+    capsys.readouterr()
+    assert backtest(copy, config, REPO_ROOT / "reference" / "trend_ma.py") == 1
+    err = capsys.readouterr().err
+    assert "SYNA" in err and "no record of that roll" in err and "bars fetch" in err
+    assert roll_ts in err
+
+
+def test_plain_output_labels_subject_and_instrument_cost_lines(state, config, outputs, capsys):
+    # Decision 2026-10-12 38: the subject's cost totals (divided by N) are labelled
+    # as the subject's, each per-instrument line as its undivided sum; the figures
+    # are those of --json.
+    from discotrade.cli import _fmt
+
+    result = json.loads(outputs["trend_ma.py"])
+    capsys.readouterr()
+    assert backtest(state, config, REPO_ROOT / "reference" / "trend_ma.py") == 0
+    lines = capsys.readouterr().out.splitlines()
+    n = len(SYMBOLS)
+    subject = [ln for ln in lines if "costs at 1x" in ln]
+    assert subject == [
+        f"subject costs at 1x (each instrument's sum over its bars, summed and divided "
+        f"by N={n}): " + ", ".join(f"{k} {_fmt(result['costs'][k])}" for k in COSTS)]
+    for symbol in SYMBOLS:
+        p = result["instruments"][symbol]
+        mine = [ln for ln in lines if ln.startswith(f"instrument {symbol} ")]
+        assert mine == [
+            f"instrument {symbol} (its own sums over its bars, not divided by N): "
+            f"{p['bars']} bars, trades {p['trades']}, position {_fmt(p['position_min'])} "
+            f"to {_fmt(p['position_max'])}, "
+            + ", ".join(f"{k} {_fmt(p[k])}" for k in COSTS)
+            + f", net_1x {_fmt(p['net_1x'])}, net_2x {_fmt(p['net_2x'])}"]
+    # No line starts with a bare symbol any more.
+    assert not [ln for ln in lines if ln.split(":")[0] in SYMBOLS]

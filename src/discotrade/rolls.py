@@ -30,6 +30,14 @@ for every bar ``s``, the sum of the gaps of the rolls after ``s`` and not
 after ``t`` added to its four prices. Its last bar is raw, and volume is
 never adjusted.
 
+No stored bar whose ``ts`` is before the instrument's ``trusted_from`` (midnight
+UTC of that date, DESIGN 4.2) is read (decision 2026-10-12 36): rolls are
+found only among the stored bars at or after it, so a contract change between
+a bar before it and the first bar at or after it is not a roll; the span of a
+gap's measurement starts no earlier than it, so neither ``v`` nor the
+``fetch_contract`` range lies before it; and ``adjusted_as_of`` reads from the
+later of ``start`` and it.
+
 ``update_rolls`` and ``adjusted_as_of`` find an instrument with no index
 entry to have no stored bar only when its directory holds no month file;
 otherwise they refuse with the reader's error, interrupted append or revised
@@ -41,7 +49,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime, time
 from pathlib import Path
 from typing import Any
 
@@ -96,6 +104,11 @@ def _stamp(value: Any) -> pd.Timestamp:
     return stamp.tz_convert("UTC")
 
 
+def trusted_start(instrument: Instrument) -> pd.Timestamp:
+    """Midnight UTC of ``instrument``'s ``trusted_from``: no earlier stored bar is read."""
+    return pd.Timestamp(datetime.combine(instrument.trusted_from, time(), tzinfo=UTC))
+
+
 def roll_path(state_dir: Path, track: str, symbol: str) -> Path:
     if not symbol or "/" in symbol or "\\" in symbol or symbol.startswith("."):
         raise ValueError(f"bad symbol {symbol!r}")
@@ -148,8 +161,11 @@ def update_rolls(state_dir: Path, track: str, bar_seconds: int, instrument: Inst
         return (), ()
     path = roll_path(state_dir, track, symbol)
     recorded = read_rolls(path)
-    first = _stamp(entry["first_ts"]) if not recorded else recorded[-1].ts
+    trusted = trusted_start(instrument)
+    first = max(_stamp(entry["first_ts"]) if not recorded else recorded[-1].ts, trusted)
     last = _stamp(entry["last_ts"])
+    if last < first:
+        return (), ()
     bars = store.read_range(symbol, first, last + pd.Timedelta(seconds=bar_seconds))
     contracts = bars["contract"].tolist()
     rolls: list[Roll] = []
@@ -158,7 +174,8 @@ def update_rolls(state_dir: Path, track: str, bar_seconds: int, instrument: Inst
         ts = bars["ts"].iloc[u]
         old, new = contracts[u - 1], contracts[u]
         before = store.last_n(symbol, bars["ts"].iloc[u - 1], WINDOW_BARS)
-        measured = _measure(source, instrument, old, new, before["ts"].iloc[0], ts)
+        start = max(before["ts"].iloc[0], trusted)
+        measured = _measure(source, instrument, old, new, start, ts)
         if measured is None:
             gap = float(bars["open"].iloc[u] - bars["close"].iloc[u - 1])
             roll = Roll(ts=ts, old=old, new=new, gap=gap, estimated=True, measured_at=None)
@@ -191,15 +208,18 @@ def adjust(bars: pd.DataFrame, rolls: Sequence[Roll], t: datetime | pd.Timestamp
     return out
 
 
-def adjusted_as_of(state_dir: Path, track: str, bar_seconds: int, symbol: str,
+def adjusted_as_of(state_dir: Path, track: str, bar_seconds: int, instrument: Instrument,
                    t: datetime | pd.Timestamp,
                    start: datetime | pd.Timestamp | None = None) -> pd.DataFrame:
-    """The adjusted series as of bar ``t`` of the stored bars of ``symbol`` from
-    ``start`` (default: the first stored bar)."""
+    """The adjusted series as of bar ``t`` of the stored bars of ``instrument``
+    from the later of ``start`` (default: the first stored bar) and its
+    ``trusted_from`` (decision 2026-10-12 36)."""
+    symbol = instrument.symbol
     store = BarStore(Path(state_dir), track, bar_seconds)
     entry = store.index_entry(symbol)   # refuses an unlisted file (decision 35)
     if entry is None:
         raise BarStoreError(f"{symbol}: no stored bar")
     lo = _stamp(entry["first_ts"]) if start is None else _stamp(start)
+    lo = max(lo, trusted_start(instrument))
     bars = store.read_range(symbol, lo, _stamp(t) + pd.Timedelta(nanoseconds=1))
     return adjust(bars, read_rolls(roll_path(state_dir, track, symbol)), t)

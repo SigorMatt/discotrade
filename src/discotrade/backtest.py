@@ -23,8 +23,11 @@ ever used.
 ``u-1`` is always the previous stored bar (decision 24). A roll happens at
 ``u`` when its ``contract`` differs from the previous stored bar's; its gap is
 read from ``<state>/rolls/<track>/<symbol>.jsonl`` and a contract change with
-no record there (same ``ts``, old and new contract) stops the evaluation with
-:class:`MissingRollError`. The gross return of DESIGN 7.2 is
+no record there with the same ``ts``, old and new contract stops the
+evaluation with :class:`MissingRollError` (decision 2026-10-12 37: a record
+with the right ``ts`` and other contracts is a missing one). The first bar read
+is never a roll, so a contract change across ``trusted_from`` is none
+(decision 2026-10-12 36). The gross return of DESIGN 7.2 is
 
     gross(u) = ( h(u-1) * (Oa(u) - Ca(u-1)) + h(u) * (Ca(u) - Oa(u)) ) / Or(u)
 
@@ -143,12 +146,14 @@ def _roll_gaps(bars: pd.DataFrame, state_dir: Path, track: str, symbol: str
     if not rolled.any():
         return gaps, rolled
     path = roll_path(state_dir, track, symbol)
-    records = {r.ts: r for r in read_rolls(path)}
+    # A record is this roll's only when its ts, old and new contract all match
+    # (decision 2026-10-12 37); one with the right ts and other contracts is none.
+    records = {(r.ts, r.old, r.new): r for r in read_rolls(path)}
     for k in np.flatnonzero(rolled):
         ts = bars["ts"].iloc[k]
-        roll = records.get(ts)
         old, new = contracts[k - 1], contracts[k]
-        if roll is None or roll.old != old or roll.new != new:
+        roll = records.get((ts, old, new))
+        if roll is None:
             raise MissingRollError(
                 f"{symbol}: the contract changes from {old} to {new} at bar ts "
                 f"{ts.isoformat()} and {path} has no record of that roll; run "
