@@ -36,7 +36,7 @@ import pandas as pd
 import pytest
 from independent_calc import calculate
 
-from discotrade import metrics
+from discotrade import costs, metrics
 from discotrade.backtest import evaluate
 from discotrade.bars.store import BarStore
 from discotrade.cli import REPO_ROOT, main
@@ -127,8 +127,8 @@ class Recorder:
         return value
 
 
-def discotrade_run(state, config, tc, calendars, strat):
-    window = DateRange(FIRST, LAST)
+def discotrade_run(state, config, tc, calendars, strat, first=FIRST, last=LAST):
+    window = DateRange(first, last)
     evaluations = [
         evaluate(state, tc.track, inst, calendars[inst.calendar], strat, window,
                  spread_table=spread_table(config, inst.symbol))
@@ -163,7 +163,8 @@ def runs(state, config, tc, calendars, thresholds):
                          FIRST.isoformat(), "--to", LAST.isoformat(), "--json"])
         assert code == 0, name
         out[name] = {"evaluations": evaluations, "daily": daily, "metrics": m,
-                     "calc": results, "raw_synl": raw_synl,
+                     "calc": results, "raw_synl": raw_synl, "path": path,
+                     "params": dict(strat.params),
                      "json": json.loads(buf.getvalue())}
     return out
 
@@ -327,18 +328,67 @@ def figure(value):
     return math.nan if value is None else value
 
 
-@pytest.mark.parametrize("name", FILES)
-def test_backtest_json_equals_the_module(runs, name):
-    run = runs[name]
+# Decision 42: every key of the ``--json`` object and of each per-instrument
+# map is compared with the module's evaluation and the independent
+# calculation, for each reference file on the G0.1 window and for one more
+# case, ``LOW``: zscore_reversal.py on a weekend where SYNX's target at the
+# last window bar (-1) is below every earlier target and 0, so that the
+# lowest position read from ``h`` alone differs from the lowest of ``p`` and
+# ``h`` (asserted by ``test_low_case_ends_on_a_new_low``), and where SYNA and
+# SYNL have no window bar (their positions print as null).
+LOW_FILE, LOW_SYMBOL = "zscore_reversal.py", "SYNX"
+LOW_FIRST, LOW_LAST = date(2019, 3, 23), date(2019, 3, 24)
+LOW = f"{LOW_FILE} {LOW_FIRST.isoformat()} to {LOW_LAST.isoformat()}"
+CASES = (*FILES, LOW)
+DESCRIPTIVE = ("strategy", "params", "track", "from", "to", "cost_model", "config_hash")
+JSON_KEYS = frozenset((*DESCRIPTIVE, "days", *METRICS, "costs", "instruments"))
+SUMS = (*COSTS, "cost", "net_1x", "net_2x")
+INSTRUMENT_KEYS = frozenset(("bars", "trades", "position_min", "position_max", *SUMS))
+
+
+def backtest_json(state, config, path, first, last):
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        code = main(["--state", str(state), "--config", str(config), "--track", TRACK,
+                     "--as-of", AS_OF, "backtest", str(path), "--from", first.isoformat(),
+                     "--to", last.isoformat(), "--json"])
+    assert code == 0, path.name
+    return json.loads(buf.getvalue())
+
+
+@pytest.fixture(scope="module")
+def cases(runs, state, config, tc, calendars, thresholds):
+    """Per case: discotrade's evaluations and metrics, the independent
+    result, the ``backtest --json`` output, the file, its ``PARAMS`` and the
+    window."""
+    out = {name: {**runs[name], "first": FIRST, "last": LAST} for name in FILES}
+    path = REPO_ROOT / "reference" / LOW_FILE
+    strat = load_strategy_file(path, thresholds)
+    evaluations, daily, m = discotrade_run(state, config, tc, calendars, strat,
+                                           LOW_FIRST, LOW_LAST)
+    calc = calculate(state, config, TRACK, LOW_FIRST, LOW_LAST, strat.position,
+                     dict(strat.params))
+    out[LOW] = {"evaluations": evaluations, "daily": daily, "metrics": m, "calc": calc,
+                "path": path, "params": dict(strat.params), "first": LOW_FIRST,
+                "last": LOW_LAST,
+                "json": backtest_json(state, config, path, LOW_FIRST, LOW_LAST)}
+    return out
+
+
+@pytest.mark.parametrize("name", CASES)
+def test_backtest_json_equals_the_module(cases, name):
+    run = cases[name]
     out, m = run["json"], run["metrics"]
     assert out["days"] == m.days
     for key in METRICS:
         mine = getattr(m, key)
         if key in ("trades", "fragile"):
             assert out[key] == mine and type(out[key]) is type(mine), f"{name} {key}"
+            assert out[key] == run["calc"].metrics[key], f"{name} --json {key}"
         else:
             assert_eq(figure(out[key]), mine, f"{name} --json {key}")
             assert_eq(figure(out[key]), run["calc"].metrics[key], f"{name} --json {key}")
+    assert out["days"] == len(run["calc"].days), f"{name} --json days"
     subject, per = discotrade_costs(run["evaluations"])
     for k in COSTS:
         assert_eq(out["costs"][k], subject[k], f"{name} --json costs {k}")
@@ -349,3 +399,80 @@ def test_backtest_json_equals_the_module(runs, name):
     for e in run["evaluations"]:
         assert out["instruments"][e.symbol]["bars"] == len(e.rows)
         assert out["instruments"][e.symbol]["bars"] == len(run["calc"].rows[e.symbol])
+
+
+def instrument_figures(rows: pd.DataFrame) -> dict:
+    """One instrument's ``--json`` map computed in the test from per-bar rows
+    (DESIGN 8, decisions 25, 27 and 42): its bar count, its count of bars
+    with ``trade > 1e-9``, the lowest and highest of every ``p`` and ``h`` of
+    its window bars (not a number when it has none), and the sum over its
+    bars of each cost component, ``cost``, ``net_1x`` and ``net_2x``."""
+    positions = [*rows["p"].tolist(), *rows["h"].tolist()]
+    return {
+        "bars": len(rows),
+        "trades": int((rows["trade"].to_numpy(dtype=float) > 1e-9).sum()),
+        "position_min": float(min(positions)) if positions else math.nan,
+        "position_max": float(max(positions)) if positions else math.nan,
+        **{k: float(rows[k].sum()) for k in SUMS},
+    }
+
+
+def test_low_case_ends_on_a_new_low(cases):
+    for rows in (cases[LOW]["evaluations"][SYMBOLS.index(LOW_SYMBOL)].rows,
+                 pd.DataFrame(cases[LOW]["calc"].rows[LOW_SYMBOL], columns=list(FLOATS))):
+        assert len(rows) > 0
+        assert min(*rows["p"], *rows["h"]) < min(rows["h"])
+    for symbol in SYMBOLS:
+        if symbol != LOW_SYMBOL:
+            assert len(cases[LOW]["evaluations"][SYMBOLS.index(symbol)].rows) == 0, symbol
+
+
+@pytest.mark.parametrize("name", CASES)
+def test_backtest_json_keys_are_exactly_those_compared(cases, name):
+    out = cases[name]["json"]
+    assert set(out) == JSON_KEYS, f"{name}: --json keys"
+    assert set(out["costs"]) == set(COSTS), f"{name}: --json costs keys"
+    assert tuple(out["instruments"]) == tuple(sorted(SYMBOLS)), f"{name}: --json instruments"
+    for symbol in SYMBOLS:
+        assert set(out["instruments"][symbol]) == INSTRUMENT_KEYS, f"{name} {symbol}: keys"
+
+
+@pytest.mark.parametrize("name", CASES)
+def test_backtest_json_descriptive_keys(cases, config, tc, name):
+    run = cases[name]
+    out = run["json"]
+    assert out["strategy"] == f"reference/{run['path'].name}"
+    assert out["strategy"] == run["path"].relative_to(REPO_ROOT).as_posix()
+    assert out["params"] == run["params"] and out["params"]
+    assert out["track"] == TRACK
+    assert out["from"] == run["first"].isoformat() and out["to"] == run["last"].isoformat()
+    assert out["cost_model"] == "c1" == costs.VERSION
+    tables = {inst.symbol: spread_table(config, inst.symbol) for inst in tc.instruments}
+    assert out["config_hash"] == costs.config_hash(tc.instruments, tables)
+
+
+@pytest.mark.parametrize("name", CASES)
+def test_backtest_json_per_instrument_maps(cases, name):
+    """Every key of each instrument's ``--json`` map equals the figure
+    computed from discotrade's per-bar rows and from the independent
+    calculation's rows (decision 42); counts exactly, reals by decision 39,
+    and a position of an instrument with no window bar is null."""
+    run = cases[name]
+    out = run["json"]["instruments"]
+    for e in run["evaluations"]:
+        mine = instrument_figures(e.rows)
+        theirs = instrument_figures(pd.DataFrame(run["calc"].rows[e.symbol],
+                                                 columns=list(FLOATS)))
+        got = out[e.symbol]
+        assert set(mine) == set(theirs) == INSTRUMENT_KEYS
+        for key in ("bars", "trades"):
+            assert type(got[key]) is int, f"{name} {e.symbol} --json {key} type"
+            assert got[key] == mine[key] == theirs[key], (
+                f"{name} {e.symbol} --json {key}: {got[key]} module {mine[key]} "
+                f"independent {theirs[key]}")
+        for key in ("position_min", "position_max"):
+            assert (got[key] is None) == (len(e.rows) == 0), f"{name} {e.symbol} {key}"
+        for key in ("position_min", "position_max", *SUMS):
+            assert_eq(figure(got[key]), mine[key], f"{name} {e.symbol} --json {key} (module)")
+            assert_eq(figure(got[key]), theirs[key],
+                      f"{name} {e.symbol} --json {key} (independent)")
