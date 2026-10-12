@@ -9,8 +9,8 @@ Carried items (taken by U1):
 - REVIEW-2 should-fix 2: `bars fetch` defaults its gap-check day to UTC `--as-of` minus one, not §16.1's `D` (decision 19).
 - REVIEW-2 note on U5: no socket backstop in `tests/conftest.py` (decision 20).
 
-- [ ] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`.
-- [ ] U1 Reader, `bars fetch` default day and socket backstop (REVIEW-2 should-fix 1, 2, note on U5; decisions 3, 5, 18-20; DESIGN §5.2, §5.4, §16.1).
+- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`. — 02b366c
+- [x] U1 Reader, `bars fetch` default day and socket backstop (REVIEW-2 should-fix 1, 2, note on U5; decisions 3, 5, 18-20; DESIGN §5.2, §5.4, §16.1). — a966344
 - [ ] U2 Strategy contract, loader and indicator library (DESIGN §6.1, §6.2 result check, §6.3; decisions 21, 22).
 - [ ] U3 Evaluation loop and returns (DESIGN §6.2, §7.1, §7.2, §5.6; decisions 22-24; R-20).
 - [ ] U4 Cost model and executor (DESIGN §7.3, §7.4, §5.7; decisions 24-26; R-3, R-5).

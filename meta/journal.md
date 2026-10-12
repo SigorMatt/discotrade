@@ -22,3 +22,4 @@
 - 2026-10-12 mission 2 U7 done 0cf4db1: final report; mission finished.
 2026-10-12T00:32:57.846Z  consult 0mv4igsfu-lvd2 (architect done) on aux.done of aux job 0mv4i57ep-knqj: VERDICT: next kit mission-3-kit
 - 2026-10-12 mission 3 U0: plan written (base ef2e9f1, S0.3; REVIEW-2 should-fix 1, 2 and the U5 socket note carried to U1).
+- 2026-10-12 mission 3 U1 done a966344: reader refuses unlisted month files (interrupted append / revised), bars fetch default day = §16.1 D, autouse socket backstop; test_synth default-day assertion moved to D per decision 19; 551 tests.
