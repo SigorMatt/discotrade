@@ -18,7 +18,7 @@ Carried items:
 - [x] U4 Gate G0.1: reference strategies against the independent calculation (decisions 23-27, 39). — calc fix de9fc09 (D-004), 2881ee0
 - [x] U5 Gate G0.2: the cheating strategy (DESIGN §18.3 G0.2, §6.2, §7.1, §12.1; I-2; decision 40). — 2c64e8d
 - [x] U6 Gates G0.3 and G0.4, and the gate run (`./scripts/gate M0` prints `gate M0: PASS`). — tests 80ffc78; gate M0 PASS at 62edb14
-- [ ] U7 Final report (`meta/FINAL-REPORT-5.md`).
+- [x] U7 Final report (`meta/FINAL-REPORT-5.md`). — dd55021
 
 ## Decision on D-004
 

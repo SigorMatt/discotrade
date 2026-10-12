@@ -49,3 +49,4 @@
 - 2026-10-12 mission 5 U4 calc fix done de9fc09: independent_calc max_drawdown counts starting 0 as peak (D-004 decision); gate M0 G0.1 PASS (self-test); stash popped for U4.
 - 2026-10-12 mission 5 U4 done 2881ee0: G0.1 reference gate (22 tests) passes all three strategies incl. max_drawdown; wrong changes ddof, roll gap, full-tick floor, drawdown-no-leading-0 fail; D-005's two pass as recorded; no mismatch left.
 - 2026-10-12 mission 5 U6 gate run at 62edb14: check green x3 (~6 min each); gate M0: PASS (G0.1 41/52.9s, G0.2 7/117s, G0.3 13/170s, G0.4 4/0.2s), 343s.
+- 2026-10-12 mission 5 U7 done dd55021: final report; gate M0 PASS at 62edb14; findings D-004 (answered, to be decision 41), D-005, D-006 open; mission finished.
