@@ -15,5 +15,5 @@ Carried items:
 - [x] U2 The independent calculation's self-test: a position that changes at the roll (REVIEW-5 should-fix 1; D-005; decisions 24, 25, 39, 43 (a); DESIGN §5.6, §7.3). Own sub-agent, forbidden-files words verbatim. — 9ca8575
 - [x] U3 The roll timing in product unit tests and in G0.1 (D-005; decisions 21, 24, 25, 39, 43 (b), (c); DESIGN §5.6, §7.3, §8, §18.3 G0.1). — 9e16050
 - [x] U4 `tests/test_gate_script.py` under load (REVIEW-5 note; decision 45; DESIGN §18.2). — b268252
-- [ ] U5 The gate run (`./scripts/gate M0` prints `gate M0: PASS` at the pushed tip).
+- [x] U5 The gate run (`./scripts/gate M0` prints `gate M0: PASS` at the pushed tip). — gate M0 PASS at 65718c5
 - [ ] U6 Final report (`meta/FINAL-REPORT-6.md`).
