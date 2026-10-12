@@ -558,6 +558,68 @@ def _add_run_day(subparsers: argparse._SubParsersAction,
 SUBCOMMANDS.append(_add_run_day)
 
 
+def _journal_recompute(ctx: Context, args: argparse.Namespace) -> int:
+    from discotrade import journal
+    from discotrade.backtest import EvaluationError
+    from discotrade.bars.store import BarStoreError
+    from discotrade.config import ConfigError, load_track_config
+    from discotrade.daily import closed_day
+    from discotrade.sources import NotBuiltError
+    from discotrade.state import StateError, append_health, lock, require_state_directory
+    from discotrade.strategy import ResultError, StrategyError
+
+    if ctx.state is None:
+        print(f"discotrade journal recompute: give --state <dir> or set {STATE_ENV}",
+              file=sys.stderr)
+        return 2
+    try:
+        require_state_directory(ctx.state)
+        with lock(ctx.state):
+            setup = journal.Setup.load(ctx.config, ctx.track)
+            pairs = journal.journal_pairs(ctx.state, ctx.track)
+            if not args.all:
+                tc = load_track_config(ctx.config, ctx.track)
+                d = closed_day(tc, dict(setup.calendars), ctx.clock.now())
+                n = int(setup.thresholds["journal.recompute_sample"])
+                pairs = journal.sample_pairs(pairs, n, d)
+            result = journal.recompute(ctx.state, setup, pairs)
+            appended = append_health(ctx.state, ctx.track, result.events)
+    except (StateError, journal.JournalError, ConfigError, BarStoreError, StrategyError,
+            ResultError, EvaluationError, NotBuiltError, OSError, ValueError) as exc:
+        print(f"journal recompute: FAIL: {exc}", file=sys.stderr)
+        return 1
+    bad = set(result.mismatches)
+    for day, subject in result.pairs:
+        print(f"{'MISMATCH' if (day, subject) in bad else 'equal'} {day.isoformat()} {subject}")
+    for event in appended:
+        print(f"alert {event.to_json()}")
+    print(f"journal recompute: {ctx.track}: {len(result.pairs)} pairs recomputed, "
+          f"{len(bad)} mismatched")
+    return 1 if bad else 0
+
+
+def _add_journal(subparsers: argparse._SubParsersAction,
+                 common: argparse.ArgumentParser) -> None:
+    journal = subparsers.add_parser("journal", parents=[common],
+                                    help="the decision journal (DESIGN 9.2, 9.4)")
+    actions = journal.add_subparsers(dest="action", metavar="action", required=True)
+    recompute = actions.add_parser(
+        "recompute", parents=[common],
+        help="recompute journaled (day, subject) pairs from the stored bars and the frozen "
+        "sources under the state's lock and compare them with the journal: "
+        "journal.recompute_sample pairs of the days before D (decision 19's D at --as-of), "
+        "drawn with D as YYYYMMDD for seed, or every pair with --all; each mismatch is "
+        "printed and appended to the health log as journal_mismatch, and exits 1; nothing "
+        "else is written (DESIGN 9.4; decision 2026-10-12 54)",
+    )
+    recompute.add_argument("--all", action="store_true",
+                           help="recompute every journaled pair")
+    recompute.set_defaults(handler=_journal_recompute)
+
+
+SUBCOMMANDS.append(_add_journal)
+
+
 #: The cost components, in the order they are reported (DESIGN 7.3).
 _COSTS = ("fee", "spread", "slippage", "roll")
 

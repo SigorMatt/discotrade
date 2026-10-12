@@ -1,5 +1,5 @@
-"""The decision journal (DESIGN 9.2, 7, 6.2; decisions 2026-10-12 24, 25, 48, 49,
-51; I-5, I-6, I-7, I-12).
+"""The decision journal (DESIGN 9.2, 9.4, 7, 6.2; decisions 2026-10-12 24, 25, 48,
+49, 51, 54; I-5, I-6, I-7, I-12).
 
 One Parquet file per trading day ``journal/<track>/<YYYY>/<YYYY-MM-DD>.parquet``
 holds one row per subject, instrument and bar of that day, with the columns
@@ -45,6 +45,18 @@ The API, for the units that build on it:
 - ``journal_day(state_dir, setup, day, into=None)``: ``day_rows`` then
   ``write_day``; returns a ``DayResult``.
 - ``read_index``, ``read_day``, ``journal_path``, ``index_path``.
+- Recomputation (DESIGN 9.4; decision 54), for ``journal recompute``:
+  ``journal_pairs(state_dir, track)`` lists every journaled (day, subject)
+  pair (each index day with each approach admitted before it);
+  ``sample_pairs(pairs, n, day)`` draws ``n`` of those before ``day`` (all
+  when fewer exist) with ``numpy.random.default_rng(YYYYMMDD of day)``,
+  choosing indices into the sorted pool without replacement (the design
+  names the seed, not the draw; this is the simplest); ``recompute(state_dir,
+  setup, pairs)`` evaluates each subject once from its first journaled day to
+  the last asked for (``span_rows``, no stored row read), compares each
+  pair's rows with the stored ones by content hash on ``KEY``, and returns a
+  ``Recompute`` with one ``journal_mismatch`` alert per mismatched pair. It
+  writes nothing; the command appends the alerts to the health log.
 
 A day with no subject has a file with no row and its index line. No clock
 is read (I-12).
@@ -237,12 +249,14 @@ def _carries(state_dir: Path, track: str, day: date, subjects: Mapping[str, date
     return out
 
 
-def _rows(subject: str, kind: str, day: date, ev: Evaluation, previous: float
+def _rows(subject: str, kind: str, day: date | None, ev: Evaluation, previous: float
           ) -> pd.DataFrame:
+    """The journal rows of ``ev``, dated ``day``, or each its own trading date
+    (``ev.rows["date"]``) when ``day`` is None."""
     r = ev.rows
     h = r["h"].to_numpy(dtype=np.float64)
     return pd.DataFrame({
-        "date": [day] * len(r),
+        "date": list(r["date"]) if day is None else [day] * len(r),
         "ts": r["ts"].to_numpy(),
         "subject": subject,
         "kind": kind,
@@ -294,18 +308,24 @@ def subject_rows(state_dir: Path, setup: Setup, day: date, subject: str, kind: s
     return frames
 
 
+def _require_trusted(approaches: Sequence[Approach]) -> None:
+    """Refuse an approach whose source is not a trusted file (decision 48)."""
+    if not approaches:
+        return
+    trusted = trusted_hashes()
+    for a in approaches:
+        digest = hashlib.sha256(a.source.encode("utf-8")).hexdigest()
+        if digest not in trusted:
+            raise JournalError(
+                f"approach {a.id}: its source (sha256 {digest}) is not that of a file "
+                f"under the repository's {' or '.join(d + '/' for d in TRUSTED_DIRS)}; "
+                f"until the sandbox, only those run (decision 48); the day fails")
+
+
 def day_rows(state_dir: Path, setup: Setup, day: date) -> pd.DataFrame:
     """The rows of ``day`` of every approach admitted before it, sorted by ``KEY``."""
     approaches: list[Approach] = [a for a in read_approaches(state_dir) if a.admitted < day]
-    if approaches:
-        trusted = trusted_hashes()
-        for a in approaches:
-            digest = hashlib.sha256(a.source.encode("utf-8")).hexdigest()
-            if digest not in trusted:
-                raise JournalError(
-                    f"approach {a.id}: its source (sha256 {digest}) is not that of a file "
-                    f"under the repository's {' or '.join(d + '/' for d in TRUSTED_DIRS)}; "
-                    f"until the sandbox, only those run (decision 48); the day fails")
+    _require_trusted(approaches)
     carries = _carries(state_dir, setup.track.name, day, {a.id: a.admitted for a in approaches},
                        [i.symbol for i in setup.instruments])
     frames = [f for a in approaches
@@ -366,3 +386,97 @@ def journal_day(state_dir: Path, setup: Setup, day: date,
     """Compute ``day``'s rows and write or compare them."""
     return write_day(state_dir, setup.track.name, day, day_rows(state_dir, setup, day),
                      into=into)
+
+
+# --- recomputation (DESIGN 9.4; decision 54) ---------------------------------------------
+
+Pair = tuple[date, str]
+
+
+@dataclass(frozen=True)
+class Recompute:
+    pairs: tuple[Pair, ...]              # recomputed, in (day, subject) order
+    mismatches: tuple[Pair, ...]
+    events: tuple[HealthEvent, ...]      # one journal_mismatch per mismatched pair
+
+
+def journal_pairs(state_dir: Path, track: str) -> list[Pair]:
+    """Every journaled (day, subject) pair: each day of the index with each
+    approach of the state admitted before it (the subjects ``day_rows``
+    journals that day), in (day, subject) order."""
+    days = sorted(date.fromisoformat(e["date"]) for e in read_index(state_dir, track))
+    approaches = read_approaches(state_dir)
+    return sorted((d, a.id) for d in days for a in approaches if a.admitted < d)
+
+
+def sample_pairs(pairs: Sequence[Pair], n: int, day: date) -> list[Pair]:
+    """``n`` of the ``pairs`` of days before ``day`` (all of them when fewer
+    exist), drawn without replacement by ``numpy.random.default_rng`` seeded
+    with ``day`` as the integer ``YYYYMMDD`` (decision 54), in (day, subject)
+    order."""
+    pool = sorted(p for p in pairs if p[0] < day)
+    if len(pool) <= n:
+        return pool
+    picks = np.random.default_rng(int(day.strftime("%Y%m%d"))).choice(
+        len(pool), size=n, replace=False)
+    return [pool[k] for k in sorted(int(k) for k in picks)]
+
+
+def span_rows(state_dir: Path, setup: Setup, approach: Approach, first: date, last: date
+              ) -> pd.DataFrame:
+    """The rows of ``approach`` from ``first`` to ``last``, evaluated once over
+    that window per instrument (its first bar flat, DESIGN 7.1), sorted by
+    ``KEY``; each row dated by its instrument's trading date."""
+    frames = []
+    for inst in setup.instruments:
+        strat = load_strategy(approach.source, setup.thresholds,
+                              name=f"{KIND_APPROACH} {approach.id}")
+        ev = evaluate(state_dir, setup.track, inst, setup.calendars[inst.calendar], strat,
+                      DateRange(first, last), params=approach.params,
+                      spread_table=setup.spread_tables[inst.symbol])
+        if not ev.rows.empty:
+            frames.append(_rows(approach.id, KIND_APPROACH, None, ev, 0.0))
+    return _frame(pd.concat(frames, ignore_index=True)) if frames else _empty()
+
+
+def recompute(state_dir: Path, setup: Setup, pairs: Sequence[Pair]) -> Recompute:
+    """Recompute ``pairs`` from the stored bars and the frozen sources and
+    compare each with the journal (DESIGN 9.4; decision 54). Each subject is
+    evaluated once, from its first journaled day (the first day of the index
+    after its admission) to the last day it is asked for; a pair matches when
+    the content hashes on ``KEY`` of its stored and recomputed rows are equal.
+    A mismatch returns a ``journal_mismatch`` alert dated the pair's day,
+    naming its subject, with ``write_day``'s detail. Nothing is written."""
+    track = setup.track.name
+    pairs = sorted(set(pairs))
+    days = sorted(date.fromisoformat(e["date"]) for e in read_index(state_dir, track))
+    known = {a.id: a for a in read_approaches(state_dir)}
+    wanted: dict[str, list[date]] = {}
+    for d, subject in pairs:
+        if subject not in known:
+            raise JournalError(f"{subject} is not an approach of the state")
+        wanted.setdefault(subject, []).append(d)
+    _require_trusted([known[s] for s in sorted(wanted)])
+    computed = {}
+    for subject, asked in sorted(wanted.items()):
+        a = known[subject]
+        first = min(d for d in days if d > a.admitted)
+        computed[subject] = span_rows(state_dir, setup, a, first, max(asked))
+    stored_days: dict[date, pd.DataFrame] = {}
+    mismatches, events = [], []
+    for d, subject in pairs:
+        if d not in stored_days:
+            rows = read_day(state_dir, track, d)
+            if rows is None:
+                raise JournalError(f"the index of {track} names {d.isoformat()}, which has "
+                                   f"no file {journal_path(state_dir, track, d)}")
+            stored_days[d] = rows
+        stored = stored_days[d]
+        mine = computed[subject]
+        a = content_hash(stored[stored["subject"] == subject], KEY)
+        b = content_hash(mine[mine["date"] == d], KEY)
+        if a != b:
+            mismatches.append((d, subject))
+            events.append(HealthEvent(d, "alert", JOURNAL_MISMATCH, subject,
+                                      {"track": track, "stored": a, "computed": b}))
+    return Recompute(tuple(pairs), tuple(mismatches), tuple(events))
