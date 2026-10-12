@@ -581,3 +581,181 @@ built.
     mission 6 ends with the gate run; step S0.4 is ticked, and M0 marked
     met, when mission 6's review has no blocker and records the gate
     PASS. No gate item moves.
+
+## Added at consultation 9, after REVIEW-6
+
+Items 1 to 46 above are unchanged. REVIEW-6 recorded no blocker and the
+gate M0 PASS at e239dee, so step S0.4 is ticked and milestone M0 is
+marked met (item 46). Items 47 to 57 below bind mission 7 (step S1.1)
+and every later mission until a newer decisions file says otherwise; the
+same rules apply to them (no invariant broken, no gate moved, no
+threshold or frozen value changed). Where an item leaves a part of a
+DESIGN section to a later step, that step is named, and the part stays
+the roadmap's for that step.
+
+47. **REVIEW-3 note (I-11), decision 20, `meta/BACKLOG.md` (step S1.1):
+    the socket backstop holds outside function-scoped tests too.** From
+    the start of the pytest session, every attempt to open a network
+    connection fails as decision 20 says, in module- and session-scoped
+    fixtures as well as in tests, and through `_socket` used directly as
+    well as through `socket`; a test marked `network` or `live` is left
+    alone while it runs. A subprocess launched by a test, or by product
+    code under test, is one of: `git` on local paths only, with
+    `GIT_ALLOW_PROTOCOL=file` in its environment so that git refuses
+    every other transport; or a Python program of this repository (the
+    `discotrade` command, `./scripts/gate`, a scratch pytest run, or a
+    `python -c` snippet the test writes) that opens no connection, as the
+    tests of today's subprocess calls already show (`test_cli.py`,
+    `test_config_check.py`, `test_costs.py`, `test_vendor.py`,
+    `test_gate_script.py`). A test that finds the files under `tests/`
+    and `src/` whose text contains `subprocess` or `os.system` fails on a
+    file that is not in its list, so that a new subprocess call is
+    classified when it is added. Reason: mission 7 adds `git`
+    subprocesses (the state repository, item 50), and the note was
+    carried to this step.
+
+48. **DESIGN §9.1, §9.2, §10.3 with I-7 and decision 21: which subjects
+    step S1.1 journals, and how their source runs before the sandbox.**
+    The journal is written for the subjects the state holds. In step S1.1
+    those are the approaches under `approaches/<id>/`, written by a
+    harness function of `state.py` (source, fixed parameters, cell, model
+    id, model version, cutoff date, description, profile version, and the
+    admission date) that tests call in place of admission, and that step
+    S1.2's lifecycle calls when it admits a candidate; until S1.2 builds
+    the lifecycle, every approach in the state is journaled from its first
+    day on. The controls of §10.1 are step S1.2's and go through the same
+    journaling function with their `kind`. Until step S2.2 moves approach
+    execution behind the sandbox, the day loop runs an approach's frozen
+    source in-process through the decision-21 loader, and only when its
+    sha256 equals that of a file under the repository's `reference/` or
+    `tests/fixtures/` (the rule §12.4 gives the subprocess backend); any
+    other source fails the day, naming the approach, and nothing of the
+    day is moved into place. The approach id is `a` followed by the first
+    12 hex digits of the sha256 of the UTF-8 source text, a newline, and
+    the canonical JSON (keys sorted, no whitespace) of the fixed
+    parameters. `meta.json` holds the fields §9.1 lists; the cost model
+    version and config hash are decision 26's.
+
+49. **DESIGN §7, §9.2 with decisions 23 to 25: a journal row, and the
+    continuous record.** A day's rows for an approach are, per
+    instrument, its bars whose trading date by its own calendar is `D`
+    and whose `ts` is not before `trusted_from` (decision 23). They are
+    computed by the same evaluation loop, executor and cost model as
+    `backtest` (one implementation of §7, decisions 24, 25, 36, 37), with
+    the slice of §6.2 ending at each bar. Per instrument, the approach's
+    first row is the first bar of the first trading day of that
+    instrument's calendar after the admission date, with `prev_position`
+    0 and `position` 0; every later row's `position` is the previous
+    row's `target_next` on that instrument, whichever day that row
+    belongs to, and `u-1` is the previous stored bar (decision 24). The
+    columns are §9.2's: `date` (the trading date `D`), `ts`, `subject`
+    (the approach id), `kind` (`approach`), `instrument`,
+    `prev_position` (`h(u-1)`), `position` (`h(u)`), `target_next`
+    (`p(u)`), `fill_price` (`Or(u)`), `trade`, `roll` (true when a roll
+    happens at `u`), `fee`, `spread`, `slippage`, `roll_cost` (decision
+    25's components at 1x), `gross`, `net_1x`, `net_2x`. The key columns
+    of the content hash are `subject`, `instrument` and `ts`. A test
+    shows that an approach's journal rows over consecutive days equal,
+    field for field under decision 39's rule, the module's evaluation of
+    the same strategy over the window from its first journaled day to the
+    last, whose first bar is flat by §7.1. A day with no subject writes a
+    journal file with no row and its index line, so every processed day
+    has both.
+
+50. **DESIGN §9.1, §16.2 with I-5, I-6, I-12, I-14: the state directory
+    and the atomic day in step S1.1.** `discotrade init-state` creates the
+    state directory (refused inside a code repository, decision 7) as a
+    Git repository with a `.gitignore` that ignores the bar Parquet files,
+    the staging directory and the lock; run on an existing state
+    directory it changes nothing and exits 0; on a non-empty directory
+    that is not one it exits 1. `run-day` refuses a directory that
+    `init-state` did not create. A run takes a lock in the state
+    directory (created exclusively; a held lock exits 1 naming it) and
+    releases it at the end, success or failure. The journal file, its
+    index line and the paper records of the day are written to a staging
+    directory and moved into place only when steps 1 and 2 have
+    succeeded; then the state repository is committed with the message
+    `run <track> <date>`, the author `discotrade <discotrade@invalid>` and
+    the author and committer dates of the injected clock, with
+    `GIT_ALLOW_PROTOCOL=file` in git's environment. A run that moves
+    nothing makes no commit. In step S1.1 the bars, rolls and
+    `gaps.jsonl` of step 1 are written as `bars fetch` writes them (each
+    append atomic, decisions 4 and 5), not staged. Step S4.2 builds the
+    rest of §16.2 and §16.1: staging of step 1's writes, the retry from a
+    clean staging directory, `run_failed`, the push to a remote, and the
+    catch-up of missed days with `day_caught_up`.
+
+51. **DESIGN §16.1 with decisions 3 and 19: which day `run-day` processes
+    in step S1.1.** `run-day` processes one trading day `D`: by default
+    decision 19's `D` at the `--as-of` instant, or the date `--day`
+    names. The track's trading days are the union of its instruments'
+    trading dates (decision 23). When the journal holds a day and a
+    trading day of the track between that day and `D` has no journal
+    file, `run-day` exits 1 naming the first such day and writes nothing
+    (the catch-up is step S4.2's). A `D` on or before the last journaled
+    day is a re-run: it recomputes the rows of `D` from the state as it
+    stood before `D` (the previous day's last `target_next` per approach
+    and instrument) and compares content hashes as §9.2 says; equal
+    writes nothing (I-6), unequal leaves the file untouched and raises
+    `journal_mismatch`.
+
+52. **DESIGN §15.2, decision 16: the health log.** `state.py` appends
+    health events to `health/<track>.jsonl`, one `HealthEvent.to_json()`
+    per line, atomically as decision 4 appends `gaps.jsonl`, at once and
+    never through the staging directory (§16.2). The day appends every
+    event its steps return: `store_recovered` and estimated-roll-gap
+    notices (decision 16), `data_gaps` when the gap fraction of W or of T
+    for `D` (decision 2) exceeds `gaps.max_fraction`, `revised_data` when
+    a reader refuses a revised data point (the day then fails),
+    `journal_mismatch`. An event whose JSON line is already in the log is
+    not appended again, so a re-run of a day writes nothing new (I-6);
+    `bars fetch` and `bars gaps` keep printing their notices as today.
+
+53. **DESIGN §9.3 with §11.3: paper records in step S1.1.**
+    `paper/<track>/daily.parquet` is rebuilt from the journal after each
+    day: one row per subject and trading day from its first journaled day,
+    with `gross`, `net_1x`, `net_2x` (decision 23's daily mean over the
+    subject's instruments) and `trades` (rows with `trade > 1e-9`, the §8
+    floor). The `clean` flag needs the model cutoffs of §11.3 and is added
+    by step S1.2; the file is derived, so adding the column changes no
+    record. Rebuilding it from the journal gives the same content hash
+    (key columns `subject`, `date`).
+
+54. **DESIGN §9.4: `journal recompute` in step S1.1.** `discotrade journal
+    recompute --all` recomputes every journaled (day, subject) pair from
+    the stored bars and the frozen source, each subject evaluated once
+    from its first journaled day to the last, and compares each day's rows
+    exactly (equal content hashes of the pair's rows, decision 49's keys).
+    Without `--all` it recomputes `journal.recompute_sample` pairs of the
+    days before `D`, drawn by `numpy.random.default_rng` seeded with `D`
+    written as the integer `YYYYMMDD` (fewer when fewer exist), in the
+    same way. Each mismatch prints the pair and returns a
+    `journal_mismatch` event naming it, which the command appends to the
+    health log; the command exits 1 on any mismatch and writes nothing
+    else. Running it on the first trading day of each ISO week, as step 6
+    of §16.1, is step S4.2's.
+
+55. **DESIGN §3, I-12: time in step S1.1.** `run-day`, `init-state` and
+    `journal recompute` read time only through the injected clock
+    (`--as-of`); no state file, commit date or event carries the wall
+    clock. A test runs `run-day` twice for the same `--as-of` in two fresh
+    state directories and finds equal journal and paper content hashes and
+    equal health logs.
+
+56. **REVIEW-6 should-fix 1: FINAL-REPORT-6's sentence on the roll
+    probe.** No test changes. FINAL-REPORT-7 states, in a correction of
+    FINAL-REPORT-6, that `test_probe_changes_position_at_the_syna_roll`
+    asserts, at every SYNA roll bar of the window, that a roll exists and
+    that `h(u-1) != h(u)`, `h(u-1) != 0`, `|h(u-1)| != |h(u)|` and roll and
+    trade are positive in both sets of rows; and that the bar
+    2019-06-14T00:00Z and the values `h(u-1) = 1.0`, `h(u) = -0.5` were
+    observed by the reviewer, not asserted. Reason: decision 43 (c)
+    requires only `h(u-1) != h(u)`, which the test asserts; only the
+    report overstated it.
+
+57. **`meta/ROADMAP.md`: step S0.4 ticked, M0 met, mission 7 is step
+    S1.1.** REVIEW-6 has no blocker and records `gate M0: PASS` at
+    e239dee, which this consultation found on `origin/main`
+    (`meta/ARCHITECT.md` §3 case 3). Mission 7 builds step S1.1 as the
+    roadmap writes it, cut as items 47 to 55 say; it does not close a
+    milestone and has no gate unit. No gate item moves.

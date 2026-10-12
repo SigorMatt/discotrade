@@ -23,6 +23,10 @@ output) are taken by mission 5 (unit U2; items 36 to 38). REVIEW-5
 blocker 1, its should-fix 1 (finding D-005), its note on D-004 and its
 note on `tests/test_gate_script.py`'s timeout are taken by mission 6
 (step S0.4, units U0 to U4; decisions-2026-10-12 items 41 to 43 and 45).
+REVIEW-6 should-fix 1 (FINAL-REPORT-6's sentence on the roll probe) is
+taken by mission 7 (step S1.1, the final report; item 56), and the
+REVIEW-3 note on the socket backstop (I-11) by mission 7 (unit U1; item
+47).
 
 - Finding D-006 (decision 44): each instrument's evaluation gets a
   freshly loaded strategy, and the cheating strategy of G0.2 is driven
@@ -39,11 +43,12 @@ note on `tests/test_gate_script.py`'s timeout are taken by mission 6
   the generator and the gap check is not seen; G0.4 proves that contract
   roots are collected only through its planted control.
 
-- REVIEW-3 note (I-11): the socket backstop is a function-scoped autouse
-  fixture, so module-scoped fixtures (`test_gaps.py`, `test_rolls.py`)
-  and subprocesses launched by tests run outside it, and `_socket` used
-  directly passes. Step S1.1: mission 5's gate tests launch no
-  subprocess (decisions-2026-10-12 item 40).
+- REVIEW-6 notes, not carried as work: `test_g0_1_reference.py` writes
+  the trade floor `1e-9` as a literal rather than reading it from the
+  product (a test constant, not an I-10 threshold; if the floor ever
+  moves, that test moves with it); the UTC-date grouping of the
+  always-open calendar in the U2 self-test cases was not read against
+  §5.3 by the reviewer.
 - REVIEW-1 note: DESIGN §18.1's rule that tests marked `container` skip,
   with the reason printed, when no runtime is found is not built. The
   mission that adds the first `container` test builds it: step S2.2.
@@ -64,6 +69,12 @@ note on `tests/test_gate_script.py`'s timeout are taken by mission 6
 - REVIEW-1 note: `config.py` bounds `drop_fraction` at 0.5 without a
   DESIGN source. Harmless for fixtures; no step takes it unless a fixture
   needs more.
+- Left by step S1.1 to step S4.2 (decisions-2026-10-12 items 50, 51,
+  54): staging of step 1's writes (bars, rolls, `gaps.jsonl`), the retry
+  from a clean staging directory, `run_failed`, the push to a remote, the
+  catch-up of missed days with `day_caught_up`, and the weekly journal
+  recomputation as step 6 of §16.1. Left to step S2.2 (item 48): running
+  approaches through the sandbox instead of the in-process loader.
 - REVIEW-2 note (U4): when `update_rolls` fails after `bars fetch` wrote
   the bars, the command exits 1 and the next fetch records the roll,
   measuring its gap from a later source state. The daily run's staging and
