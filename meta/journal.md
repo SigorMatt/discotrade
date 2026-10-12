@@ -68,3 +68,4 @@
 - 2026-10-12 mission 7 U6 done 853cd12: check green 3/3 at 6aea7c0 (orchestrator, 1037 passed); gate M0 PASS (G0.1 62/63.2s, G0.2 7/116.4s, G0.3 13/167.6s, G0.4 4/0.25s), 349s; frozen-config diff empty; final report meta/FINAL-REPORT-7.md; HF-007 open; mission finished.
 2026-10-12T17:06:30.020Z  consult 0mv5hxoli-zzqz (architect done) on aux.done of aux job 0mv5gxabe-9ey7: VERDICT: next kit mission-8-kit
 - 2026-10-12 mission 8 U0: plan written (base fb1e244, roadmap S1.2, units U0-U5; REVIEW-7 should-fix 1 and 2 carried to U1).
+- 2026-10-12 mission 8 U1 done 060b5e2: backstop guards sendmsg-with-address and gethostbyname/_ex/gethostbyaddr/getnameinfo in test, module and session scope via socket and _socket; AF_UNIX works; network-marked left alone; recompute D1 target_next corruption reports (D1,s) and (D2,s), exit 1; 3 wrong changes seen red; check green 3/3 (1053 passed).
