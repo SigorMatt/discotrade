@@ -171,6 +171,30 @@ Status: open
 
 ---
 
+### D-006 — `backtest` shares one loaded strategy across a subject's instruments
+
+Severity: low to medium (not reproduced) · Component: DESIGN §6.2, §12.1,
+§12.4 with I-2 and decision 40; `backtest` in `src/discotrade/cli.py` ·
+Found: 2026-10-12, mission 5 U5 (reported by its sub-agent, not reproduced
+by the orchestrator).
+
+Symptom. U5's G0.2 test loads the cheating strategy afresh for each
+evaluation. The sub-agent reports that the `backtest` command loads the
+strategy once and evaluates every instrument of the subject with it. A
+strategy that keeps module-level references to the frames it was given
+(decision 40's first item) could then, while evaluating a later
+instrument, read bars of an earlier instrument that are later than the
+current bar's close. G0.2 as built does not exercise this.
+
+Direction (for the architect). Decide whether each instrument's evaluation
+gets a freshly loaded strategy (or the sandbox of §12.4 is the only
+answer), and whether G0.2 should drive the cheating text through the
+multi-instrument path.
+
+Status: open
+
+---
+
 ## hands findings
 
 ### HF-001 — after an autonomous apply, the engine sends the kickoff of the playbook it loaded before the apply
