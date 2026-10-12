@@ -43,3 +43,4 @@
 - 2026-10-12 mission 5 U3 done 3be4e9b: independent_calc.py blind to src/ (commit body says so); 18 self-tests, gate M0 G0.1 PASS; tests/test_gate_script.py M0-has-no-gate-test case moved to M1 (out of brief, needed by check).
 - 2026-10-12 mission 5 U4 stopped: mismatch max_drawdown (zscore_reversal, 0.222448 vs 0.215935), DESIGN §8 silent -> finding D-004; D-005 filed; draft stashed; continuing with U5, U6.
 - 2026-10-12 mission 5 U5 done 2c64e8d: cheat_lookahead + G0.2 gate (7 tests, gate M0 G0.2 PASS 1m54s); test_gate_script no-test item moved to G1.2; finding D-006 filed (backtest shares one loaded strategy across instruments, per sub-agent).
+- 2026-10-12 mission 5 U6 tests done 80ffc78: G0.3 (13 tests, 2m48s) and G0.4 (4 tests) PASS; gate M0 prints PASS but G0.1 holds only the self-test (U4 stashed) so M0 not closed; mission paused: VERDICT question on D-004.
