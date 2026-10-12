@@ -1,16 +1,13 @@
 # CHECKPOINT
 
 Mission: 6 (`meta/BUILDER-6-PROMPT.md`), roadmap step S0.4 repaired. Closes M0. Base 19196da.
-Done: U0 cdc031f, U1 c1a2100, U2 9ca8575.
+Done: U0 cdc031f, U1 c1a2100, U2 9ca8575, U3 9e16050.
 
-Unit in progress: U3 The roll timing in product unit tests and in G0.1 (D-005; decisions 21, 24, 25,
-39, 43 (b), (c)).
-Intent: a product unit test with a position changing at a roll bar (carried-and-changing, flat-then-
-opening) asserts roll cost 2*|h(u-1)|*c(u) and rolled turnover 2*|h(u-1)| in breakeven_cost;
-tests/fixtures/strategies/roll_probe.py changes position at the SYNA roll bar of the G0.1 window and
-G0.1 compares it with the independent calculation like the reference strategies.
-Done means: discotrade roll cost on h(u) and rolled turnover on h(u) each fail both the unit test and
-the probe's G0.1 comparison; mismatch rule applied; ./scripts/gate M0 G0.1 passes; check green x3.
+Unit in progress: U4 tests/test_gate_script.py under load (REVIEW-5 note; decision 45; DESIGN §18.2).
+Intent: each test of the file asserts what it did at the base, but any ./scripts/gate subprocess runs
+an item that takes seconds (e.g. G0.4) and no subprocess timeout is below 1200 s.
+Done means: with the script made to print PASS for a failing item (made and reverted) the file goes
+red; body lists per test the item before/after and the file's run time before/after; check green x3.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
 (items 41-46 new, 1-40 still bind); no value of a frozen file changes (config/, existing entries
