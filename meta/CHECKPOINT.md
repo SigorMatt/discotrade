@@ -3,10 +3,13 @@
 Mission: 5 (`meta/BUILDER-5-PROMPT.md`), roadmap step S0.4. Closes M0. Base 3854c96.
 Done: U0 9d2d781, U1 8e8215c, U2 8d27fe1, U3 3be4e9b.
 
-Unit in progress: U4 (next).
-Intent: U4 — tests/gates/test_g0_1_reference.py: three reference strategies on test_mixed, window
-with SYNA roll and synth_week closure, discotrade vs independent_calc to 1e-12; mismatch rule.
-Done means: one commit pushed; >= 2 wrong changes in product code seen to fail; check green x3.
+Unit in progress: U5 (next). U4 waits on finding D-004 (DESIGN §8 max_drawdown: does the
+running sum start at 0?): discotrade 0.22244801873145578 vs independent calc 0.21593456441431036
+for zscore_reversal on test_mixed 2019-06-03..2019-07-31; all else equal to 1e-12 (20/22 tests).
+Draft test kept in `git stash` as "wip U4 2026-10-12 ..."; D-005 filed (G0.1 data cannot see
+roll cost on h(u) nor the half-tick floor). U5 and U6 do not depend on U4.
+Intent: U5 — cheat_lookahead.py strategy and tests/gates/test_g0_2_cheating.py (decision 40).
+Done means: one commit pushed; one leaking wrong change seen to fail; check green x3.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
 (items 34-40 new, 1-33 still bind); no value of a frozen file changes (config/, existing entries

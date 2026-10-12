@@ -101,6 +101,76 @@ Status: open
 
 ---
 
+### D-004 — `max_drawdown`: does the start of the running sum (0) count as a peak?
+
+Severity: medium (blocks G0.1) · Component: DESIGN §8 (`max_drawdown`) with
+`src/discotrade/metrics.py` and `tests/gates/independent_calc.py` · Found:
+2026-10-12, mission 5 U4.
+
+Symptom. DESIGN §8 says only "`max_drawdown`: the largest peak-to-trough
+fall of the running sum of `d`"; no decision adds to it. The two
+implementations read it differently:
+
+- `src/discotrade/metrics.py` `max_drawdown` prepends 0 to the running sum
+  (`np.concatenate([[0.0], np.cumsum(x)])`): the start counts as a peak, so
+  a fall from 0 to the first days counts.
+- `tests/gates/independent_calc.py` `max_drawdown` (its docstring: "no
+  leading zero", a choice stated as made where DESIGN is silent) takes
+  peaks only among `cum[0..n-1]`.
+
+Evidence. The draft gate `tests/gates/test_g0_1_reference.py` (uncommitted)
+on `test_mixed`, window 2019-06-03 to 2019-07-31, `bars fetch` at
+2019-08-05T00:00Z, `reference/zscore_reversal.py`: the daily series starts
+at -0.006513454317145457 on 2019-06-03 and the running sum never returns
+above it; its trough is -0.2224480187314558 on 2019-07-31. discotrade gives
+`max_drawdown` 0.22244801873145578 (module and `backtest --json`); the
+independent calculation gives 0.21593456441431036. Every other per-bar
+field, daily value, metric and cost total of the three reference
+strategies is equal to 1e-12 (20 of 22 tests pass; the two failures are
+this metric, module and `--json`).
+
+Direction (for the architect). Decide whether the running sum starts at 0
+(an equity curve that begins flat, so a loss on the first day is a
+drawdown) or at the first day's value; then one of the two implementations
+changes to match, with a unit test.
+
+Status: open
+
+---
+
+### D-005 — G0.1's data cannot see a roll cost on `h(u)` nor the half-tick spread floor
+
+Severity: low · Component: DESIGN §18.3 G0.1 with the frozen fixtures
+`tests/fixtures/config/` (SYNA, SYNL, SYNX, `spreads/SYNA.toml`) and
+`reference/` · Found: 2026-10-12, mission 5 U4.
+
+Symptom. U4's brief names two wrong changes the G0.1 test should be seen to
+fail on. Neither can fail it on the fixture data, whatever the window:
+
+- Roll cost on `h(u)` instead of `h(u-1)` (`executor.py`,
+  `costs.roll_cost(order.target, ...)`): at both SYNA rolls up to
+  2019-08-05 (2019-03-14T00:00Z, 2019-06-14T00:00Z), every reference
+  strategy has `h(u-1) == h(u)` (trend_ma -1/-1 and 1/1, zscore_reversal
+  0/0 and -1/-1, hour_of_day 0/0), so the two readings give the same cost.
+  The draft test passed with the change in place.
+- Half spread without its floor (`max(ticks/2, 0.5)` to `ticks/2`): every
+  spread value of SYNA's table and of SYNL's and SYNX's main/off settings
+  is at least 1 tick, so the floor never binds. The draft test passed with
+  the change in place.
+
+Wrong changes the draft test did fail on: `sigma` with `ddof=0`; `gross`
+without the roll gap in `Ca(u-1)`; the spread floor raised to a full tick.
+
+Direction (for the architect). Either accept that G0.1 does not prove
+these two (G0.3 covers "a carried position pays the roll cost and a flat
+one does not"; a unit test can cover the floor), or add fixture data where
+a position changes at a roll bar and a spread below one tick applies (a new
+fixture record or table, frozen files being unchangeable).
+
+Status: open
+
+---
+
 ## hands findings
 
 ### HF-001 — after an autonomous apply, the engine sends the kickoff of the playbook it loaded before the apply
