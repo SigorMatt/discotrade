@@ -26,7 +26,22 @@ note on `tests/test_gate_script.py`'s timeout are taken by mission 6
 REVIEW-6 should-fix 1 (FINAL-REPORT-6's sentence on the roll probe) is
 taken by mission 7 (step S1.1, the final report; item 56), and the
 REVIEW-3 note on the socket backstop (I-11) by mission 7 (unit U1; item
-47).
+47). REVIEW-7 should-fix 1 (the network paths the backstop does not
+guard) and 2 (no test separates the whole-span recompute from one chained
+through stored positions) are taken by mission 8 (step S1.2, unit U1;
+item 58).
+
+- REVIEW-7 notes, not carried as work; the step that next touches the
+  file may take them: `init_state` is not atomic (a failed first commit
+  leaves a directory every later run refuses, `state.py`); the git
+  protocol test checks only the environment dict, not that `_git` passes
+  it; `journal.py`'s `REPO_ROOT = parents[2]` finds `reference/` and
+  `tests/fixtures/` only from a source checkout (step S2.2 or S5.1 decides
+  where trusted sources live in an installed package); `revised_data` is
+  detected by matching the bar store's error text, and `daily.py` calls
+  the private `store._indexed_last_ts` (a typed error is sturdier; step
+  S4.2, which stages step 1, may take it); `journal recompute` leaves its
+  `journal_mismatch` health line uncommitted until the next `run-day`.
 
 - Finding D-006 (decision 44): each instrument's evaluation gets a
   freshly loaded strategy, and the cheating strategy of G0.2 is driven
@@ -58,10 +73,11 @@ REVIEW-3 note on the socket backstop (I-11) by mission 7 (unit U1; item
 - REVIEW-1 should-fix (U6, performance only): `bars fetch` builds a source
   per instrument and the synthetic source regenerates its series from
   `trusted_from` on every fetch. Take it when a replay gate's time limit
-  (DESIGN §18.2, 15 minutes) is at risk: step S1.2 at the latest.
+  (DESIGN §18.2, 15 minutes) is at risk: step S1.3 (the one-year replay
+  of G1.1) at the latest (item 65).
 - REVIEW-2 note (U1, performance only): `recover` reads and hashes every
   month file of an instrument on every append, and `bars fetch` runs it
-  twice per instrument. Take it with the item above: step S1.2 at the
+  twice per instrument. Take it with the item above: step S1.3 at the
   latest.
 - REVIEW-1 note: `tradingcal.in_main_session` cannot represent a main
   session that crosses midnight. No instrument has one; the step that adds

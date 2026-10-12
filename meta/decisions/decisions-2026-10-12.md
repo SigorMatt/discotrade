@@ -759,3 +759,226 @@ the roadmap's for that step.
     (`meta/ARCHITECT.md` §3 case 3). Mission 7 builds step S1.1 as the
     roadmap writes it, cut as items 47 to 55 say; it does not close a
     milestone and has no gate unit. No gate item moves.
+
+## Added at consultation 10, after REVIEW-7
+
+Items 1 to 57 above are unchanged. REVIEW-7 recorded no blocker and the
+mission closed no milestone, so step S1.1 is ticked (item 65). Items 58
+to 65 below bind mission 8 (step S1.2) and every later mission until a
+newer decisions file says otherwise; the same rules apply to them (no
+invariant broken, no gate moved, no threshold or frozen value changed).
+Where an item leaves a part of a DESIGN section to a later step, that
+step is named, and the part stays the roadmap's for that step.
+
+58. **REVIEW-7 should-fix 1 and 2, decisions 47 and 54: the remaining
+    network paths, and a recompute that reads no stored position.**
+    (a) The socket backstop of decision 47 also refuses, with the same
+    error and in the same scopes (session start, every fixture scope,
+    through `socket` and through `_socket`): `sendmsg` with an address
+    on a socket that is not `AF_UNIX`, and the name lookups
+    `gethostbyname`, `gethostbyname_ex`, `gethostbyaddr` and
+    `getnameinfo` (beside `getaddrinfo`, already refused). An `AF_UNIX`
+    socket stays usable, and a test marked `network` or `live` is left
+    alone, as today. What the backstop still cannot see (`SocketType`
+    used directly, a binding taken before the session starts, child
+    processes) stays in the report's NOT PROVEN. (b) A test of `journal
+    recompute --all`, on a journal of at least three days, changes for
+    one approach and one instrument the stored `target_next` of its last
+    row of day `D1` to a value that moves the next position, then
+    replaces that approach's rows of the next journaled day `D2` (and
+    `D2`'s index line) with the rows the journaling function computes
+    for `D2` when it starts from the changed stored `D1`, so that the
+    stored journal is what a journal chained through the changed value
+    would hold. It shows that the command reports both `(D1, subject)`
+    and `(D2, subject)` as mismatches and exits 1. A recompute that
+    started `D2` from the stored `target_next` of `D1` would find `D2`
+    equal, so the test separates decision 54's whole-span recompute from
+    one chained through stored values; that wrong change is made, seen to
+    fail the test, reverted and named in the commit body. Reason:
+    decision 47 says every
+    attempt to open a network connection fails, and decision 54 says each
+    subject is evaluated once from its first journaled day; REVIEW-7
+    found the first not held for these paths and the second not proven.
+
+59. **DESIGN §11.1: the rank-persistence statistic, as a function, in
+    step S1.2.** `stats.py` computes, for a block index `k >= 1` and a
+    population of subjects, one row: `block` (`k`), the calendar dates of
+    block `k` and of block `k - 1`, the sorted subject ids of the
+    population, its size, and the statistic. Block `k` is the
+    `block_days` calendar days from `epoch + k * block_days`. A subject
+    belongs to the population when it has a paper row on every trading
+    day of both blocks, the trading days being the union of the trading
+    dates, by their own calendars, of the subject's own instruments (the
+    track's basket for an approach or a random slot, its one instrument
+    for a buy-and-hold control), and that union holds at least one day in
+    each block. The statistic is the Spearman correlation of the
+    subjects' summed paper `net_1x` in block `k - 1` and in block `k`:
+    the Pearson correlation of their ranks, ties taking the average rank.
+    It is missing (`null`) when the population has fewer than
+    `alerts.rank_min_population` members or either rank series has zero
+    deviation. Writing the row to `stats/<track>/rank_persistence.jsonl`
+    when a block completes, in the day loop, is step S1.3's. Reason:
+    §11.1 leaves the tie rule, the zero-deviation case and whose trading
+    days count unsaid; a buy-and-hold control on a weekly calendar has
+    no row on an always-open instrument's weekend.
+
+60. **DESIGN §11.2 and §11.4: deflated scores and tightening.** The
+    normal quantile `z` is `statistics.NormalDist().inv_cdf` from the
+    standard library (no dependency). `g` is the Euler-Mascheroni
+    constant `0.5772156649015329` and `e` is `math.e`, constants of the
+    formula that live in the module, not in `config/thresholds.toml`.
+    For a set of days, `mu_c` and `sd_c` are the mean and the sample
+    standard deviation (ddof 1) of the paper net Sharpes at 1x (DESIGN §8,
+    decision 30) over those days of the random control slots that have
+    a paper row on each of them, a slot whose Sharpe is not a number left
+    out. With fewer than two such slots, `mu_c`, `sd_c`, `E(N)`, the
+    excess and the threshold of §11.4 are not numbers. `N` is the row
+    count of `ledger/<track>/trials.jsonl`, and `E(N)` uses `max(N, 2)`;
+    `p(N)` uses `max(N, 1)` as §11.4 writes. The excess is `S - E(N)`; a
+    Sharpe `S` that is not a number gives an excess that is not a
+    number. Tests compare with values computed in the test itself, the
+    quantile found there by bisection on `math.erf` to `1e-15`, not
+    through `stats.py`, and assert the published quantiles `z(0.95) =
+    1.6448536269514722`, `z(0.975) = 1.959963984540054` and `z(0.99) =
+    2.3263478740408408` to `1e-12`. Reason: §11.2 and §11.4 name `z`
+    without a source, and the project adds no dependency for it.
+
+61. **DESIGN §9.3 and §11.3 with decision 53: the `clean` flag in step
+    S1.2.** `paper/<track>/daily.parquet` gains the boolean column
+    `clean`: for an approach, true when the paper row's trading date is
+    after the `cutoff` date recorded in its `meta.json` (the model's
+    cutoff date as used, frozen at admission, §9.1); for a control,
+    always true. `stats.py` gives a subject's clean and exposed day
+    counts from the paper records. `config/models.toml` and the rule that
+    turns a stated cutoff month into a date (R-14) are step S3.2's, which
+    builds the pool and writes `cutoff` at admission; until then a test
+    writes `cutoff` with the approach. The paper file is derived, so the
+    added column changes no record; tests of `paper.py` that assert its
+    exact columns change with it, and the commit body says so.
+
+62. **DESIGN §10.2 with I-5, I-6 and decision 52: the three ledgers.**
+    `ledger.py` appends JSON lines (keys sorted, one object per line) to
+    `ledger/<track>/trials.jsonl`, `calls.jsonl` and `lifecycle.jsonl`,
+    each append atomic as decision 4 appends `gaps.jsonl`, every earlier
+    line byte-identical, a line already present not appended again, a
+    torn last line refused. Inside `run-day` they are written to the
+    staging directory with the day's journal and moved with it (§16.2).
+    A trial row holds every field §10.2 lists, under the keys `date`,
+    `id`, `cell`, `model_id`, `model_version`, `cutoff`, `code_sha256`,
+    `profile_version`, `cost_model`, `config_hash`, `grid` (the grid and
+    its results on W), `params`, `metrics_w`, `metrics_t`, `admitted`,
+    `reason` and `displaced`; a value the candidate does not carry (the
+    grid and the W metrics of a scripted candidate) is `null`, never
+    invented. A lifecycle row holds `date`, `id`, `from`, `to` and
+    `reason`. A call row holds the fields §10.2 lists; `ledger.py`
+    provides its writer, and its first caller is step S3.2. A trial not
+    admitted is written under `trials/<id>/` (`strategy.py`, `meta.json`,
+    §9.1) by the writer of decision 48; an admitted one under
+    `approaches/<id>/`.
+
+63. **DESIGN §10.3 with decisions 22 and 48: the lifecycle in step
+    S1.2.** The state of an approach is the `to` of its last row in
+    `lifecycle.jsonl`; an approach under `approaches/` with no row is
+    `live` from its admission date (so step S1.1's writer and its tests
+    keep their meaning). `run-day` runs steps 1 to 4 of §10.3 after the
+    day's journaling, in that order; within a step, approaches are taken
+    in ascending id order, and each step and each approach sees the
+    states the earlier ones left; every change is one lifecycle row dated
+    `D` and takes effect for journaling from the next trading day.
+    (1) An approach whose evaluation on `D` breaks the contract of
+    decision 22 (raises, or returns a value that is not finite and in
+    range) is retired with reason `failure: <the error text>`, and its
+    rows of `D` are not journaled; the day goes on. A source that is not
+    a repository file (decision 48) still fails the whole day: that is a
+    harness refusal, not a strategy failure. (2) A live approach with at
+    least `dormant_window_days` paper rows whose net Sharpe at 1x over
+    its last `dormant_window_days` paper rows is negative goes dormant
+    (reason `dormant`); a Sharpe that is not a number is not negative.
+    (3) A dormant approach whose dormancy has lasted at least
+    `revival_min_dormant_days` trading days of the track (counted after
+    the date of its row to `dormant`, up to and including `D`) and whose
+    net Sharpe at 1x over its last `dormant_window_days` paper rows is
+    positive returns to live (reason `returned`) when its cell has fewer
+    than `cell_slots` live approaches, or when that Sharpe is above the
+    weakest live approach's over the same days, which goes dormant
+    (reason `displaced`). (4) An approach dormant for at least
+    `retire_dormant_days` calendar days (`D` minus the date of its row to
+    `dormant`) is retired (reason `retired_dormant`). The weakest live
+    approach of a cell is the one with the lowest net Sharpe at 1x over
+    the days compared; a Sharpe that is not a number counts as the
+    lowest, and ties go to the lowest id. Admission is a function of
+    `lifecycle.py` that takes a candidate (source, parameters, cell,
+    model id, model version, cutoff, description, profile version, the
+    grid and W metrics when it has them, and its §8 metrics on T with T's
+    trading days) and the day `D`, and applies §10.3's rule after steps 1
+    to 4: refused with reason `not_positive` when the score (net Sharpe
+    at 1x on T) is not positive, else `too_few_trades` below
+    `admission.min_trades_t`, else admitted with `free_slot` when the
+    cell has fewer than `cell_slots` live approaches, else admitted with
+    `displaced` when the score is above the weakest live approach's net
+    Sharpe at 1x over T's days in its paper records (that approach goes
+    dormant), else refused with `not_better_than_weakest`. It writes the
+    trial row and, when admitted, the approach (admission date `D`) and
+    its `candidate` to `live` row (reason `admitted`). Scoring a
+    candidate on T is step S3.2's (§16.1 step 5); feeding scripted
+    candidates into the day loop for G1.3 is step S1.3's. Dormant
+    approaches are journaled; retired ones are not journaled again and
+    stay in the ledgers.
+
+64. **DESIGN §10.1 with decisions 23, 25, 49 and 54: the controls.**
+    The controls are journaled from the first day `run-day` journals on
+    a state, every day, through the same evaluation loop, executor and
+    cost model as approaches (one implementation of §7: a control
+    supplies its targets `p(t)` per bar in place of a strategy call), with
+    decision 49's columns and continuity, `kind` `control_bh` or
+    `control_random`, and each instrument's first row flat. `bh:<symbol>`
+    has the target 1 at every bar of its one instrument. The random pool
+    is `controls.random_pool` slots `rc:0` to `rc:<pool - 1>`, each on
+    every instrument of the track. A draw is made on the first day the
+    controls are journaled and on the first trading day of the track in
+    each later calendar month; its seed is the integer `YYYYMM` of that
+    day's month. Its `H` and `q` per slot, in slot order, come from
+    `numpy.random.default_rng(seed)`: when at least
+    `controls.match_min_live` approaches are live at the start of the
+    draw's day and each has at least `controls.match_window_days` paper
+    rows before that day, each slot takes one of their measured pairs
+    chosen uniformly (`integers`), a pair being the approach's
+    `avg_holding_bars` (decision 25, from its journal `position` over
+    those days' rows) and its trades per bar (rows with `trade > 1e-9`
+    over rows) over its last `match_window_days` paper days, a pair whose
+    `H` is not a number left out; otherwise `H = exp(uniform(ln lo, ln
+    hi))` with `lo` the smallest and `hi` the largest bound of the
+    track's horizons, and `q = 1 / H`. Each per-bar random number is the
+    first 8 bytes of the sha256 of `<seed>|<slot>|<instrument>|<bar ts in
+    ns>|<purpose>`, read big-endian, over `2**64`, the purposes being
+    `enter`, `side` and `exit`. On each instrument, from its first bar
+    whose trading date is on or after the draw's day, the machine starts
+    flat; at each bar, flat, it enters when `enter < q`, long when `side
+    < 0.5` or when the instrument does not allow shorting, short
+    otherwise; in a position it leaves when `exit < 1 / H`; the target
+    `p(t)` is the state after the bar. The return series and the
+    position carry across a redraw (the first target of a new draw may
+    trade against the old position). Each draw appends one line to
+    `controls/<track>/pools.jsonl` (`month`, `day`, `seed`, per slot `H`
+    and `q`, and the measured pairs used with their approach ids), staged
+    with the day; a draw already recorded is read back, never appended
+    again. `journal recompute` recomputes control subjects from
+    `pools.jsonl` and the stored bars. Tests of step S1.1 that assert a
+    journal or paper file holds approaches only (its subjects, its row
+    count, an empty day file) change with this item, and the commit body
+    names each one.
+
+65. **`meta/ROADMAP.md`: step S1.1 ticked; step S1.2 split into S1.2
+    and S1.3.** REVIEW-7 has no blocker and the mission closed no
+    milestone (`meta/ARCHITECT.md` §3 case 2), so step S1.1 is ticked.
+    Step S1.2 as written (controls, three ledgers, lifecycle, table,
+    portfolio, rank persistence, deflation, clean and exposed, tightening,
+    replay harness, gate tests) does not fit seven units. Mission 8
+    builds step S1.2: the controls, the ledgers, the lifecycle, the
+    `clean` flag and the statistics of §11 as functions, with REVIEW-7's
+    two should-fix items. Mission 9 builds step S1.3: the table, the
+    combined portfolio, rank persistence in the day loop, the replay
+    harness (controls only, and the scripted candidates G1.3 feeds), the
+    two performance items `meta/BACKLOG.md` sets for "the latest" step
+    before a one-year replay, and the gate tests of G1.1 to G1.4; it
+    closes M1. No gate item moves.

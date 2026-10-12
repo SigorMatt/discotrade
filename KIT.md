@@ -1,1 +1,1 @@
-plan: mission 7 kit (S1.1, state, health log, journal, run-day)
+plan: mission 8 kit (S1.2, controls, ledgers, lifecycle, stats)
