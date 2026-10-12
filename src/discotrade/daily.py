@@ -1,0 +1,256 @@
+"""The daily run, steps 1 and 2 (DESIGN 16.1, 16.2, 5.4, 5.6, 9.2, 9.3, 15.2;
+decisions 2026-10-12 2, 3, 19, 50 to 53, 55; I-5, I-6, I-12, I-14).
+
+``run_day(state_dir, config_dir, track, clock, day=None)`` processes one
+trading day ``D`` of the track in a state directory ``init-state`` made
+(anything else is refused, decision 50), holding the run lock throughout and
+releasing it on success and on failure:
+
+- ``D`` is ``day``, or by default decision 19's ``D`` at the clock's instant
+  (``closed_day``: per instrument, the latest trading day whose last expected
+  bar closed by its source's ``available_until``; the earliest across the
+  track). A ``D`` that is not a trading day of the track (the union of its
+  instruments' trading dates, decision 51), or that is later than the default
+  ``D`` (its bars have not all closed; the design is silent, refusing is the
+  simplest safe reading of "fetch bars up to ``D``"), is refused.
+- When the journal holds a day before ``D`` and a trading day of the track
+  between the last journaled day and ``D`` has no journal file, the run fails
+  naming the first such day and writes nothing (decision 51; the catch-up is
+  step S4.2's). A ``D`` before the last journaled day that the journal does
+  not hold is refused likewise (it cannot be journaled in order).
+- Step 1, written as ``bars fetch`` writes (each append atomic, decisions 4,
+  5; not staged in step S1.1, decision 50): an interrupted append is
+  completed (a ``store_recovered`` notice), each instrument's bars are asked
+  for from its last stored bar to the earlier of its source's
+  ``available_until`` and the end of ``D`` by its own calendar
+  (``gaps.day_end``), bars with a value that is not finite are dropped
+  (decision 6), the gap check for ``D`` runs (decisions 2, 3; ``data_gaps``
+  above ``gaps.max_fraction``), and rolls are recorded (DESIGN 5.6; a
+  ``roll_gap_estimated`` notice per estimated gap). Every event step 1
+  returns is appended to the health log at once (decision 52).
+- Step 2: the journal day of ``D`` (``journal.journal_day``) into the staging
+  directory ``state.STAGING``, and, when the day is new, the paper records
+  rebuilt from the journal with the staged day (``paper.rebuild``). Only when
+  both have succeeded are the staged files moved into place (``os.replace``,
+  in path order) and the state committed as ``run <track> <D>``
+  (``state.commit``). A re-run whose rows equal the journal's writes nothing
+  and makes no commit (I-6); one whose rows differ moves nothing, appends its
+  ``journal_mismatch`` events and fails (the design is silent on the exit
+  status; a failure is the simplest way the owner sees it).
+- A failure in either step discards the staging directory and moves nothing.
+  A reader that refuses a revised data point appends a ``revised_data`` alert
+  (subject the track, the reader's message as detail) and the day fails.
+
+Sources are looked up through ``discotrade.sources.source_for`` at call
+time, as ``bars fetch`` and ``bars gaps`` look them up, so that decision 19's
+``D`` is computed by one function for the three commands.
+
+No wall clock is read (I-12): the instant is the clock's, and the commit's
+dates are its.
+"""
+
+from __future__ import annotations
+
+import os
+import shutil
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from datetime import UTC, date, datetime, time, timedelta
+from pathlib import Path
+
+import pandas as pd
+
+from discotrade import journal, paper, sources, state
+from discotrade.bars.gaps import check_gaps, day_end, latest_closed_day
+from discotrade.bars.store import BarStore, BarStoreError, finite_rows
+from discotrade.clock import Clock
+from discotrade.config import Calendar, TrackConfig, load_track_config
+from discotrade.rolls import update_rolls
+from discotrade.sources.base import BarSource
+from discotrade.state import HealthEvent
+from discotrade.tradingcal import expected_bars
+
+REVISED_DATA = "revised_data"
+#: The phrase by which the bar store's errors name a revised data point.
+_REVISED = "a revised data point"
+
+
+class DailyError(RuntimeError):
+    """A day that cannot be run as asked; the command exits 1."""
+
+
+@dataclass(frozen=True)
+class DayRun:
+    day: date
+    status: str                          # journal.WRITTEN or journal.UNCHANGED
+    rows: int
+    commit: str | None
+    events: tuple[HealthEvent, ...]      # appended to the health log by this run
+
+
+def closed_day(tc: TrackConfig, calendars: Mapping[str, Calendar], now: datetime) -> date:
+    """Decision 19's ``D`` at ``now``: per instrument, the latest trading day
+    whose last expected bar closed by its source's ``available_until(now)``;
+    for the track, the earliest of these."""
+    bar = tc.track.bar_seconds
+    days = []
+    for inst in tc.instruments:
+        source = sources.source_for(inst.source.adapter, calendars, bar)
+        days.append(latest_closed_day(calendars[inst.calendar], source.available_until(now),
+                                      bar))
+    return min(days)
+
+
+def is_trading_day(tc: TrackConfig, calendars: Mapping[str, Calendar], day: date) -> bool:
+    """Whether ``day`` is a trading date of one of the track's instruments."""
+    bar = tc.track.bar_seconds
+    for name in sorted({inst.calendar for inst in tc.instruments}):
+        cal = calendars[name]
+        if expected_bars(cal, day_end(cal, day - timedelta(days=1)), day_end(cal, day), bar):
+            return True
+    return False
+
+
+def _missing_day(tc: TrackConfig, calendars: Mapping[str, Calendar], journaled: set[date],
+                 day: date) -> date | None:
+    """The first trading day between the last journaled day and ``day`` that
+    the journal does not hold, or None."""
+    if not journaled:
+        return None
+    last = max(journaled)
+    if day <= last:
+        return None
+    d = last + timedelta(days=1)
+    while d < day:
+        if d not in journaled and is_trading_day(tc, calendars, d):
+            return d
+        d += timedelta(days=1)
+    return None
+
+
+def _fetch(state_dir: Path, tc: TrackConfig, calendars: Mapping[str, Calendar], day: date,
+           now: datetime) -> tuple[list[HealthEvent], dict[str, BarSource]]:
+    """Complete interrupted appends and fetch each instrument's bars to the end
+    of ``day``; return the notices and each instrument's source."""
+    bar = tc.track.bar_seconds
+    store = BarStore(state_dir, tc.track.name, bar)
+    notices = [event for inst in tc.instruments for event in store.recover(inst.symbol, day)]
+    batches = []
+    used: dict[str, BarSource] = {}
+    for inst in tc.instruments:
+        source = sources.source_for(inst.source.adapter, calendars, bar)
+        until = min(source.available_until(now), day_end(calendars[inst.calendar], day))
+        last = store._indexed_last_ts(inst.symbol)   # after recover() (decision 31)
+        start = (datetime.combine(inst.trusted_from, time(), tzinfo=UTC) if last is None
+                 else last.to_pydatetime() + timedelta(seconds=bar))
+        bars = source.fetch(inst, start, until) if start < until else None
+        if bars is not None:
+            bars = bars[bars["ts"] + pd.Timedelta(seconds=bar) <= pd.Timestamp(until)]
+            bars = bars[finite_rows(bars)]
+        batches.append((inst.symbol, bars, until))
+        used[inst.symbol] = source
+    for symbol, bars, until in batches:
+        if bars is not None:
+            store.append(symbol, bars, until)
+    notices.extend(store.notices)
+    return notices, used
+
+
+def _step_1(state_dir: Path, tc: TrackConfig, calendars: Mapping[str, Calendar], day: date,
+            now: datetime, max_fraction: float) -> list[HealthEvent]:
+    events, used = _fetch(state_dir, tc, calendars, day, now)
+    report = check_gaps(state_dir, tc, calendars, day, max_fraction)
+    if report.event is not None:
+        events.append(report.event)
+    for inst in tc.instruments:
+        _, notices = update_rolls(state_dir, tc.track.name, tc.track.bar_seconds, inst,
+                                  used[inst.symbol], day)
+        events.extend(notices)
+    return events
+
+
+def _move(staging: Path, state_dir: Path) -> list[str]:
+    """Move every staged file into place, in path order; return their paths."""
+    moved = []
+    for path in sorted(p for p in staging.rglob("*") if p.is_file()):
+        rel = path.relative_to(staging)
+        target = state_dir / rel
+        target.parent.mkdir(parents=True, exist_ok=True)
+        os.replace(path, target)
+        moved.append(rel.as_posix())
+    return moved
+
+
+def run_day(state_dir: Path, config_dir: Path, track: str, clock: Clock,
+            day: date | None = None) -> DayRun:
+    """Run steps 1 and 2 of ``day`` (or decision 19's ``D``) and commit it."""
+    state_dir = Path(state_dir)
+    state.require_state_directory(state_dir)
+    with state.lock(state_dir):
+        return _locked(state_dir, Path(config_dir), track, clock, day)
+
+
+def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
+            day: date | None) -> DayRun:
+    setup = journal.Setup.load(config_dir, track)
+    tc = load_track_config(config_dir, track)
+    calendars = dict(setup.calendars)
+    now = clock.now()
+    latest = closed_day(tc, calendars, now)
+    d = latest if day is None else day
+    if d > latest:
+        raise DailyError(f"{d.isoformat()} has not closed at {now.isoformat()}: the latest "
+                         f"closed trading day of {track} is {latest.isoformat()}")
+    if not is_trading_day(tc, calendars, d):
+        raise DailyError(f"{d.isoformat()} is not a trading day of {track}")
+    journaled = {date.fromisoformat(e["date"]) for e in journal.read_index(state_dir, track)}
+    gap = _missing_day(tc, calendars, journaled, d)
+    if gap is not None:
+        raise DailyError(f"{gap.isoformat()} is a trading day of {track} with no journal file "
+                         f"between {max(journaled).isoformat()} and {d.isoformat()}; run it "
+                         f"first (the catch-up of missed days is step S4.2's)")
+    if journaled and d < max(journaled) and d not in journaled:
+        raise DailyError(f"{d.isoformat()} is before the last journaled day "
+                         f"{max(journaled).isoformat()} and is not in the journal")
+
+    appended: list[HealthEvent] = []
+    staging = state_dir / state.STAGING
+    try:
+        events = _step_1(state_dir, tc, calendars, d, now,
+                         float(setup.thresholds["gaps.max_fraction"]))
+        appended += state.append_health(state_dir, track, events)
+        shutil.rmtree(staging, ignore_errors=True)
+        staging.mkdir()
+        result = journal.journal_day(state_dir, setup, d, into=staging)
+        if result.status == journal.MISMATCH:
+            appended += state.append_health(state_dir, track, result.events)
+            raise DailyError(f"{d.isoformat()}: the recomputed rows differ from the journal "
+                             f"(journal_mismatch for "
+                             f"{', '.join(e.subject for e in result.events)}); the journal "
+                             f"is left untouched")
+        if result.status == journal.WRITTEN:
+            records = paper.rebuild(state_dir, track, len(setup.instruments), overlay=staging)
+            paper.write(staging, track, records)
+        _move(staging, state_dir)
+    except BarStoreError as exc:
+        if _REVISED in str(exc):
+            state.append_health(state_dir, track, [HealthEvent(
+                d, "alert", REVISED_DATA, track, {"error": str(exc)})])
+        raise
+    finally:
+        shutil.rmtree(staging, ignore_errors=True)
+    sha = state.commit(state_dir, track, d, clock) if result.status == journal.WRITTEN else None
+    return DayRun(d, result.status, result.rows, sha, tuple(appended))
+
+
+def describe(run: DayRun, track: str) -> Sequence[str]:
+    """The lines ``run-day`` prints."""
+    lines = [f"notice {e.to_json()}" if e.level == "notice" else f"alert {e.to_json()}"
+             for e in run.events]
+    if run.status == journal.WRITTEN:
+        lines.append(f"run-day: {track} {run.day.isoformat()}: journal written, {run.rows} "
+                     f"rows; committed {run.commit}")
+    else:
+        lines.append(f"run-day: {track} {run.day.isoformat()}: already journaled with equal "
+                     f"rows; nothing written")
+    return lines

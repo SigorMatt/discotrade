@@ -203,16 +203,9 @@ def _closed_day(tc: Any, calendars: dict[str, Any], now: datetime) -> date:
     ``available_until(now)``; for the track, the earliest of these, so that
     every instrument's day ``D`` has closed (DESIGN is silent on a track whose
     instruments differ in calendar or source; the simplest safe choice)."""
-    from discotrade.bars.gaps import latest_closed_day
-    from discotrade.sources import source_for
+    from discotrade.daily import closed_day
 
-    bar = tc.track.bar_seconds
-    days = []
-    for inst in tc.instruments:
-        source = source_for(inst.source.adapter, calendars, bar)
-        days.append(latest_closed_day(calendars[inst.calendar], source.available_until(now),
-                                      bar))
-    return min(days)
+    return closed_day(tc, calendars, now)
 
 
 def _load_for_gaps(ctx: Context) -> tuple[Any, dict[str, Any], float]:
@@ -517,6 +510,52 @@ def _add_init_state(subparsers: argparse._SubParsersAction,
 
 
 SUBCOMMANDS.append(_add_init_state)
+
+
+def _run_day(ctx: Context, args: argparse.Namespace) -> int:
+    from discotrade.backtest import EvaluationError
+    from discotrade.bars.store import BarStoreError
+    from discotrade.config import ConfigError
+    from discotrade.daily import DailyError, describe, run_day
+    from discotrade.journal import JournalError
+    from discotrade.sources import NotBuiltError
+    from discotrade.state import StateError
+    from discotrade.strategy import ResultError, StrategyError
+
+    if ctx.state is None:
+        print(f"discotrade run-day: give --state <dir> or set {STATE_ENV}", file=sys.stderr)
+        return 2
+    try:
+        done = run_day(ctx.state, ctx.config, ctx.track, ctx.clock, args.day)
+    except (DailyError, StateError, JournalError, ConfigError, BarStoreError, StrategyError,
+            ResultError, EvaluationError, NotBuiltError, OSError, ValueError) as exc:
+        print(f"run-day: FAIL: {exc}", file=sys.stderr)
+        return 1
+    for line in describe(done, ctx.track):
+        print(line)
+    return 0
+
+
+def _add_run_day(subparsers: argparse._SubParsersAction,
+                 common: argparse.ArgumentParser) -> None:
+    run = subparsers.add_parser(
+        "run-day", parents=[common],
+        help="run daily steps 1 and 2 for one trading day of --track in a state directory "
+        "made by init-state, under its lock: fetch bars to the end of the day, run the gap "
+        "check, record rolls, journal every approach, rebuild the paper records, and "
+        "commit the state as `run <track> <date>`; a finished day run again writes "
+        "nothing (DESIGN 16.1, 16.2; decisions 2026-10-12 50 to 53)",
+    )
+    run.add_argument(
+        "--day", metavar="YYYY-MM-DD", default=None, type=date.fromisoformat,
+        help="the trading day to run (default: the latest trading day whose last bar closed "
+        "by each source's available_until at --as-of, the earliest across the track, "
+        "DESIGN 16.1)",
+    )
+    run.set_defaults(handler=_run_day)
+
+
+SUBCOMMANDS.append(_add_run_day)
 
 
 #: The cost components, in the order they are reported (DESIGN 7.3).
