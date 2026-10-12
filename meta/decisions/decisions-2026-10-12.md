@@ -310,3 +310,57 @@ threshold or frozen value changed).
     sections and contain no code; it reads the fixture bars, the roll
     file and the TOML directly and imports nothing from `discotrade`.
     Mission 4 states this in the brief of its sub-agent.
+
+## Added at consultation 6, after REVIEW-3
+
+Items 1 to 29 above are unchanged except where item 33 renumbers a
+mission. Items 30 to 33 below bind mission 4 and every later mission
+until a newer decisions file says otherwise; the same rules apply to them
+(no invariant broken, no gate moved, no threshold or frozen value
+changed).
+
+30. **REVIEW-3 blocker 1, DESIGN §8: when the deviation of a daily series
+    is 0.** For `sharpe` and `sharpe_2x`, the deviation of the daily
+    series `d` is 0, and the Sharpe is not a number, when every value of
+    `d` equals its first value, or when `std(d, ddof=1)` is not above
+    `1e-12` times the largest absolute value in `d`. The tolerance is a
+    constant of the §8 formula, like the `1e-9` trade floor, and lives in
+    the module, not in `config/thresholds.toml`. The independent
+    calculation of step S0.4 applies the same rule (item 29 reads
+    "decisions 23 to 26 and 30"). Reason: a constant series has a
+    mathematical deviation of 0, but the floating-point `std` of most
+    constants is a rounding residue (about `1e-17` for `[0.1, 0.1, 0.1]`),
+    which gave a Sharpe near `1e17`, positive and above every threshold,
+    the opposite of §8's rule.
+
+31. **REVIEW-3 should-fix 3, decision 18: `BarStore.last_ts` is a reader
+    entry point.** The public `last_ts(symbol)` refuses, as `read_range`
+    and `last_n` do, when the instrument's directory holds a month file
+    the index does not list or a listed file whose hash differs, with the
+    same errors. The writer's and `bars fetch`'s own use of the indexed
+    last `ts` (decision 5's test, completing an interrupted append) reads
+    the index through a private helper that does not refuse, so recovery
+    still works. Reason: decision 18 covers "any other reader entry
+    point"; a later caller of `last_ts` must not silently miss bars of an
+    interrupted append.
+
+32. **REVIEW-3 should-fix 4, DESIGN §6.3 with §13.4: the indicator
+    module's text is true of every public function.** `ema` keeps its
+    behaviour (seeded at the first value, a value from row 0); the module
+    docstring says that `ema` is seeded at the first value and has no
+    leading NaN, and that the other windowed functions are NaN until
+    their window is full. A test checks, for every public function of
+    the module, that a function the module text says is NaN-led returns
+    NaN at row 0 for a window above 1, and that `ema` does not. Reason:
+    the workers' function list is built from this module's text (§13.4);
+    changing `ema` would change the reference strategies' results for no
+    gain.
+
+33. **`meta/ROADMAP.md`: mission 4 repairs step S0.3; step S0.4 is
+    mission 5.** REVIEW-3 recorded a blocker, so mission 4 closes it and
+    REVIEW-3's four should-fix items and adds nothing new
+    (`meta/ARCHITECT.md` §3 case 1); step S0.3 is ticked when mission 4's
+    review has no blocker. Step S0.4 (the independent calculation, the
+    cheating strategy, the gate tests, closing M0) is mission 5: where
+    items 28 and 29 say "mission 4" for that work, read "mission 5". No
+    gate item moves.

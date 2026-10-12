@@ -12,6 +12,22 @@ REVIEW-1 should-fix 1 to 4, 6 and 7 are taken by mission 2 (step S0.2,
 units U1 to U3); item 5 is the owner's (below). REVIEW-2 should-fix 1 and
 2, and its note that no conftest blocks sockets (I-11), are taken by
 mission 3 (step S0.3, unit U1; decisions-2026-10-12 items 18 to 20).
+REVIEW-3 blocker 1 and should-fix 1 to 4 are taken by mission 4 (step
+S0.3, units U1 to U4; decisions-2026-10-12 items 30 to 33).
+
+- REVIEW-3 notes, for step S0.4 (mission 5), whose gate G0.3 checks the
+  adjusted series and roll cost and whose G0.1 compares the `backtest`
+  figures: whether `rolls.py`'s `last_n` while measuring a roll gap, or
+  `adjusted_as_of`'s default start, can read bars before `trusted_from`
+  (DESIGN §4.2); `MissingRollError` is tested for a `ts` mismatch only,
+  not for a record with the right `ts` and the wrong contracts; the
+  `backtest` plain output's `costs at 1x` line (subject totals, divided
+  by N) and the per-instrument lines (undivided sums) are not labelled.
+- REVIEW-3 note (I-11): the socket backstop is a function-scoped autouse
+  fixture, so module-scoped fixtures (`test_gaps.py`, `test_rolls.py`)
+  and subprocesses launched by tests run outside it, and `_socket` used
+  directly passes. Step S0.4 at the latest if its gate tests launch
+  subprocesses; otherwise step S1.1.
 
 - REVIEW-1 note: DESIGN §18.1's rule that tests marked `container` skip,
   with the reason printed, when no runtime is found is not built. The
