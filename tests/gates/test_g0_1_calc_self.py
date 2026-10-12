@@ -473,9 +473,13 @@ def test_no_short_session_spreads_proportional_fee_and_mixed_calendars(store_b):
     mean2 = sum(d2) / 3
     std2 = math.sqrt(sum((x - mean2) ** 2 for x in d2) / 2)
     assert_eq(m["sharpe_2x"], mean2 / std2 * math.sqrt(252), "sharpe_2x")
-    # Running sum falls every day; the peak is the first value: 0.0005 + 0.0005.
+    # Running sum falls every day, from day 1 on (d1[0] < 0). Decision on
+    # D-004 (to be decision 41): the running sum starts at 0 and that 0 is a
+    # peak, so the trough is the last running sum and max_drawdown is
+    # 0 - sum(d1) = -d1[0] + 0.0005 + 0.0005 (it was 0.001 before the decision,
+    # when the peak was the first running sum d1[0]).
     assert d1[0] < 0
-    assert_eq(m["max_drawdown"], 0.001, "max_drawdown")
+    assert_eq(m["max_drawdown"], -sum(d1), "max_drawdown")
     assert m["trades"] == 5                     # TB bars 2, 3; TC bars 1, 3, 4
     # TB h 0 0 0.5 0 0: one run of 1; TC h 0 1 1 0 1: runs of 2 and 1.
     assert_eq(m["avg_holding_bars"], 4 / 3, "avg_holding_bars")
@@ -590,3 +594,17 @@ def test_sharpe_edges_decision_30():
 def test_max_drawdown_hand_value():
     # Running sum 1, -1, -0.5, -1.5, 1.5: peak 1, trough -1.5.
     assert_eq(max_drawdown([1.0, -2.0, 0.5, -1.0, 3.0]), 2.5, "max_drawdown")
+
+
+def test_max_drawdown_first_day_loss_decision_on_d004():
+    # Decision on D-004 (to be decision 41): the running sum starts at 0
+    # before the first day and that 0 counts as a peak.
+    # d = [-0.01, 0.004, -0.02]: running sums -0.01, -0.006, -0.026.
+    # It never recovers above 0, so the peak stays 0; trough -0.026.
+    # max_drawdown = 0 - (-0.026) = 0.026.
+    assert_eq(max_drawdown([-0.01, 0.004, -0.02]), 0.026, "max_drawdown")
+    # One losing day alone is a drawdown: 0 -> -0.01.
+    assert_eq(max_drawdown([-0.01]), 0.01, "max_drawdown")
+    # No fall: 0.
+    assert max_drawdown([0.01, 0.02]) == 0.0
+    assert max_drawdown([]) == 0.0

@@ -28,9 +28,10 @@ Choices where the documents are silent (the simplest thing):
   the local time of day is at or after ``day_rolls_at``; for an
   ``always_open`` calendar, the UTC date (the calendar's time zone is then
   UTC for ``hour``, ``weekday``, the spread hour and the main session).
-- ``max_drawdown`` is the largest ``max(cum[:j+1]) - cum[j]`` over the
-  running sum ``cum`` of the daily series (no leading zero), and 0.0 for
-  an empty series.
+- ``max_drawdown`` (Decision on D-004, to be decision 41): the largest
+  fall of the running sum of the daily series from its running peak, where
+  the running sum starts at 0 before the first day and that 0 counts as a
+  peak; 0.0 when there is no fall (and for an empty series).
 - A position is non-zero when it is not exactly 0.
 """
 
@@ -373,7 +374,7 @@ def sharpe(d: list[float]) -> float:
 
 def max_drawdown(d: list[float]) -> float:
     running = 0.0
-    peak = -math.inf
+    peak = 0.0          # the starting 0 is a peak (Decision on D-004)
     worst = 0.0
     for x in d:
         running += x
