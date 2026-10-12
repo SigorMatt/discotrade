@@ -13,28 +13,25 @@ units U1 to U3); item 5 is the owner's (below). REVIEW-2 should-fix 1 and
 2, and its note that no conftest blocks sockets (I-11), are taken by
 mission 3 (step S0.3, unit U1; decisions-2026-10-12 items 18 to 20).
 REVIEW-3 blocker 1 and should-fix 1 to 4 are taken by mission 4 (step
-S0.3, units U1 to U4; decisions-2026-10-12 items 30 to 33).
+S0.3, units U1 to U4; decisions-2026-10-12 items 30 to 33). REVIEW-4
+should-fix 1 and its note on `gaps.py` and `rolls.py` reading the index
+before the reader are taken by mission 5 (step S0.4, unit U1;
+decisions-2026-10-12 items 34 and 35). REVIEW-3's notes carried to step
+S0.4 (reads before `trusted_from`, a roll record with the right `ts` and
+the wrong contracts, the unlabelled cost lines of the `backtest` plain
+output) are taken by mission 5 (unit U2; items 36 to 38).
 
-- REVIEW-3 notes, for step S0.4 (mission 5), whose gate G0.3 checks the
-  adjusted series and roll cost and whose G0.1 compares the `backtest`
-  figures: whether `rolls.py`'s `last_n` while measuring a roll gap, or
-  `adjusted_as_of`'s default start, can read bars before `trusted_from`
-  (DESIGN §4.2); `MissingRollError` is tested for a `ts` mismatch only,
-  not for a record with the right `ts` and the wrong contracts; the
-  `backtest` plain output's `costs at 1x` line (subject totals, divided
-  by N) and the per-instrument lines (undivided sums) are not labelled.
 - REVIEW-3 note (I-11): the socket backstop is a function-scoped autouse
   fixture, so module-scoped fixtures (`test_gaps.py`, `test_rolls.py`)
   and subprocesses launched by tests run outside it, and `_socket` used
-  directly passes. Step S0.4 at the latest if its gate tests launch
-  subprocesses; otherwise step S1.1.
-
+  directly passes. Step S1.1: mission 5's gate tests launch no
+  subprocess (decisions-2026-10-12 item 40).
 - REVIEW-1 note: DESIGN §18.1's rule that tests marked `container` skip,
   with the reason printed, when no runtime is found is not built. The
   mission that adds the first `container` test builds it: step S2.2.
 - REVIEW-1 note: every seed a gate test uses is written in the test file,
   not only in a fixture TOML (DESIGN §18.2). Step S0.4 (the first gate
-  tests) and every closing step.
+  tests, mission 5, item 40) and every closing step.
 - REVIEW-1 should-fix (U6, performance only): `bars fetch` builds a source
   per instrument and the synthetic source regenerates its series from
   `trusted_from` on every fetch. Take it when a replay gate's time limit
@@ -65,6 +62,12 @@ S0.3, units U1 to U4; decisions-2026-10-12 items 30 to 33).
   on sparse calendars, and only `roll_day` is tested for "contract key
   without a schedule". No step takes them unless a fixture calendar needs
   it.
+- REVIEW-4 notes, not carried as work: the decision 18 test of `backtest`
+  puts the unlisted month file after the window, so an unlisted file
+  inside the window is not driven through the command; the `indicators`
+  docstring's "no leading NaN" for `ema` holds for input finite at row 0,
+  and "a Series or array and a window" is loose for `atr` and `donchian`.
+  The step that next touches those files may take them.
 
 ## For the owner, before the first builder mission that needs it
 

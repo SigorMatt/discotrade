@@ -1,1 +1,1 @@
-plan: mission 4 kit (S0.3 repair, review-3 blocker and should-fix)
+plan: mission 5 kit (S0.4, independent calc, cheat, M0 gate tests)

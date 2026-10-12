@@ -364,3 +364,113 @@ changed).
     cheating strategy, the gate tests, closing M0) is mission 5: where
     items 28 and 29 say "mission 4" for that work, read "mission 5". No
     gate item moves.
+
+## Added at consultation 7, after REVIEW-4
+
+Items 1 to 33 above are unchanged. Items 34 to 40 below bind mission 5
+and every later mission until a newer decisions file says otherwise; the
+same rules apply to them (no invariant broken, no gate moved, no
+threshold or frozen value changed). Where item 39 or 40 states how a gate
+item of DESIGN §18.3 is tested, it says what the item's words mean; it
+never asserts less than they say.
+
+34. **REVIEW-4 should-fix 1, decisions 18 and 31: the `BarStore`
+    classification covers every public name.** The test that classifies
+    `BarStore` enumerates every name of the class (through its MRO,
+    `object` excluded) that does not begin with an underscore, whatever
+    its kind (method, property, class or static method, plain attribute),
+    and fails when one is in neither its list of refusing readers nor its
+    list of names that do not read bars. A reader written as a property
+    is a reader. Reason: the test is there so that a reader added later
+    must be classified; a property escaped it.
+
+35. **REVIEW-4 note on U3, decision 18: a caller that looks at the index
+    before it reads refuses as the reader does.** `bars/gaps.py`,
+    `rolls.py` (`update_rolls`, `adjusted_as_of`) and any other code that
+    consults the bar index for an instrument before reading its bars, and
+    finds no entry for it, refuses with decision 18's error (interrupted
+    append or revised data point, whichever applies) when the
+    instrument's directory holds a month file; it reports "no stored bar"
+    only when the directory holds none. Reason: a first append that
+    crashed before its index write would otherwise read as "no bars"
+    instead of being refused; `bars fetch` runs recovery first, so no
+    behaviour of today changes.
+
+36. **REVIEW-3 note carried to S0.4, DESIGN §4.2 (`trusted_from`), §5.6,
+    §7.1, §7.3: no bar before `trusted_from` is read for a result.**
+    Measuring a roll gap (both the `fetch_contract` bars and the fallback
+    `open(u) - close(u-1)`), the adjusted series (`adjusted_as_of`,
+    whatever its start argument), the context of the evaluation loop
+    (decision 23) and `sigma(u)` read no stored bar whose `ts` is before
+    the instrument's `trusted_from`. A contract change between a bar
+    before `trusted_from` and the first bar at or after it is not a roll.
+    The synthetic sources generate no bar before `trusted_from`, so no
+    fixture result changes. The independent calculation applies the same
+    rule.
+
+37. **REVIEW-3 note carried to S0.4, decision 24: a roll record must
+    match.** An evaluation that meets a contract change at bar `u` uses
+    the roll record whose `ts` is `u`'s and whose old and new contracts
+    are `contract(u-1)` and `contract(u)`. A record with the right `ts`
+    and other contracts is a missing roll record: the same error, exit 1
+    from `backtest`.
+
+38. **REVIEW-3 note carried to S0.4, DESIGN §7.3 with I-4: the
+    `backtest` plain output says what each cost line is.** The subject's
+    cost totals by component (summed over bars, divided by `N` as the
+    daily series is, decision 23) are labelled as the subject's, and each
+    per-instrument line is labelled as that instrument's undivided sum.
+    The figures and the `--json` output do not change. Tests that assert
+    the old labels change with it, and the commit body says so.
+
+39. **DESIGN §18.3 G0.1 with decisions 29 and 30: what the independent
+    calculation receives, and what "equal, to 1e-12" means.**
+    `tests/gates/independent_calc.py` imports nothing from `discotrade`
+    (the standard library, `numpy`, `pandas`, `pyarrow` and `tomllib`
+    only). It reads the stored bars (the month Parquet files that `bars
+    fetch` wrote from the synthetic source into a temporary state
+    directory), the roll records, and the track, instrument, calendar and
+    spread TOML files under `tests/fixtures/config/` itself. The strategy
+    reaches it only as a callable `position(bars, params)` and its
+    `PARAMS`, which the gate test obtains with discotrade's loader and
+    passes in; the calculation builds every slice of DESIGN §6.2 itself
+    (history cap, prices adjusted as of the slice's last bar, `hour` and
+    `weekday` in the calendar's time zone, a plain integer index) and
+    applies the clipping of decision 22. "Equal, to 1e-12" means
+    `|a - b| <= 1e-12 * max(1, |a|, |b|)` for real numbers, both or
+    neither not a number, and exact equality for counts, booleans,
+    contracts, timestamps and trading dates. The comparison covers, per
+    instrument and window bar, `p`, `h`, `gross`, `trade`, `fee`,
+    `spread`, `slippage`, `roll`, `cost`, `net_1x` and `net_2x`; per
+    subject, the daily series at 1x and 2x and every metric of §8
+    (`total_return` at 1x and 2x, `sharpe`, `sharpe_2x`, `max_drawdown`,
+    `trades`, `avg_holding_bars`, `breakeven_cost`, `fragile`); and the
+    cost totals by component. Reason: item 29 named "the fixture bars",
+    and the fixture bars exist only once the synthetic source has written
+    them; a calculation that called discotrade to build slices or load the
+    strategy's indicators would not be independent of what it checks.
+
+40. **DESIGN §18.3 G0.2 and G0.3, §18.2, I-11: the cheating strategy and
+    the gate tests' shape.** The cheating strategy is a strategy text
+    under `tests/fixtures/strategies/` that a worker could submit: it
+    uses no name or attribute beginning with an underscore and none of
+    the names, attributes or imports §12.1 rejects. It keeps module-level
+    references to every frame it has received and reads them again later;
+    reads the frame's index (its length, its last label) and arithmetic
+    on it; tries to read rows past the last one through `iloc`, `loc`,
+    `values`, `to_numpy()` and the `base` of those arrays, and the frame's
+    `attrs`; and takes a long position whenever any of these shows a
+    price later than the slice's last close that is higher. Reaching the
+    harness through the interpreter (caller frames, the garbage
+    collector, `sys`) is what §12.1 and the container refuse; it is the
+    hostile suite's (G2.1), not G0.2's. The G0.2 test runs it through the
+    module API (the `backtest` command takes files under `reference/`
+    only, decision 21). The G0.3 gap check uses the `synth_week` fixture
+    calendar, whose daily break, weekend and closure of 2019-07-03 to
+    2019-07-04 are the ones the item names; the dropped bars are those
+    the synthetic source dropped, which the test obtains from the
+    generator, not from the gap check. Gate tests run the `discotrade`
+    command in-process, through the function the console script calls,
+    and launch no subprocess; every seed a gate test uses is written in
+    the test file. The I-11 note on subprocesses launched by tests
+    therefore stays with step S1.1.
