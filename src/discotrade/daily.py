@@ -10,9 +10,13 @@ releasing it on success and on failure:
   (``closed_day``: per instrument, the latest trading day whose last expected
   bar closed by its source's ``available_until``; the earliest across the
   track). A ``D`` that is not a trading day of the track (the union of its
-  instruments' trading dates, decision 51), or that is later than the default
-  ``D`` (its bars have not all closed; the design is silent, refusing is the
-  simplest safe reading of "fetch bars up to ``D``"), is refused.
+  instruments' trading dates, decision 51), or for which an instrument has an
+  expected bar of a trading day on or before ``D`` that has not closed by its
+  source's ``available_until`` (the design is silent, refusing is the
+  simplest safe reading of "fetch bars up to ``D``"; an instrument that does
+  not trade on ``D`` needs only its earlier days closed, so that a track whose
+  calendars differ runs each of its trading days at decision 72's clock), is
+  refused.
 - When the journal holds a day before ``D`` and a trading day of the track
   between the last journaled day and ``D`` has no journal file, the run fails
   naming the first such day and writes nothing (decision 51; the catch-up is
@@ -121,6 +125,24 @@ def is_trading_day(tc: TrackConfig, calendars: Mapping[str, Calendar], day: date
     return False
 
 
+def _unclosed(tc: TrackConfig, calendars: Mapping[str, Calendar], day: date,
+              now: datetime) -> tuple[str, date] | None:
+    """The first instrument, with its latest closed trading day, that has an
+    expected bar of a trading day on or before ``day`` not closed by its
+    source's ``available_until(now)``; None when every one has closed. A day
+    on which an instrument does not trade asks nothing more of it than its
+    trading days before (decision 2026-10-12 72's clock on a track whose
+    instruments' calendars differ)."""
+    bar = tc.track.bar_seconds
+    for inst in tc.instruments:
+        cal = calendars[inst.calendar]
+        source = sources.source_for(inst.source.adapter, calendars, bar)
+        last = latest_closed_day(cal, source.available_until(now), bar)
+        if day > last and expected_bars(cal, day_end(cal, last), day_end(cal, day), bar):
+            return inst.symbol, last
+    return None
+
+
 def _missing_day(tc: TrackConfig, calendars: Mapping[str, Calendar], journaled: set[date],
                  day: date) -> date | None:
     """The first trading day between the last journaled day and ``day`` that
@@ -208,9 +230,11 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
     now = clock.now()
     latest = closed_day(tc, calendars, now)
     d = latest if day is None else day
-    if d > latest:
+    unclosed = _unclosed(tc, calendars, d, now)
+    if unclosed is not None:
+        symbol, last = unclosed
         raise DailyError(f"{d.isoformat()} has not closed at {now.isoformat()}: the latest "
-                         f"closed trading day of {track} is {latest.isoformat()}")
+                         f"closed trading day of {symbol} in {track} is {last.isoformat()}")
     if not is_trading_day(tc, calendars, d):
         raise DailyError(f"{d.isoformat()} is not a trading day of {track}")
     journaled = {date.fromisoformat(e["date"]) for e in journal.read_index(state_dir, track)}

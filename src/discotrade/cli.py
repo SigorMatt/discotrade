@@ -558,6 +558,73 @@ def _add_run_day(subparsers: argparse._SubParsersAction,
 SUBCOMMANDS.append(_add_run_day)
 
 
+def _replay(ctx: Context, args: argparse.Namespace) -> int:
+    from discotrade.backtest import EvaluationError
+    from discotrade.bars.store import BarStoreError
+    from discotrade.config import ConfigError, load_track_config
+    from discotrade.daily import DailyError
+    from discotrade.journal import WRITTEN, JournalError, Setup
+    from discotrade.replay import DayFailed, replay
+    from discotrade.sources import NotBuiltError
+    from discotrade.state import StateError
+    from discotrade.strategy import ResultError, StrategyError
+
+    def usage(why: str) -> int:
+        print(f"discotrade replay: error: {why}", file=sys.stderr)
+        return 2
+
+    if args.first > args.last:
+        return usage(f"--from {args.first.isoformat()} is after --to {args.last.isoformat()}")
+    if args.as_of is not None:
+        return usage("--as-of is not taken: the replay sets the clock to the close of each "
+                     "day's last expected bar (decision 2026-10-12 72)")
+    if ctx.state is None:
+        return usage(f"give --state <dir> or set {STATE_ENV}")
+    failures = (DailyError, StateError, JournalError, ConfigError, BarStoreError,
+                StrategyError, ResultError, EvaluationError, NotBuiltError, OSError, ValueError)
+    try:
+        tc = load_track_config(ctx.config, ctx.track)
+        calendars = dict(Setup.load(ctx.config, ctx.track).calendars)
+    except failures as exc:
+        print(f"replay: FAIL: {exc}", file=sys.stderr)
+        return 1
+
+    def line(run: Any, instant: datetime) -> None:
+        if run.status == WRITTEN:
+            what = f"journal written, {run.rows} rows; committed {run.commit}"
+        else:
+            what = "already journaled with equal rows; nothing written"
+        print(f"replay: {ctx.track} {run.day.isoformat()} at {instant.isoformat()}: {what}; "
+              f"{len(run.events)} health events, {len(run.changes)} lifecycle rows",
+              flush=True)
+
+    try:
+        replay(ctx.state, ctx.config, ctx.track, tc, calendars, args.first, args.last, line,
+               failures)
+    except DayFailed as exc:
+        print(f"replay: FAIL: {ctx.track} {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _add_replay(subparsers: argparse._SubParsersAction, common: argparse.ArgumentParser) -> None:
+    replay = subparsers.add_parser(
+        "replay", parents=[common],
+        help="run the day function of run-day for each trading day of --track from --from to "
+        "--to, in order, in one state directory, with the clock at the close of each day's "
+        "last expected bar; one line per day; stops at the first day that fails, exit 1 "
+        "naming it (DESIGN 16.4; decision 2026-10-12 72); --as-of is refused",
+    )
+    replay.add_argument("--from", dest="first", metavar="YYYY-MM-DD", required=True,
+                        type=date.fromisoformat, help="first day of the span")
+    replay.add_argument("--to", dest="last", metavar="YYYY-MM-DD", required=True,
+                        type=date.fromisoformat, help="last day of the span, included")
+    replay.set_defaults(handler=_replay)
+
+
+SUBCOMMANDS.append(_add_replay)
+
+
 def _journal_recompute(ctx: Context, args: argparse.Namespace) -> int:
     from discotrade import journal
     from discotrade.backtest import EvaluationError
