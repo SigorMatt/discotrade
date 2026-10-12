@@ -119,6 +119,11 @@ def all_rows(state, days):
     return pd.concat([pd.read_parquet(day_file(state, d)) for d in days], ignore_index=True)
 
 
+def approach_rows(rows):
+    """The approaches' rows (the controls are journaled every day, decision 64)."""
+    return rows[rows["kind"] == "approach"]
+
+
 # ------------------------------------------------------------------ the span
 
 
@@ -211,8 +216,9 @@ def test_a_days_rows_have_decision_49s_columns_first_row_and_carry(state, setup)
         rows = pd.read_parquet(day_file(state, d))
         assert tuple(rows.columns) == journal.COLUMNS
         assert (rows["date"] == d).all()
-        assert (rows["subject"] == aid).all() and (rows["kind"] == "approach").all()
-    rows = all_rows(state, days)
+        mine = approach_rows(rows)
+        assert len(mine) and (mine["subject"] == aid).all()
+    rows = approach_rows(all_rows(state, days))
     for symbol in ("SYNA", "SYNL", "SYNX"):
         inst = rows[rows["instrument"] == symbol].sort_values("ts").reset_index(drop=True)
         assert len(inst) > 0
@@ -280,12 +286,15 @@ def test_a_rerun_with_unequal_rows_leaves_the_file_and_returns_journal_mismatch(
 
 
 def test_a_day_with_no_subject_writes_an_empty_file_and_its_index_line(state, setup):
+    # Decision 64: the controls are journaled every day, so a day with no
+    # approach holds the controls' rows only.
     result = journal.journal_day(state, setup, DAYS[0])
     assert result.status == "written"
     rows = pd.read_parquet(day_file(state, DAYS[0]))
-    assert len(rows) == 0 and tuple(rows.columns) == journal.COLUMNS
+    assert len(approach_rows(rows)) == 0 and tuple(rows.columns) == journal.COLUMNS
+    assert set(rows["kind"]) == {"control_bh", "control_random"}
     [line] = index_file(state).read_text(encoding="utf-8").splitlines()
-    assert json.loads(line)["rows"] == 0 and json.loads(line)["date"] == "2019-06-08"
+    assert json.loads(line)["rows"] == len(rows) and json.loads(line)["date"] == "2019-06-08"
 
 
 def test_a_skipped_day_fails_the_next_and_writes_nothing(state, setup):
@@ -301,9 +310,9 @@ def test_a_skipped_day_fails_the_next_and_writes_nothing(state, setup):
 def test_an_approach_is_journaled_only_after_its_admission_date(state, setup):
     admit(state, setup, admitted=DAYS[1])
     journal_days(state, setup, DAYS[:3])
-    assert len(pd.read_parquet(day_file(state, DAYS[0]))) == 0
-    assert len(pd.read_parquet(day_file(state, DAYS[1]))) == 0
-    assert len(pd.read_parquet(day_file(state, DAYS[2]))) > 0
+    assert len(approach_rows(pd.read_parquet(day_file(state, DAYS[0])))) == 0
+    assert len(approach_rows(pd.read_parquet(day_file(state, DAYS[1])))) == 0
+    assert len(approach_rows(pd.read_parquet(day_file(state, DAYS[2])))) > 0
 
 
 # ------------------------------------------------------------------ one implementation of §7
@@ -313,7 +322,7 @@ def test_an_approach_is_journaled_only_after_its_admission_date(state, setup):
 def test_journal_equals_the_module_evaluation_over_the_span(state, setup, name):
     aid = admit(state, setup, name)
     journal_days(state, setup, DAYS)
-    rows = all_rows(state, DAYS)
+    rows = approach_rows(all_rows(state, DAYS))
     assert (rows["subject"] == aid).all()
     strat = load_strategy_file(REPO_ROOT / "reference" / name, setup.thresholds)
     window = DateRange(DAYS[0], DAYS[-1])

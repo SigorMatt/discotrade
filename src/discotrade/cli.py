@@ -576,7 +576,7 @@ def _journal_recompute(ctx: Context, args: argparse.Namespace) -> int:
         require_state_directory(ctx.state)
         with lock(ctx.state):
             setup = journal.Setup.load(ctx.config, ctx.track)
-            pairs = journal.journal_pairs(ctx.state, ctx.track)
+            pairs = journal.journal_pairs(ctx.state, ctx.track, setup)
             if not args.all:
                 tc = load_track_config(ctx.config, ctx.track)
                 d = closed_day(tc, dict(setup.calendars), ctx.clock.now())

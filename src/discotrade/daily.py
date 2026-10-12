@@ -28,7 +28,9 @@ releasing it on success and on failure:
   above ``gaps.max_fraction``), and rolls are recorded (DESIGN 5.6; a
   ``roll_gap_estimated`` notice per estimated gap). Every event step 1
   returns is appended to the health log at once (decision 52).
-- Step 2: the journal day of ``D`` (``journal.journal_day``) into the staging
+- Step 2: the journal day of ``D`` (``journal.journal_day``: the approaches and
+  the controls of decision 64, with a new draw's line of
+  ``controls/<track>/pools.jsonl``) into the staging
   directory ``state.STAGING``, and, when the day is new, the paper records
   rebuilt from the journal with the staged day (``paper.rebuild``); then the
   lifecycle's steps 1 to 4 (DESIGN 10.3; decision 63; ``lifecycle.run_steps``)

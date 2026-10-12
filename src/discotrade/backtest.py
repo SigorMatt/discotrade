@@ -50,6 +50,14 @@ columns: ``ts``, ``contract``, ``date`` (the trading date), ``p``, ``h``,
 ``gross``, ``trade``, ``fee``, ``spread``, ``slippage``, ``roll``, ``cost``,
 ``net_1x`` and ``net_2x``, the cost columns built from the fills. No clock is
 read (I-12).
+
+``evaluate`` is ``read_window`` (the bars of the window and their context),
+the strategy's targets, then ``score`` (DESIGN 7.1 to 7.3 from targets). A
+control (DESIGN 10.1; decision 2026-10-12 64) supplies its targets ``p(t)``
+per bar in place of a strategy call and goes through the same ``score``, so
+that strategies and controls share one implementation of section 7; ``score``
+takes several subjects' targets on one window and prices all their orders in
+one executor call.
 """
 
 from __future__ import annotations
@@ -171,6 +179,152 @@ def _empty_rows() -> pd.DataFrame:
     })
 
 
+@dataclass(frozen=True)
+class Window:
+    """The stored bars one instrument is evaluated on over one window: ``bars``
+    (context first, ``bars.iloc[first]`` the first window bar), the roll gaps
+    and flags, the window bars ``inside`` and their trading dates ``dates``."""
+
+    instrument: Instrument
+    calendar: Calendar
+    spread_table: SpreadTable | None
+    track: Track
+    inside: pd.DataFrame
+    dates: list
+    bars: pd.DataFrame
+    first: int
+    gaps: np.ndarray
+    rolled: np.ndarray
+
+    @property
+    def empty(self) -> bool:
+        return self.inside.empty
+
+    def evaluation(self) -> Evaluation:
+        """The evaluation of a window with no bar."""
+        return Evaluation(self.instrument.symbol, _empty_rows(), self.inside, 0,
+                          np.zeros(0), np.zeros(0, dtype=bool))
+
+
+def read_window(state_dir: Path, track: Track, instrument: Instrument, calendar: Calendar,
+                window: DateRange, spread_table: SpreadTable | None = None) -> Window:
+    """The stored bars of ``window`` of ``instrument`` and their context."""
+    store = BarStore(Path(state_dir), track.name, track.bar_seconds)
+    inside, dates = _window_bars(store, instrument, calendar, window)
+    if inside.empty:
+        return Window(instrument, calendar, spread_table, track, inside, dates, inside, 0,
+                      np.zeros(0), np.zeros(0, dtype=bool))
+    cap = track.history_cap_bars
+    context = store.last_n(instrument.symbol, inside["ts"].iloc[0],
+                           max(cap, costs.SIGMA_RETURNS + 2))
+    context = context[context["ts"] >= _midnight(instrument.trusted_from)]
+    bars = pd.concat([context.iloc[:-1], inside], ignore_index=True)
+    first = len(context) - 1
+    gaps, rolled = _roll_gaps(bars, Path(state_dir), track.name, instrument.symbol)
+    return Window(instrument, calendar, spread_table, track, inside, dates, bars, first,
+                  gaps, rolled)
+
+
+def _strategy_targets(win: Window, strategy: Strategy, params: Mapping[str, Any]
+                      ) -> np.ndarray:
+    """The checked target ``p(t)`` of ``strategy`` at each window bar (DESIGN 6.2, 7.1)."""
+    bars, first, gaps = win.bars, win.first, win.gaps
+    cap = win.track.history_cap_bars
+    prices = {col: bars[col].to_numpy(dtype=np.float64) for col in _PRICES}
+    volume = bars["volume"].to_numpy(dtype=np.float64)
+    hour, weekday = _local_clock(bars["ts"], win.calendar)
+    roll_at = np.flatnonzero(win.rolled)
+    stamps = list(bars["ts"])
+    n = len(bars)
+    targets = np.empty(n - first)
+    for i, k in enumerate(range(first, n)):
+        j0 = max(0, k - cap + 1)
+        # The adjustment as of bar k, summed roll by roll in time order as
+        # rolls.adjust does: a roll at r adds its gap to every bar before r.
+        offset = np.zeros(k + 1 - j0)
+        for r in roll_at[(roll_at > j0) & (roll_at <= k)]:
+            offset[: r - j0] += gaps[r]
+        frame = pd.DataFrame({
+            **{col: prices[col][j0:k + 1] + offset for col in _PRICES},
+            "volume": volume[j0:k + 1].copy(),
+            "hour": hour[j0:k + 1].copy(),
+            "weekday": weekday[j0:k + 1].copy(),
+        })
+        targets[i] = call_position(strategy.position, frame, params,
+                                   instrument=win.instrument.symbol, ts=stamps[k],
+                                   shorting=win.instrument.shorting)
+    return targets
+
+
+def score(win: Window, subjects: Sequence[tuple[str, np.ndarray, tuple[float, float] | None]]
+          ) -> list[Evaluation]:
+    """DESIGN 7.1 to 7.3 for each ``(subject, targets, start)`` on ``win``: the
+    positions ``h`` from the targets ``p`` (``start`` as in :func:`evaluate`),
+    the gross returns, and the costs from one :class:`SimExecutor` call that
+    prices every subject's orders. The one implementation of section 7 that
+    strategies and controls (DESIGN 10.1) share."""
+    symbol = win.instrument.symbol
+    if win.empty:
+        return [win.evaluation() for _ in subjects]
+    bars, first, gaps = win.bars, win.first, win.gaps
+    stamps = list(bars["ts"])
+    n = len(bars)
+    o = bars["open"].to_numpy(dtype=np.float64)[first:]
+    closes = bars["close"].to_numpy(dtype=np.float64)
+    c = closes[first:]
+    prev_close = np.empty_like(o)
+    # Unused when h(u0-1) = 0 (decision 24); at row 0 there is no previous bar read.
+    prev_close[0] = o[0] if first == 0 else closes[first - 1] + gaps[first]
+    prev_close[1:] = closes[first:-1] + gaps[first + 1:]
+    legs = []
+    orders = []
+    for name, targets, start in subjects:
+        targets = np.asarray(targets, dtype=np.float64)
+        if len(targets) != n - first:
+            raise EvaluationError(f"{symbol}: {len(targets)} targets for {n - first} "
+                                  f"window bars")
+        held = np.zeros_like(targets)
+        held[1:] = targets[:-1]
+        before = np.zeros_like(targets)
+        if start is not None:
+            if first == 0:
+                raise EvaluationError(
+                    f"{symbol}: no stored bar before {stamps[0].isoformat()} to carry the "
+                    f"position from")
+            before[0], held[0] = float(start[0]), float(start[1])
+        before[1:] = held[:-1]
+        gross = (before * (o - prev_close) + held * (c - o)) / o
+        if start is None:
+            gross[0] = 0.0
+        legs.append((targets, held, gross))
+        orders += [Order(name, symbol, stamps[k - 1] if k > 0 else None,
+                         float(before[i]), float(held[i]))
+                   for i, k in enumerate(range(first, n))]
+    market = Market(win.instrument, win.calendar, win.spread_table, bars, gaps, win.rolled)
+    fills = SimExecutor().execute(orders, {symbol: market})
+    out = []
+    width = n - first
+    for j, (targets, held, gross) in enumerate(legs):
+        mine = fills[j * width:(j + 1) * width]
+        columns: dict[str, Any] = {
+            "ts": win.inside["ts"].to_numpy(),
+            "contract": win.inside["contract"].to_numpy(),
+            "date": list(win.dates),
+            "p": targets,
+            "h": held,
+            "gross": gross,
+            "trade": [f.order.trade for f in mine],
+        }
+        for name in ("fee", "spread", "slippage", "roll", "cost"):
+            columns[name] = [getattr(f, name) for f in mine]
+        columns["net_1x"] = [costs.net(g, f.cost, 1) for g, f in zip(gross, mine, strict=True)]
+        columns["net_2x"] = [costs.net(g, f.cost, 2) for g, f in zip(gross, mine, strict=True)]
+        rows = pd.DataFrame(columns, index=win.inside.index)
+        out.append(Evaluation(symbol, rows[list(ROW_COLUMNS)], bars, first, gaps,
+                              win.rolled))
+    return out
+
+
 def evaluate(state_dir: Path, track: Track, instrument: Instrument, calendar: Calendar,
              strategy: Strategy, window: DateRange,
              params: Mapping[str, Any] | None = None,
@@ -187,83 +341,12 @@ def evaluate(state_dir: Path, track: Track, instrument: Instrument, calendar: Ca
     then ``h(u0)`` is that target and ``gross(u0)``, ``trade(u0)`` and the
     roll cost at ``u0`` are those of DESIGN 7.2 and 7.3 with ``h(u0-1)``, the
     previous stored bar being read from the store (decision 24)."""
-    symbol = instrument.symbol
     params = strategy.params if params is None else params
-    store = BarStore(Path(state_dir), track.name, track.bar_seconds)
-    inside, dates = _window_bars(store, instrument, calendar, window)
-    if inside.empty:
-        return Evaluation(symbol, _empty_rows(), inside, 0, np.zeros(0),
-                          np.zeros(0, dtype=bool))
-    cap = track.history_cap_bars
-    context = store.last_n(symbol, inside["ts"].iloc[0],
-                           max(cap, costs.SIGMA_RETURNS + 2))
-    context = context[context["ts"] >= _midnight(instrument.trusted_from)]
-    bars = pd.concat([context.iloc[:-1], inside], ignore_index=True)
-    first = len(context) - 1
-    gaps, rolled = _roll_gaps(bars, Path(state_dir), track.name, symbol)
-
-    prices = {col: bars[col].to_numpy(dtype=np.float64) for col in _PRICES}
-    volume = bars["volume"].to_numpy(dtype=np.float64)
-    hour, weekday = _local_clock(bars["ts"], calendar)
-    roll_at = np.flatnonzero(rolled)
-    stamps = list(bars["ts"])
-    n = len(bars)
-
-    targets = np.empty(n - first)
-    for i, k in enumerate(range(first, n)):
-        j0 = max(0, k - cap + 1)
-        # The adjustment as of bar k, summed roll by roll in time order as
-        # rolls.adjust does: a roll at r adds its gap to every bar before r.
-        offset = np.zeros(k + 1 - j0)
-        for r in roll_at[(roll_at > j0) & (roll_at <= k)]:
-            offset[: r - j0] += gaps[r]
-        frame = pd.DataFrame({
-            **{col: prices[col][j0:k + 1] + offset for col in _PRICES},
-            "volume": volume[j0:k + 1].copy(),
-            "hour": hour[j0:k + 1].copy(),
-            "weekday": weekday[j0:k + 1].copy(),
-        })
-        targets[i] = call_position(strategy.position, frame, params, instrument=symbol,
-                                   ts=stamps[k],
-                                   shorting=instrument.shorting)
-
-    held = np.zeros_like(targets)
-    held[1:] = targets[:-1]
-    before = np.zeros_like(targets)
-    if start is not None:
-        if first == 0:
-            raise EvaluationError(
-                f"{symbol}: no stored bar before {stamps[0].isoformat()} to carry the "
-                f"position from")
-        before[0], held[0] = float(start[0]), float(start[1])
-    before[1:] = held[:-1]
-    o, c = prices["open"][first:], prices["close"][first:]
-    prev_close = np.empty_like(o)
-    # Unused when h(u0-1) = 0 (decision 24); at row 0 there is no previous bar read.
-    prev_close[0] = o[0] if first == 0 else prices["close"][first - 1] + gaps[first]
-    prev_close[1:] = prices["close"][first:-1] + gaps[first + 1:]
-    gross = (before * (o - prev_close) + held * (c - o)) / o
-    if start is None:
-        gross[0] = 0.0
-    rows = pd.DataFrame({
-        "ts": inside["ts"],
-        "contract": inside["contract"].to_numpy(),
-        "date": dates,
-        "p": targets,
-        "h": held,
-        "gross": gross,
-    })
-    market = Market(instrument, calendar, spread_table, bars, gaps, rolled)
-    orders = [Order(strategy.name, symbol, stamps[k - 1] if k > 0 else None,
-                    float(before[i]), float(held[i]))
-              for i, k in enumerate(range(first, n))]
-    fills = SimExecutor().execute(orders, {symbol: market})
-    rows["trade"] = [f.order.trade for f in fills]
-    for name in ("fee", "spread", "slippage", "roll", "cost"):
-        rows[name] = [getattr(f, name) for f in fills]
-    rows["net_1x"] = [costs.net(g, f.cost, 1) for g, f in zip(gross, fills, strict=True)]
-    rows["net_2x"] = [costs.net(g, f.cost, 2) for g, f in zip(gross, fills, strict=True)]
-    return Evaluation(symbol, rows[list(ROW_COLUMNS)], bars, first, gaps, rolled)
+    win = read_window(state_dir, track, instrument, calendar, window, spread_table)
+    if win.empty:
+        return win.evaluation()
+    targets = _strategy_targets(win, strategy, params)
+    return score(win, [(strategy.name, targets, start)])[0]
 
 
 def daily(evaluations: Sequence[Evaluation]) -> pd.DataFrame:

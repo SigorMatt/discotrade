@@ -19,11 +19,11 @@ of ``SCHEMA``:
   ``control_bh``), always true. An approach with no cutoff, or a row of
   another kind, is refused.
 
-In step S1.1
-the subjects are approaches, which run on the whole basket, so ``N`` is the
-number of the track's instruments, given by the caller for every subject (the
-design is silent on how the journal tells ``N``; this is the simplest reading
-of decision 23 for approaches). The key columns of the content hash are
+An approach and a random control (``control_random``) run on the whole
+basket, so their ``N`` is the number of the track's instruments, given by the
+caller; a buy-and-hold control (``control_bh``) runs on its one instrument
+(DESIGN 10.1), so its ``N`` is 1 (the design is silent on how the journal
+tells ``N``; this is the simplest reading of decision 23). The key columns of the content hash are
 ``subject`` and ``date``.
 
 The API:
@@ -69,6 +69,7 @@ SCHEMA = pa.schema([("date", pa.date32()), ("subject", pa.string()), ("kind", pa
 assert tuple(SCHEMA.names) == COLUMNS
 APPROACH = "approach"
 CONTROL_KINDS = ("control_random", "control_bh")
+BH = "control_bh"
 
 
 def paper_path(root: Path, track: str) -> Path:
@@ -102,13 +103,14 @@ def build(rows: pd.DataFrame, n_instruments: int,
         kinds = sorted(set(mine["kind"]))
         if len(kinds) != 1:
             raise ValueError(f"subject {subject} has rows of kinds {kinds} on {day}")
+        n = 1 if kinds[0] == BH else n_instruments
         totals = dict.fromkeys(_VALUES, 0.0)
         for _, leg in mine.groupby("instrument", sort=True):
             for name in _VALUES:
                 totals[name] = totals[name] + float(leg[name].to_numpy(dtype=np.float64).sum())
         out.append({
             "date": day, "subject": subject, "kind": kinds[0],
-            **{name: totals[name] / n_instruments for name in _VALUES},
+            **{name: totals[name] / n for name in _VALUES},
             "trades": int(np.count_nonzero(mine["trade"].to_numpy(dtype=np.float64)
                                            > TRADE_FLOOR)),
             "clean": _clean(str(subject), kinds[0], day, cutoffs),

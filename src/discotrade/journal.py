@@ -1,5 +1,5 @@
-"""The decision journal (DESIGN 9.2, 9.4, 7, 6.2; decisions 2026-10-12 24, 25, 48,
-49, 51, 54; I-5, I-6, I-7, I-12).
+"""The decision journal (DESIGN 9.2, 9.4, 7, 6.2, 10.1; decisions 2026-10-12 24, 25,
+48, 49, 51, 54, 64; I-5, I-6, I-7, I-12).
 
 One Parquet file per trading day ``journal/<track>/<YYYY>/<YYYY-MM-DD>.parquet``
 holds one row per subject, instrument and bar of that day, with the columns
@@ -38,6 +38,20 @@ The API, for the units that build on it:
   after the admission date, means a day was skipped: ``JournalError``.
   Errors of the loader and the evaluation (``StrategyError``,
   ``ResultError``, ``EvaluationError``, ``BarStoreError``) pass through.
+- The controls (DESIGN 10.1; decision 64; :mod:`discotrade.controls`) are in
+  ``day_rows`` too, every day from the first day the journal holds
+  (``first_day``): ``bh:<symbol>`` on its instrument and ``rc:<slot>`` on every
+  instrument, kinds ``control_bh`` and ``control_random``, through
+  ``control_evaluations`` (one ``backtest.read_window`` per instrument and one
+  ``backtest.score`` of every control's targets on it: the same evaluation
+  loop, executor and cost model as approaches), each instrument's first row
+  flat and every later one carried from the last journaled row as for an
+  approach (a control's admission being the day before the first journaled
+  day). The draws in force are those of ``controls/<track>/pools.jsonl`` made
+  on or before the day, and, on a draw day whose draw is not recorded, the
+  new draw (``draws_for``, ``new_draw``: the live approaches by the lifecycle
+  rows dated before the day, their paper days read from the journal days
+  before it).
 - ``write_day(state_dir, track, day, rows, into=None)``: a day not yet in the
   index has its file and its index line written (each atomically; into the
   directory ``into`` instead of ``state_dir`` when given, for a staging
@@ -48,22 +62,27 @@ The API, for the units that build on it:
   (status ``mismatch``).
 - ``journal_day(state_dir, setup, day, into=None)``: ``day_rows`` (with a
   ``failures`` dict) then ``write_day``; returns a ``DayResult`` whose
-  ``failures`` names each approach dropped for a contract failure.
+  ``failures`` names each approach dropped for a contract failure. When the
+  day is written and a new draw was made, its line is appended to
+  ``pools.jsonl`` (into ``into`` when given); a re-run appends none.
 - ``read_index``, ``read_day``, ``journal_path``, ``index_path``.
 - Recomputation (DESIGN 9.4; decision 54), for ``journal recompute``:
-  ``journal_pairs(state_dir, track)`` lists every journaled (day, subject)
-  pair (each index day with each approach journaled that day, decision 63);
+  ``journal_pairs(state_dir, track, setup=None)`` lists every journaled (day,
+  subject) pair (each index day with each approach journaled that day,
+  decision 63, and with ``setup`` each control journaled that day);
   ``sample_pairs(pairs, n, day)`` draws ``n`` of those before ``day`` (all
   when fewer exist) with ``numpy.random.default_rng(YYYYMMDD of day)``,
   choosing indices into the sorted pool without replacement (the design
   names the seed, not the draw; this is the simplest); ``recompute(state_dir,
   setup, pairs)`` evaluates each subject once from its first journaled day to
-  the last asked for (``span_rows``, no stored row read), compares each
+  the last asked for (``span_rows``; the controls from the journal's first
+  day with the recorded draws, ``control_span_rows``; no stored row read),
+  compares each
   pair's rows with the stored ones by content hash on ``KEY``, and returns a
   ``Recompute`` with one ``journal_mismatch`` alert per mismatched pair. It
   writes nothing; the command appends the alerts to the health log.
 
-A day with no subject has a file with no row and its index line. No clock
+A day with no approach holds the controls' rows only (decision 64). No clock
 is read (I-12).
 """
 
@@ -74,7 +93,7 @@ import hashlib
 import json
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -83,8 +102,8 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from discotrade import ledger, lifecycle
-from discotrade.backtest import Evaluation, evaluate
+from discotrade import controls, ledger, lifecycle
+from discotrade.backtest import Evaluation, evaluate, read_window, score
 from discotrade.bars.store import write_atomic
 from discotrade.config import (
     Calendar,
@@ -99,6 +118,7 @@ from discotrade.config import (
 )
 from discotrade.spreads import spread_table
 from discotrade.state import Approach, HealthEvent, canonical_json, content_hash, read_approaches
+from discotrade.stats import trading_dates
 from discotrade.strategy import ResultError, load_strategy
 from discotrade.tradingcal import trading_date
 
@@ -225,19 +245,20 @@ def trusted_hashes(root: Path = REPO_ROOT) -> frozenset[str]:
 @dataclass(frozen=True)
 class _Last:
     ts: pd.Timestamp
+    date: date
     position: float
     target_next: float
 
 
 def _carries(state_dir: Path, track: str, day: date, subjects: Mapping[str, date],
-             symbols: Sequence[str]) -> dict[tuple[str, str], _Last]:
-    """The last journaled row before ``day`` of each (subject, instrument) that
-    has one; ``subjects`` maps each subject to its admission date."""
-    wanted = {(s, i) for s in subjects for i in symbols}
+             wanted: set[tuple[str, str]]) -> dict[tuple[str, str], _Last]:
+    """The last journaled row before ``day`` of each (subject, instrument) of
+    ``wanted`` that has one; ``subjects`` maps each subject to its admission
+    date (a control's is the day before the first journaled day)."""
     out: dict[tuple[str, str], _Last] = {}
     if not wanted:
         return out
-    earliest = min(subjects.values())
+    earliest = min(subjects[s] for s, _ in wanted)
     days = sorted((date.fromisoformat(e["date"]) for e in read_index(state_dir, track)),
                   reverse=True)
     for d in days:
@@ -249,13 +270,15 @@ def _carries(state_dir: Path, track: str, day: date, subjects: Mapping[str, date
         if rows is None:
             raise JournalError(f"the index of {track} names {d.isoformat()}, which has no "
                                f"file {journal_path(state_dir, track, d)}")
-        for (subject, symbol) in sorted(wanted - out.keys()):
-            mine = rows[(rows["subject"] == subject) & (rows["instrument"] == symbol)]
-            if len(mine):
-                last = mine.loc[mine["ts"].idxmax()]
-                out[(subject, symbol)] = _Last(pd.Timestamp(last["ts"]),
-                                               float(last["position"]),
-                                               float(last["target_next"]))
+        if rows.empty:
+            continue
+        last = rows.sort_values("ts", kind="mergesort").groupby(
+            ["subject", "instrument"], sort=False).tail(1)
+        for row in last.itertuples(index=False):
+            key = (str(row.subject), str(row.instrument))
+            if key in wanted and key not in out:
+                out[key] = _Last(pd.Timestamp(row.ts), row.date, float(row.position),
+                                 float(row.target_next))
     return out
 
 
@@ -303,19 +326,149 @@ def subject_rows(state_dir: Path, setup: Setup, day: date, subject: str, kind: s
         if ev.rows.empty:
             continue
         before = ev.bars["ts"].iloc[ev.first - 1] if ev.first > 0 else None
-        if last is not None and before != last.ts:
-            raise JournalError(
-                f"{kind} {subject} on {inst.symbol}: its last journaled row is at "
-                f"{last.ts.isoformat()} but the stored bar before {day.isoformat()} is at "
-                f"{before.isoformat() if before is not None else 'none'}; a day was skipped")
-        if last is None and before is not None \
-                and trading_date(calendar, before.to_pydatetime()) > admitted:
-            raise JournalError(
-                f"{kind} {subject} on {inst.symbol}: the stored bar at {before.isoformat()} "
-                f"is after its admission on {admitted.isoformat()} and has no journal row; "
-                f"journal the days in order")
+        _check_carry(kind, subject, inst.symbol, calendar, day, admitted, last, before)
         frames.append(_rows(subject, kind, day, ev, 0.0 if last is None else last.position))
     return frames
+
+
+def _check_carry(kind: str, subject: str, symbol: str, calendar: Calendar, day: date,
+                 admitted: date, last: _Last | None, before: pd.Timestamp | None) -> None:
+    """Refuse a day whose previous day was skipped (``day_rows``)."""
+    if last is not None and before != last.ts:
+        raise JournalError(
+            f"{kind} {subject} on {symbol}: its last journaled row is at "
+            f"{last.ts.isoformat()} but the stored bar before {day.isoformat()} is at "
+            f"{before.isoformat() if before is not None else 'none'}; a day was skipped")
+    if last is None and before is not None \
+            and trading_date(calendar, before.to_pydatetime()) > admitted:
+        raise JournalError(
+            f"{kind} {subject} on {symbol}: the stored bar at {before.isoformat()} "
+            f"is after its admission on {admitted.isoformat()} and has no journal row; "
+            f"journal the days in order")
+
+
+# --- the controls (DESIGN 10.1; decision 64) ---------------------------------------------
+
+def control_names(setup: Setup) -> list[str]:
+    """Every control subject of the track."""
+    return controls.subjects([i.symbol for i in setup.instruments],
+                             int(setup.thresholds["controls.random_pool"]))
+
+
+def _control_wanted(setup: Setup) -> set[tuple[str, str]]:
+    pool = int(setup.thresholds["controls.random_pool"])
+    out = {(controls.bh_subject(i.symbol), i.symbol) for i in setup.instruments}
+    out |= {(controls.rc_subject(k), i.symbol) for k in range(pool) for i in setup.instruments}
+    return out
+
+
+def control_evaluations(state_dir: Path, setup: Setup, window: DateRange,
+                        draws: Sequence[controls.Draw],
+                        carries: Mapping[tuple[str, str], _Last] | None = None,
+                        check: tuple[date, date] | None = None
+                        ) -> list[tuple[str, str, Evaluation, float]]:
+    """Every control's evaluation on each instrument over ``window``:
+    (subject, kind, evaluation, previous position of its first row), in
+    instrument then subject order. Without ``carries`` each instrument's first
+    window bar is flat (DESIGN 7.1); with them, each (subject, instrument) that
+    has a carried row starts from it (decision 49). ``check`` is (the day, the
+    controls' admission) for ``_check_carry``."""
+    pool = int(setup.thresholds["controls.random_pool"])
+    carries = {} if carries is None else carries
+    out = []
+    for inst in setup.instruments:
+        calendar = setup.calendars[inst.calendar]
+        win = read_window(state_dir, setup.track, inst, calendar, window,
+                          setup.spread_tables[inst.symbol])
+        if win.empty:
+            continue
+        before = win.bars["ts"].iloc[win.first - 1] if win.first > 0 else None
+        stamps = list(win.inside["ts"])
+        names = [controls.bh_subject(inst.symbol)] + [controls.rc_subject(k)
+                                                       for k in range(pool)]
+        items = []
+        for name in names:
+            kind = controls.kind_of(name) or ""
+            last = carries.get((name, inst.symbol))
+            if check is not None:
+                _check_carry(kind, name, inst.symbol, calendar, check[0], check[1], last,
+                             before)
+            if kind == controls.KIND_BH:
+                targets = controls.bh_targets(len(stamps))
+            else:
+                targets = controls.random_targets(
+                    draws, controls.slot_of(name), inst.symbol, inst.shorting, stamps,
+                    win.dates, None if last is None else (last.target_next, last.date))
+            items.append((name, targets,
+                          None if last is None else (last.position, last.target_next)))
+        for (name, _, start), ev in zip(items, score(win, items), strict=True):
+            out.append((name, controls.kind_of(name) or "", ev,
+                        0.0 if start is None else start[0]))
+    return out
+
+
+def first_day(state_dir: Path, track: str, day: date) -> date:
+    """The first day the controls are journaled: the journal's first day, or
+    ``day`` when the journal holds none before it."""
+    days = [date.fromisoformat(e["date"]) for e in read_index(state_dir, track)]
+    return min(days + [day])
+
+
+def _paper_days(state_dir: Path, track: str, day: date, ids: Sequence[str], window: int
+                ) -> dict[str, dict[date, pd.DataFrame]]:
+    """Each approach's journal rows per journaled day before ``day``, its last
+    ``window`` such days at most."""
+    out: dict[str, dict[date, pd.DataFrame]] = {aid: {} for aid in ids}
+    days = sorted((date.fromisoformat(e["date"]) for e in read_index(state_dir, track)
+                   if date.fromisoformat(e["date"]) < day), reverse=True)
+    for d in days:
+        if all(len(v) >= window for v in out.values()):
+            break
+        rows = read_day(state_dir, track, d)
+        if rows is None:
+            raise JournalError(f"the index of {track} names {d.isoformat()}, which has no "
+                               f"file {journal_path(state_dir, track, d)}")
+        for aid in ids:
+            if len(out[aid]) < window:
+                mine = rows[rows["subject"] == aid]
+                if len(mine):
+                    out[aid][d] = mine
+    return out
+
+
+def new_draw(state_dir: Path, setup: Setup, day: date) -> controls.Draw:
+    """The draw made on ``day`` (decision 64), from the live approaches'
+    measured pairs or from the track's horizons."""
+    th = setup.thresholds
+    track = setup.track.name
+    pool = int(th["controls.random_pool"])
+    window = int(th["controls.match_window_days"])
+    min_live = int(th["controls.match_min_live"])
+    approaches = read_approaches(state_dir)
+    rows = ledger.read(state_dir, track, ledger.LIFECYCLE)
+    live = sorted(aid for aid, s in lifecycle.states(rows, approaches, day).items()
+                  if s.state == lifecycle.LIVE)
+    pairs = None
+    if len(live) >= min_live:
+        pairs = controls.measured_pairs(_paper_days(state_dir, track, day, live, window),
+                                        live, window, min_live)
+    return controls.make_draw(day, pool, controls.horizon_bounds(setup.track.horizons), pairs)
+
+
+def draws_for(state_dir: Path, setup: Setup, day: date, into: Path | None = None
+              ) -> tuple[list[controls.Draw], controls.Draw | None]:
+    """The draws in force up to ``day`` and, when ``day`` is a draw day whose
+    draw is not recorded, that new draw (also in the list)."""
+    track = setup.track.name
+    recorded = [d for d in controls.read_draws(state_dir, track, into) if d.day <= day]
+    first = first_day(state_dir, track, day)
+    calendars = [setup.calendars[n] for n in sorted(setup.calendars)]
+    earlier = trading_dates(calendars, setup.track.bar_seconds, day.replace(day=1),
+                            day - timedelta(days=1)) if day.day > 1 else []
+    if not controls.is_draw_day(day, first, earlier) or any(d.day == day for d in recorded):
+        return recorded, None
+    draw = new_draw(state_dir, setup, day)
+    return recorded + [draw], draw
 
 
 def _require_trusted(approaches: Sequence[Approach]) -> None:
@@ -343,16 +496,28 @@ def journaled_approaches(state_dir: Path, track: str, day: date) -> list[Approac
 
 def day_rows(state_dir: Path, setup: Setup, day: date,
              failures: dict[str, str] | None = None) -> pd.DataFrame:
-    """The rows of ``day`` of every approach journaled on it, sorted by ``KEY``.
+    """The rows of ``day`` of every approach journaled on it and of every
+    control (decision 64), sorted by ``KEY``.
 
     With ``failures`` given, an approach whose evaluation breaks decision 22's
     contract (``ResultError``) has none of its rows of ``day`` returned and its
     error text recorded there under its id (decision 63, step 1); without it,
     the error passes through."""
-    approaches = journaled_approaches(state_dir, setup.track.name, day)
+    return _day_rows(state_dir, setup, day, failures)[0]
+
+
+def _day_rows(state_dir: Path, setup: Setup, day: date, failures: dict[str, str] | None,
+              into: Path | None = None) -> tuple[pd.DataFrame, controls.Draw | None]:
+    track = setup.track.name
+    approaches = journaled_approaches(state_dir, track, day)
     _require_trusted(approaches)
-    carries = _carries(state_dir, setup.track.name, day, {a.id: a.admitted for a in approaches},
-                       [i.symbol for i in setup.instruments])
+    draws, drawn = draws_for(state_dir, setup, day, into)
+    first = first_day(state_dir, track, day)
+    admitted = {a.id: a.admitted for a in approaches}
+    admitted.update(dict.fromkeys(control_names(setup), first - timedelta(days=1)))
+    wanted = {(a.id, i.symbol) for a in approaches for i in setup.instruments}
+    wanted |= _control_wanted(setup)
+    carries = _carries(state_dir, track, day, admitted, wanted)
     frames = []
     for a in approaches:
         try:
@@ -362,7 +527,13 @@ def day_rows(state_dir: Path, setup: Setup, day: date,
             if failures is None:
                 raise
             failures[a.id] = str(exc)
-    return _frame(pd.concat(frames, ignore_index=True)) if frames else _empty()
+    for name, kind, ev, previous in control_evaluations(
+            state_dir, setup, DateRange(day, day), draws, carries,
+            check=(day, first - timedelta(days=1))):
+        if not ev.rows.empty:
+            frames.append(_rows(name, kind, day, ev, previous))
+    rows = _frame(pd.concat(frames, ignore_index=True)) if frames else _empty()
+    return rows, drawn
 
 
 # --- writing a day -----------------------------------------------------------------------
@@ -415,10 +586,14 @@ def write_day(state_dir: Path, track: str, day: date, rows: pd.DataFrame,
 def journal_day(state_dir: Path, setup: Setup, day: date,
                 into: Path | None = None) -> DayResult:
     """Compute ``day``'s rows and write or compare them; an approach that breaks
-    decision 22's contract has its rows dropped and is named in ``failures``."""
+    decision 22's contract has its rows dropped and is named in ``failures``.
+    A new day made on a draw day appends its draw to ``pools.jsonl`` (into
+    ``into`` when given); a re-run appends none (decision 64; I-6)."""
     failures: dict[str, str] = {}
-    rows = day_rows(state_dir, setup, day, failures)
+    rows, drawn = _day_rows(state_dir, setup, day, failures, into)
     result = write_day(state_dir, setup.track.name, day, rows, into=into)
+    if drawn is not None and result.status == WRITTEN:
+        controls.append_draw(state_dir, setup.track.name, drawn, into=into)
     return dataclasses.replace(result, failures=tuple(sorted(failures.items())))
 
 
@@ -434,17 +609,26 @@ class Recompute:
     events: tuple[HealthEvent, ...]      # one journal_mismatch per mismatched pair
 
 
-def journal_pairs(state_dir: Path, track: str) -> list[Pair]:
+def journal_pairs(state_dir: Path, track: str, setup: Setup | None = None) -> list[Pair]:
     """Every journaled (day, subject) pair: each day of the index with each
     approach ``day_rows`` journals that day (admitted before it and live or
     dormant by the lifecycle, decision 63), less one retired that day for a
-    contract failure (its rows of the day are not journaled), in (day,
-    subject) order."""
+    contract failure (its rows of the day are not journaled), and, with
+    ``setup``, each control journaled that day (decision 64): every ``rc:<slot>``,
+    and ``bh:<symbol>`` on the trading dates of its instrument's calendar, in
+    (day, subject) order."""
     days = sorted(date.fromisoformat(e["date"]) for e in read_index(state_dir, track))
     approaches = read_approaches(state_dir)
     rows = ledger.read(state_dir, track, ledger.LIFECYCLE)
-    return sorted((d, aid) for d in days
-                  for aid in lifecycle.was_journaled(rows, approaches, d))
+    out = [(d, aid) for d in days for aid in lifecycle.was_journaled(rows, approaches, d)]
+    if setup is not None and days:
+        pool = int(setup.thresholds["controls.random_pool"])
+        out += [(d, controls.rc_subject(k)) for d in days for k in range(pool)]
+        for inst in setup.instruments:
+            on = set(trading_dates([setup.calendars[inst.calendar]], setup.track.bar_seconds,
+                                   days[0], days[-1]))
+            out += [(d, controls.bh_subject(inst.symbol)) for d in days if d in on]
+    return sorted(out)
 
 
 def sample_pairs(pairs: Sequence[Pair], n: int, day: date) -> list[Pair]:
@@ -477,6 +661,23 @@ def span_rows(state_dir: Path, setup: Setup, approach: Approach, first: date, la
     return _frame(pd.concat(frames, ignore_index=True)) if frames else _empty()
 
 
+def control_span_rows(state_dir: Path, setup: Setup, first: date, last: date,
+                      names: Sequence[str] | None = None) -> dict[str, pd.DataFrame]:
+    """The rows of each control (of ``names``, all by default) from ``first``
+    to ``last``, evaluated once over that window per instrument (its first bar
+    flat, DESIGN 7.1) with the draws of ``pools.jsonl`` (decision 64), each
+    sorted by ``KEY`` and dated by its instrument's trading date."""
+    draws = [d for d in controls.read_draws(state_dir, setup.track.name) if d.day <= last]
+    wanted = set(control_names(setup) if names is None else names)
+    frames: dict[str, list[pd.DataFrame]] = {name: [] for name in sorted(wanted)}
+    for name, kind, ev, _ in control_evaluations(state_dir, setup, DateRange(first, last),
+                                                 draws):
+        if name in wanted and not ev.rows.empty:
+            frames[name].append(_rows(name, kind, None, ev, 0.0))
+    return {name: _frame(pd.concat(f, ignore_index=True)) if f else _empty()
+            for name, f in frames.items()}
+
+
 def recompute(state_dir: Path, setup: Setup, pairs: Sequence[Pair]) -> Recompute:
     """Recompute ``pairs`` from the stored bars and the frozen sources and
     compare each with the journal (DESIGN 9.4; decision 54). Each subject is
@@ -489,17 +690,24 @@ def recompute(state_dir: Path, setup: Setup, pairs: Sequence[Pair]) -> Recompute
     pairs = sorted(set(pairs))
     days = sorted(date.fromisoformat(e["date"]) for e in read_index(state_dir, track))
     known = {a.id: a for a in read_approaches(state_dir)}
+    names = set(control_names(setup))
     wanted: dict[str, list[date]] = {}
     for d, subject in pairs:
-        if subject not in known:
-            raise JournalError(f"{subject} is not an approach of the state")
+        if subject not in known and subject not in names:
+            raise JournalError(f"{subject} is not an approach of the state or a control")
         wanted.setdefault(subject, []).append(d)
-    _require_trusted([known[s] for s in sorted(wanted)])
+    _require_trusted([known[s] for s in sorted(wanted) if s in known])
     computed = {}
     for subject, asked in sorted(wanted.items()):
-        a = known[subject]
-        first = min(d for d in days if d > a.admitted)
-        computed[subject] = span_rows(state_dir, setup, a, first, max(asked))
+        if subject in known:
+            a = known[subject]
+            first = min(d for d in days if d > a.admitted)
+            computed[subject] = span_rows(state_dir, setup, a, first, max(asked))
+    asked_controls = sorted(s for s in wanted if s in names)
+    if asked_controls:
+        computed.update(control_span_rows(
+            state_dir, setup, days[0], max(max(wanted[s]) for s in asked_controls),
+            asked_controls))
     stored_days: dict[date, pd.DataFrame] = {}
     mismatches, events = [], []
     for d, subject in pairs:

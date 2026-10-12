@@ -92,13 +92,29 @@ class _Priced:
         self.open = market.bars["open"].to_numpy(dtype=np.float64)
         self.sigma = costs.sigma(market.bars["close"].to_numpy(dtype=np.float64),
                                  market.gaps)
+        # Each bar's position by its ts, and each fill bar's per-unit
+        # components once computed: the same values for every order filled
+        # there, so that many subjects' orders on one market are priced once.
+        self.at = {int(t.value): k for k, t in enumerate(self.ts)}
+        self.units: dict[int, tuple[float, float, float]] = {}
+
+    def components(self, u: int) -> tuple[float, float, float]:
+        """``fee(u)``, ``half_spread(u)`` and ``slip(u)`` per unit traded."""
+        if u not in self.units:
+            m = self.market
+            inst = m.instrument
+            o = float(self.open[u])
+            ticks = spread_ticks(inst, m.calendar, m.spread_table, self.ts[u].to_pydatetime())
+            self.units[u] = (costs.fee(inst, o), costs.half_spread(inst, ticks, o),
+                             costs.slip(inst, float(self.sigma[u])))
+        return self.units[u]
 
     def fill_bar(self, order: Order) -> int:
         if not len(self.ts):
             raise ExecutionError(f"{order.instrument}: no stored bar to fill on")
         if order.decision is None:
             return 0
-        at = self.ts.get_indexer([pd.Timestamp(order.decision)])[0]
+        at = self.at.get(int(pd.Timestamp(order.decision).value), -1)
         if at < 0:
             raise ExecutionError(f"{order.instrument}: no stored bar at the decision bar "
                                  f"{pd.Timestamp(order.decision).isoformat()}")
@@ -121,13 +137,9 @@ class SimExecutor:
                 priced[order.instrument] = _Priced(bars[order.instrument])
             p = priced[order.instrument]
             m = p.market
-            inst = m.instrument
             u = p.fill_bar(order)
             o = float(p.open[u])
-            ticks = spread_ticks(inst, m.calendar, m.spread_table, p.ts[u].to_pydatetime())
-            fee = costs.fee(inst, o)
-            half = costs.half_spread(inst, ticks, o)
-            slip = costs.slip(inst, float(p.sigma[u]))
+            fee, half, slip = p.components(u)
             unit = costs.unit_cost(fee, half, slip)
             trade = order.trade
             fills.append(Fill(

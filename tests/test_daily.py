@@ -411,8 +411,10 @@ def ledgers(state) -> dict[str, tuple[bytes, int]]:
 
 
 def subjects(state, d) -> set[str]:
+    """The approaches journaled on ``d`` (the controls are journaled every day,
+    decision 64)."""
     rows = journal.read_day(state, TRACK, d)
-    return set(rows["subject"])
+    return set(rows[rows["kind"] == "approach"]["subject"])
 
 
 @pytest.fixture(scope="module")
