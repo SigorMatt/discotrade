@@ -1,11 +1,11 @@
 # CHECKPOINT
 
 Mission: 7 (`meta/BUILDER-7-PROMPT.md`), roadmap step S1.1. Closes no milestone. Base c73a695.
-Done: U0 057f9d2, U1 de2a5b2, U2 c8342c4, U3 e44866d.
+Done: U0 057f9d2, U1 de2a5b2, U2 c8342c4, U3 e44866d, U4 1fbf800.
 
-Unit in progress: U4 run-day and the paper records (decisions 2, 3, 19, 50-53, 55; DESIGN §9.3, §15.2, §16.1 steps 1-2, §16.2; I-6, I-12).
-Intent: new src/discotrade/daily.py, paper.py, cli.py run-day --day, new tests/test_daily.py, tests/test_paper.py.
-Done means: U4 gate in BUILDER-7-PROMPT met; wrong changes (re-run appending index line; lock left after failed day; paper trades counting trade > 0) seen red; check green x3; run-day --help exits 0; one commit pushed.
+Unit in progress: U5 journal recompute (decision 54; DESIGN §9.4, §15.2; I-6).
+Intent: journal.py, cli.py journal recompute --all, new tests/test_journal_recompute.py.
+Done means: U5 gate in BUILDER-7-PROMPT met; wrong changes (recompute reading stored rows; sample seeded with anything but D) seen red; check green x3; journal recompute --help exits 0; one commit pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
 (items 47-57 new, 1-46 still bind); no value of a frozen file changes (config/, existing entries
