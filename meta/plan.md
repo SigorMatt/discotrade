@@ -16,4 +16,4 @@ Carried items (REVIEW-3):
 - [x] U2 `backtest` exit 1 paths (REVIEW-3 should-fix 2; decisions 18, 21, 22, 24, 27; DESIGN §3, §6.2). — 6445223
 - [x] U3 `BarStore.last_ts` refuses as a reader (REVIEW-3 should-fix 3; decisions 5, 18, 31; DESIGN §5.2; I-5, I-6). — 9c4023b
 - [x] U4 Indicator module text (REVIEW-3 should-fix 4; decision 32; DESIGN §6.3, §13.4; I-2). — 300be21
-- [ ] U5 Final report (`meta/FINAL-REPORT-4.md`).
+- [x] U5 Final report (`meta/FINAL-REPORT-4.md`). — e740b3b
