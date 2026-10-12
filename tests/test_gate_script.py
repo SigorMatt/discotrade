@@ -32,13 +32,15 @@ def test_milestone_without_gate_tests_fails():
 
 
 def test_one_item_without_gate_tests_fails():
-    proc = run_gate("M0", "G0.2")
+    # An M1 item: M0's items gain their gate tests in mission 5 (U5 adds G0.2).
+    assert not list((REPO / "tests" / "gates").glob("test_g1_2_*.py"))
+    proc = run_gate("M1", "G1.2")
     assert proc.returncode != 0
     lines = proc.stdout.splitlines()
-    assert lines[0].startswith("G0.2 FAIL")
-    assert not any(line.startswith("G0.1") for line in lines)
-    assert lines[-1] == "gate M0 G0.2: FAIL"
-    assert "gate M0: FAIL" not in lines
+    assert lines[0].startswith("G1.2 FAIL")
+    assert not any(line.startswith("G1.1") for line in lines)
+    assert lines[-1] == "gate M1 G1.2: FAIL"
+    assert "gate M1: FAIL" not in lines
 
 
 @pytest.mark.parametrize("args", [[], ["M9"], ["M0", "G1.1"], ["M0", "G0.1", "x"]])
