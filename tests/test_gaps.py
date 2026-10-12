@@ -651,3 +651,95 @@ def test_reads_refuse_an_unlisted_file_until_bars_fetch_completes_it(tmp_path, m
     whole = (pd.Timestamp("2019-01-01", tz="UTC"), pd.Timestamp("2019-08-01", tz="UTC"))
     pd.testing.assert_frame_equal(store.read_range("SYNA", *whole),
                                   BarStore(clean, TRACK, 3600).read_range("SYNA", *whole))
+
+
+# --- an instrument with no index entry (decision 35) --------------------------------
+
+
+def _unlisted_first_append(state, tc, calendars, revised=False):
+    """SYNB, SYNC and SYND are stored and indexed; SYNA's first append crashed
+    before its index write, so its directory holds a June file the index does
+    not list. With ``revised`` the file fails decision 5's test with ``r = 0``
+    (its rows are not in increasing ``ts`` order, which the writer never
+    writes)."""
+    store = BarStore(state, TRACK, tc.track.bar_seconds)
+    for inst in tc.instruments[1:]:
+        store.append(inst.symbol, frame(all_expected(tc, calendars, inst.symbol), inst.symbol),
+                     LATE)
+    times = all_expected(tc, calendars, "SYNA", START, datetime(2019, 6, 10, tzinfo=UTC))
+    rows = frame(times, "SYNA")
+    if revised:
+        rows = rows.iloc[::-1].reset_index(drop=True)
+    path = store.month_path("SYNA", "2019-06")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows.to_parquet(path, index=False)
+    assert "SYNA" not in store.index()
+    return store
+
+
+@pytest.mark.parametrize("revised, case, other", [
+    (False, "interrupted append", "revised"), (True, "revised data point", "interrupted")])
+def test_the_gap_check_refuses_an_unlisted_file_of_an_instrument_with_no_entry(
+        tmp_path, tc, calendars, revised, case, other):
+    state = tmp_path / "state"
+    store = _unlisted_first_append(state, tc, calendars, revised)
+    syna = next(i for i in tc.instruments if i.symbol == "SYNA")
+    cal = calendars[syna.calendar]
+    for call in (lambda: find_missing(store, syna, cal, tc.track.bar_seconds),
+                 lambda: find_missing(store, syna, cal, tc.track.bar_seconds,
+                                      datetime(2019, 6, 5, tzinfo=UTC))):
+        with pytest.raises(BarStoreError, match=f"SYNA 2019-06.*{case}") as err:
+            call()
+        assert other not in str(err.value)
+    with pytest.raises(BarStoreError, match=f"SYNA 2019-06.*{case}"):
+        check_gaps(state, tc, calendars, DAY, 0.02)
+    assert gap_lines(state) == []
+
+
+@pytest.mark.parametrize("make_dir", [False, True])
+def test_the_gap_check_reports_no_stored_bar_when_the_directory_holds_no_month_file(
+        tmp_path, tc, calendars, make_dir):
+    state = tmp_path / "state"
+    store = BarStore(state, TRACK, tc.track.bar_seconds)
+    for inst in tc.instruments[1:]:
+        store.append(inst.symbol, frame(all_expected(tc, calendars, inst.symbol), inst.symbol),
+                     LATE)
+    if make_dir:
+        store.month_path("SYNA", "x").parent.mkdir(parents=True)
+    syna = next(i for i in tc.instruments if i.symbol == "SYNA")
+    assert find_missing(store, syna, calendars[syna.calendar], tc.track.bar_seconds) == []
+    report = check_gaps(state, tc, calendars, DAY, 0.02)
+    assert report.missing["SYNA"] == ()
+
+
+def test_the_gap_check_after_bars_fetch_completes_an_interrupted_first_append(
+        tmp_path, tc, calendars, monkeypatch, capsys):
+    config = _cli_config(tmp_path)
+    as_of = "2019-07-13T00:00:00+00:00"
+    state, clean = tmp_path / "state", tmp_path / "clean"
+    # The first fetch crashes before any index write: SYNA's month files are
+    # renamed into place, unlisted, and pass decision 5's test with r = 0.
+    with monkeypatch.context() as m:
+        def crash(self, index):
+            raise OSError("simulated crash before the index write")
+        m.setattr(BarStore, "_write_index", crash)
+        assert _run(state, config, as_of, "fetch") == 1
+    store = BarStore(state, TRACK, tc.track.bar_seconds)
+    assert list(store.month_path("SYNA", "x").parent.glob("*.parquet"))
+    assert not store.index_path.exists()
+    syna = next(i for i in tc.instruments if i.symbol == "SYNA")
+    for call in (lambda: find_missing(store, syna, calendars[syna.calendar],
+                                      tc.track.bar_seconds),
+                 lambda: check_gaps(state, tc, calendars, DAY, 0.02)):
+        with pytest.raises(BarStoreError, match="SYNA .*interrupted append") as err:
+            call()
+        assert "revised" not in str(err.value)
+
+    capsys.readouterr()
+    assert _run(state, config, as_of, "fetch") == 0
+    assert "store_recovered" in capsys.readouterr().out
+    assert _run(clean, config, as_of, "fetch") == 0
+    assert gap_lines(state) == gap_lines(clean)
+    got, want = (check_gaps(s, tc, calendars, DAY, 0.02) for s in (state, clean))
+    assert got == want
+    assert gap_lines(state) == gap_lines(clean)

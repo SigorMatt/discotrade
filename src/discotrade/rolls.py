@@ -29,6 +29,11 @@ The adjusted series as of bar ``t`` is the stored series up to ``t`` with,
 for every bar ``s``, the sum of the gaps of the rolls after ``s`` and not
 after ``t`` added to its four prices. Its last bar is raw, and volume is
 never adjusted.
+
+``update_rolls`` and ``adjusted_as_of`` find an instrument with no index
+entry to have no stored bar only when its directory holds no month file;
+otherwise they refuse with the reader's error, interrupted append or revised
+data point (decision 2026-10-12 35).
 """
 
 from __future__ import annotations
@@ -138,7 +143,7 @@ def update_rolls(state_dir: Path, track: str, bar_seconds: int, instrument: Inst
     notice, dated ``day``, per estimated gap."""
     symbol = instrument.symbol
     store = BarStore(Path(state_dir), track, bar_seconds)
-    entry = store.index().get(symbol)
+    entry = store.index_entry(symbol)   # refuses an unlisted file (decision 35)
     if entry is None:
         return (), ()
     path = roll_path(state_dir, track, symbol)
@@ -192,7 +197,7 @@ def adjusted_as_of(state_dir: Path, track: str, bar_seconds: int, symbol: str,
     """The adjusted series as of bar ``t`` of the stored bars of ``symbol`` from
     ``start`` (default: the first stored bar)."""
     store = BarStore(Path(state_dir), track, bar_seconds)
-    entry = store.index().get(symbol)
+    entry = store.index_entry(symbol)   # refuses an unlisted file (decision 35)
     if entry is None:
         raise BarStoreError(f"{symbol}: no stored bar")
     lo = _stamp(entry["first_ts"]) if start is None else _stamp(start)

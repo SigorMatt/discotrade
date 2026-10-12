@@ -16,7 +16,10 @@ track's instrument order and then in time order; a bar already in the file is
 not written again, so re-running the check writes nothing new. The append is
 atomic (decision 4): the whole file is written beside the old one with every
 earlier line byte-identical, ``fsync``-ed and renamed into place. Missing
-bars are never filled in.
+bars are never filled in. An instrument with no index entry has no stored
+bar only when its directory holds no month file; otherwise the check refuses
+with the reader's error, interrupted append or revised data point (decision
+2026-10-12 35).
 
 For a window (W or T of DESIGN 4.1) the gap fraction is the missing bars over
 the expected bars, pooled across the track's instruments, where an
@@ -112,7 +115,7 @@ def _span(store: BarStore, inst: Instrument, bar_seconds: int, cal: Calendar,
           until: datetime | None) -> tuple[list[datetime], set[datetime]]:
     """The expected bar times of the instrument's checked span, bounded by
     ``until`` (exclusive) when given, and its stored times."""
-    entry = store.index().get(inst.symbol)
+    entry = store.index_entry(inst.symbol)   # refuses an unlisted file (decision 35)
     if entry is None:
         return [], set()
     first = datetime.fromisoformat(entry["first_ts"]).astimezone(UTC)

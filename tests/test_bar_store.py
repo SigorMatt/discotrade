@@ -5,7 +5,6 @@ judged against ``available_until``, computed here from a ``FixedClock`` the
 way the synthetic source does (``available_until(now) = now``, DESIGN 5.5).
 """
 
-import inspect
 import io
 import json
 import os
@@ -653,23 +652,33 @@ def test_last_ts_after_bars_fetch_completes_an_interrupted_append(tmp_path, monk
     assert BarStore(state, "test_null", HOUR).last_ts("SYNB") == written_last
 
 
-# Every public method of BarStore is either a reader of bars, which refuses an
-# unlisted or mismatched month file (decision 18 and 31), or a method that does
-# not read bars: a writer, recovery, a path or the raw index. A method added
-# later fails the test below until it is classified here.
+# Every public name of BarStore, whatever its kind (method, property, class or
+# static method, plain attribute of the class or of an instance), is either a
+# reader of bars, which refuses an unlisted or mismatched month file (decisions
+# 18, 31 and 35), or a name that does not read bars: a writer, recovery, a path,
+# the raw index or a plain value. A reader written as a property is a reader
+# (decision 34). A name added later fails the test below until it is
+# classified here.
 READER_ARGS = {
     "read_range": (_ts("2026-03-30"), _ts("2026-03-31")),
     "last_n": (_ts("2026-03-30 05:00"), 3),
     "last_ts": (),
+    "index_entry": (),
 }
-NOT_READERS = {"append", "recover", "month_path", "index"}
+NOT_READERS = {"append", "recover", "month_path", "index",
+               "root", "bar_seconds", "index_path", "notices"}
 
 
-def test_every_public_bar_store_method_is_classified():
-    public = {name for name, value in inspect.getmembers(BarStore)
-              if not name.startswith("_") and callable(value)}
+def _public_names(tmp_path):
+    names = {name for klass in BarStore.__mro__ if klass is not object
+             for name in vars(klass) if not name.startswith("_")}
+    instance = BarStore(tmp_path / "state", "hourly", HOUR)
+    return names | {name for name in vars(instance) if not name.startswith("_")}
+
+
+def test_every_public_bar_store_name_is_classified(tmp_path):
     assert not set(READER_ARGS) & NOT_READERS
-    assert public == set(READER_ARGS) | NOT_READERS
+    assert _public_names(tmp_path) == set(READER_ARGS) | NOT_READERS
 
 
 @pytest.mark.parametrize("setup, case", [(_unlisted_interrupted, "interrupted append"),
@@ -679,3 +688,39 @@ def test_every_reader_refuses_an_unlisted_month_file(store, method, setup, case)
     setup(store)
     with pytest.raises(BarStoreError, match=f"2026-04.*{case}"):
         getattr(store, method)(SYM, *READER_ARGS[method])
+
+
+# --- an instrument with no index entry (decision 35) --------------------------------
+
+
+def unlisted_first_append(store, symbol=SYM, revised=False):
+    """A first append of ``symbol`` that crashed before its index write: its
+    directory holds a month file and the index has no entry for it. With
+    ``revised`` the file fails decision 5's test with ``r = 0`` (its rows are
+    not in increasing ``ts`` order, which the writer never writes)."""
+    rows = bars("2026-04-01 00:00", 5)
+    if revised:
+        rows = rows.iloc[::-1].reset_index(drop=True)
+    path = store.month_path(symbol, "2026-04")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows.to_parquet(path, index=False)
+    return rows
+
+
+@pytest.mark.parametrize("revised, case, other", [
+    (False, "interrupted append", "revised"), (True, "revised data point", "interrupted")])
+def test_index_entry_refuses_an_unlisted_file_of_an_instrument_with_no_entry(
+        store, revised, case, other):
+    store.append("SYNB", bars("2026-03-30 00:00", 3), LATE)
+    unlisted_first_append(store, revised=revised)
+    with pytest.raises(BarStoreError, match=f"2026-04.*{case}") as err:
+        store.index_entry(SYM)
+    assert other not in str(err.value)
+
+
+def test_index_entry_is_none_only_when_the_directory_holds_no_month_file(store):
+    assert store.index_entry(SYM) is None
+    store.month_path(SYM, "x").parent.mkdir(parents=True)
+    assert store.index_entry(SYM) is None
+    store.append(SYM, bars("2026-03-30 00:00", 3), LATE)
+    assert store.index_entry(SYM) == store.index()[SYM]

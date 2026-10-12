@@ -20,7 +20,7 @@ import pandas as pd
 import pytest
 
 import discotrade.sources as sources
-from discotrade.bars.store import BarStore
+from discotrade.bars.store import BarStore, BarStoreError
 from discotrade.cli import REPO_ROOT, main
 from discotrade.config import load_calendar, load_instrument
 from discotrade.rolls import (
@@ -364,3 +364,96 @@ def test_bars_fetch_prints_the_estimated_gap_notice(tmp_path, config, source, mo
     assert any(ln.startswith("roll SYNA ") and ln.endswith("(estimated)")
                for ln in out.splitlines())
     assert read_rolls(roll_path(state, TRACK, "SYNA"))[0].estimated is True
+
+
+# --- an instrument with no index entry (decision 35) --------------------------------
+
+
+def _unlisted_first_append(state, first_roll, revised=False):
+    """SYNA's first append crashed before its index write: its directory holds
+    month files (January to March, through its first roll) the index does not
+    list. With ``revised`` the March file fails decision 5's test with
+    ``r = 0`` (its rows are not in increasing ``ts`` order, which the writer
+    never writes)."""
+    syna, _ = first_roll
+    store = BarStore(state, TRACK, HOUR)
+    months = syna["ts"].dt.strftime("%Y-%m")
+    for month in sorted(months.unique()):
+        rows = syna[months == month].reset_index(drop=True)
+        if revised and month == "2019-03":
+            rows = rows.iloc[::-1].reset_index(drop=True)
+        path = store.month_path("SYNA", month)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        rows.to_parquet(path, index=False)
+    assert "SYNA" not in store.index()
+    return store
+
+
+@pytest.mark.parametrize("revised, case, other", [
+    (False, "interrupted append", "revised"), (True, "revised data point", "interrupted")])
+def test_update_rolls_and_adjusted_as_of_refuse_an_unlisted_file_with_no_entry(
+        tmp_path, source, first_roll, revised, case, other):
+    syna, u = first_roll
+    _unlisted_first_append(tmp_path, first_roll, revised)
+    month = "2019-03" if revised else "2019-01"
+    for call in (lambda: update_rolls(tmp_path, TRACK, HOUR, inst("SYNA"), source,
+                                      date(2019, 3, 31)),
+                 lambda: adjusted_as_of(tmp_path, TRACK, HOUR, "SYNA", syna["ts"].iloc[u]),
+                 lambda: adjusted_as_of(tmp_path, TRACK, HOUR, "SYNA", syna["ts"].iloc[u],
+                                        start=syna["ts"].iloc[0])):
+        with pytest.raises(BarStoreError, match=f"SYNA .*{month}.*{case}") as err:
+            call()
+        assert other not in str(err.value)
+    assert not roll_path(tmp_path, TRACK, "SYNA").exists()
+
+
+@pytest.mark.parametrize("make_dir", [False, True])
+def test_with_no_month_file_update_rolls_and_adjusted_as_of_report_no_stored_bar(
+        tmp_path, source, make_dir):
+    store = BarStore(tmp_path, TRACK, HOUR)
+    if make_dir:
+        store.month_path("SYNA", "x").parent.mkdir(parents=True)
+    assert update_rolls(tmp_path, TRACK, HOUR, inst("SYNA"), source, date(2019, 3, 31)) == (
+        (), ())
+    with pytest.raises(BarStoreError, match="SYNA: no stored bar"):
+        adjusted_as_of(tmp_path, TRACK, HOUR, "SYNA", START)
+
+
+def test_rolls_after_bars_fetch_completes_an_interrupted_first_append(
+        tmp_path, config, source, monkeypatch, capsys):
+    as_of = "2019-04-01T00:00:00+00:00"
+    state, clean = tmp_path / "state", tmp_path / "clean"
+    # The first fetch crashes before any index write: SYNA's month files are
+    # renamed into place, unlisted, and pass decision 5's test with r = 0.
+    with monkeypatch.context() as m:
+        def crash(self, index):
+            raise OSError("simulated crash before the index write")
+        m.setattr(BarStore, "_write_index", crash)
+        assert fetch(state, config, as_of) == 1
+    store = BarStore(state, TRACK, HOUR)
+    assert list(store.month_path("SYNA", "x").parent.glob("*.parquet"))
+    assert not store.index_path.exists()
+    t = pd.Timestamp(read_parquet_last(store))
+    for call in (lambda: update_rolls(state, TRACK, HOUR, inst("SYNA"), source,
+                                      date(2019, 3, 31)),
+                 lambda: adjusted_as_of(state, TRACK, HOUR, "SYNA", t)):
+        with pytest.raises(BarStoreError, match="SYNA .*interrupted append") as err:
+            call()
+        assert "revised" not in str(err.value)
+    assert roll_lines(state) == b""
+
+    capsys.readouterr()
+    assert fetch(state, config, as_of) == 0
+    assert "store_recovered" in capsys.readouterr().out
+    assert fetch(clean, config, as_of) == 0
+    assert roll_lines(state) == roll_lines(clean) != b""
+    for s in (state, clean):
+        assert update_rolls(s, TRACK, HOUR, inst("SYNA"), source, date(2019, 3, 31)) == ((), ())
+    pd.testing.assert_frame_equal(adjusted_as_of(state, TRACK, HOUR, "SYNA", t),
+                                  adjusted_as_of(clean, TRACK, HOUR, "SYNA", t))
+    assert roll_lines(state) == roll_lines(clean)
+
+
+def read_parquet_last(store):
+    files = sorted(store.month_path("SYNA", "x").parent.glob("*.parquet"))
+    return pd.read_parquet(files[-1])["ts"].iloc[-1]

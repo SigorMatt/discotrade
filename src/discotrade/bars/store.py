@@ -35,11 +35,12 @@ changes no row, and returns one ``store_recovered`` health notice (DESIGN
 The writer runs it before every append and keeps the notices in
 ``notices`` for its caller. The reader does not repair: it refuses both
 cases, with an error that says which. Every read of an instrument
-(``read_range``, ``last_n`` and ``last_ts``, decision 2026-10-12 31) first
-refuses when the instrument's directory holds a month file the index does
-not list, whatever range it asks for (decision 2026-10-12 18): an unlisted
-file may be an interrupted append into a new month, which a read would
-otherwise silently leave out. The writer and ``bars fetch`` read the indexed
+(``read_range``, ``last_n``, ``last_ts``, decision 2026-10-12 31, and
+``index_entry``, decision 2026-10-12 35) first refuses when the
+instrument's directory holds a month file the index does not list,
+whatever range it asks for (decision 2026-10-12 18): an unlisted file may be
+an interrupted append into a new month, which a read would otherwise
+silently leave out. The writer and ``bars fetch`` read the indexed
 last ``ts`` through ``_indexed_last_ts``, which does not refuse. The date of a
 notice is the caller's ``day``; inside ``append`` it is the UTC date of
 ``available_until``.
@@ -147,6 +148,18 @@ class BarStore:
         if not self.index_path.exists():
             return {}
         return json.loads(self.index_path.read_text(encoding="utf-8"))
+
+    def index_entry(self, symbol: str) -> dict[str, Any] | None:
+        """The index entry of ``symbol``, or None when nothing is stored.
+
+        A reader entry point for code that consults the index before it reads
+        (decision 2026-10-12 35): it refuses, as ``read_range`` does and with
+        the same errors, when the instrument's directory holds a month file the
+        index does not list, so None means the directory holds no month file
+        and the index has no entry. A listed file is checked against its hash
+        by the read that follows."""
+        self._months(symbol)
+        return self.index().get(symbol)
 
     def last_ts(self, symbol: str) -> pd.Timestamp | None:
         """The last stored ``ts`` of ``symbol``, or None when none is stored.
