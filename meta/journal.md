@@ -28,3 +28,4 @@
 - 2026-10-12 mission 3 U4 done 3c24e5f: costs c1 (fee, half_spread, sigma, roll_cost), config hash, SimExecutor with Order/Fill, decision-25 rows; spread_table optional in evaluate, carried to U6.
 - 2026-10-12 mission 3 U5 done 8cfd390: metrics.py (daily series per decision 23, §8 metrics, NaN-safe comparisons), backtest.daily; 252 and 1e-9 are DESIGN §8 formula constants.
 - 2026-10-12 mission 3 U6 done efb2b93: three reference strategies, backtest command (json, exit codes, spread tables loaded). Acceptance run by orchestrator: check green (2m50s), config check ok, gate M0 FAIL exit 1, gate M0 G0.3 FAIL, config/ unchanged since ef2e9f1, no tests/gates, backtest of each reference file on test_mixed exits 0.
+- 2026-10-12 mission 3 U7 done a3cd937: final report, HF-006 filed; mission finished.
