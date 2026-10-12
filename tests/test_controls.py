@@ -404,7 +404,8 @@ def test_the_controls_rows_are_the_modules_evaluation_of_their_targets(month, se
 def test_the_paper_records_hold_the_controls_clean(month):
     state, _ = month
     stored = paper.read(state, TRACK)
-    ctrl = stored[stored["kind"] != "approach"]
+    # Decision 69: the paper file also holds the portfolio rows (kind portfolio).
+    ctrl = stored[~stored["kind"].isin(["approach", "portfolio"])]
     assert set(ctrl["subject"]) == {f"bh:{s}" for s in SYMBOLS} | \
         {f"rc:{k}" for k in range(POOL)}
     assert ctrl["clean"].all()

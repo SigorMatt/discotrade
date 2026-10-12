@@ -1,8 +1,10 @@
-"""The statistical safeguards (DESIGN 11.1 to 11.4, 8, 9.3; decisions
-2026-10-12 30, 59, 60, 61; I-3).
+"""The statistical safeguards (DESIGN 11.1 to 11.4, 8, 9.3, 16.1 step 6;
+decisions 2026-10-12 30, 59, 60, 61, 62, 69, 70; I-3, I-5, I-6).
 
 Every function reads paper records only (a frame with ``paper.COLUMNS``),
-never W or T (I-3).
+never W or T (I-3). The control moments take ``control_random`` rows only and
+rank persistence the subjects it is given, so neither takes a ``portfolio``
+row (decision 69).
 
 Rank persistence (11.1, decision 59):
 
@@ -23,6 +25,19 @@ Rank persistence (11.1, decision 59):
   ``previous_first``, ``previous_last`` (block ``k - 1``), dates in ISO form,
   ``subjects`` (sorted), ``size`` and ``statistic`` (the design names the
   contents, not the keys; these are the simplest names).
+- ``due_blocks(epoch, block_days, first_day, day, done)``: decision 70's
+  blocks for a new day ``day``: every ``k >= 1`` whose last calendar day is on
+  or before ``day``, whose block ``k - 1`` starts on or after ``first_day``
+  (the state's first journaled day) and that is not in ``done`` (the blocks
+  with a row), ascending.
+- ``read_rank_rows(state_dir, track, into=None)`` and
+  ``append_rank_rows(state_dir, track, rows, into=None)``: the rows of
+  ``stats/<track>/rank_persistence.jsonl``, appended under decision 62's
+  rules (``ledger.line``: keys sorted, one object per line; the whole file
+  written atomically beside the old one, every earlier line byte-identical; a
+  line already present not appended; a torn last line refused; with ``into``,
+  the staging directory, read from it when staged there and written under it
+  only).
 - ``average_ranks(values)`` and ``spearman(x, y)``: the Pearson correlation
   of the ranks, ties taking the average rank; ``None`` when either rank
   series has zero deviation (every rank equal) or there are fewer than two
@@ -52,16 +67,20 @@ Clean and exposed observations (11.3, decision 61):
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, timedelta
+from pathlib import Path
 from statistics import NormalDist
 from typing import Any
 
 import numpy as np
 import pandas as pd
 
+from discotrade import ledger
 from discotrade.bars.gaps import day_end
+from discotrade.bars.store import write_atomic
 from discotrade.config import Calendar
 from discotrade.metrics import sharpe
 from discotrade.tradingcal import expected_bars
@@ -69,6 +88,8 @@ from discotrade.tradingcal import expected_bars
 #: The Euler-Mascheroni constant of the E(N) formula (decision 60).
 EULER_GAMMA = 0.5772156649015329
 CONTROL_RANDOM = "control_random"
+STATS_DIR = "stats"
+RANK_FILE = "rank_persistence.jsonl"
 _NORMAL = NormalDist()
 
 
@@ -98,6 +119,60 @@ def trading_dates(calendars: Iterable[Calendar], bar_seconds: int, first: date,
                 break
         d += timedelta(days=1)
     return out
+
+
+def due_blocks(epoch: date, block_days: int, first_day: date, day: date,
+               done: Iterable[int]) -> list[int]:
+    """Decision 70's blocks to append on the new day ``day``, ascending."""
+    if block_days < 1:
+        raise ValueError(f"a block of {block_days} days is not a block")
+    last = ((day - epoch).days + 1) // block_days - 1       # last day of k <= day
+    lo = max(1, -(-(first_day - epoch).days // block_days) + 1)   # k - 1 starts >= first
+    held = set(done)
+    return [k for k in range(lo, last + 1) if k not in held]
+
+
+def rank_path(root: Path, track: str) -> Path:
+    return Path(root) / STATS_DIR / track / RANK_FILE
+
+
+def _rank_bytes(path: Path) -> bytes:
+    data = path.read_bytes() if path.exists() else b""
+    if data and not data.endswith(b"\n"):
+        raise ledger.LedgerError(f"{path} does not end with a newline; its last line is torn")
+    return data
+
+
+def read_rank_rows(state_dir: Path, track: str, into: Path | None = None
+                   ) -> list[dict[str, Any]]:
+    """The rows of the rank-persistence file, in file order (from ``into``
+    when staged there)."""
+    path = rank_path(state_dir, track)
+    if into is not None and rank_path(into, track).exists():
+        path = rank_path(into, track)
+    return [json.loads(x) for x in _rank_bytes(path).decode("utf-8").splitlines()]
+
+
+def append_rank_rows(state_dir: Path, track: str, rows: Iterable[Mapping[str, Any]],
+                     into: Path | None = None) -> list[Mapping[str, Any]]:
+    """Append each row whose line the file does not hold; return those appended."""
+    source = rank_path(state_dir, track)
+    target = source if into is None else rank_path(into, track)
+    old = _rank_bytes(target if target.exists() else source)
+    present = set(old.decode("utf-8").splitlines())
+    appended: list[Mapping[str, Any]] = []
+    lines: list[str] = []
+    for row in rows:
+        text = ledger.line(row)
+        if text in present:
+            continue
+        present.add(text)
+        appended.append(row)
+        lines.append(text + "\n")
+    if lines:
+        data = old + "".join(lines).encode("utf-8")
+        write_atomic(target, lambda p: p.write_bytes(data))
+    return appended
 
 
 def average_ranks(values: Sequence[float]) -> np.ndarray:
@@ -137,7 +212,9 @@ def rank_persistence(paper: pd.DataFrame, subjects: Mapping[str, Sequence[Calend
     prev = block_dates(epoch, block_days, k - 1)
     cur = block_dates(epoch, block_days, k)
     held: dict[str, dict[date, float]] = {}
-    for subject, mine in paper.groupby("subject", sort=True):
+    span = paper[paper["subject"].isin(list(subjects)) & (paper["date"] >= prev[0])
+                 & (paper["date"] <= cur[1])]
+    for subject, mine in span.groupby("subject", sort=True):
         held[str(subject)] = {d: float(x) for d, x in zip(mine["date"], mine["net_1x"],
                                                           strict=True)}
     members, sums_prev, sums_cur = [], [], []

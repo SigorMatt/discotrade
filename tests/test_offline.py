@@ -387,6 +387,7 @@ SUBPROCESS_FILES = {
     "tests/test_daily.py": "git on local state directories, GIT_ALLOW_PROTOCOL=file",
     "tests/test_gate_script.py": "./scripts/gate; scratch pytest runs of tests/conftest.py",
     "tests/test_offline.py": "a scratch pytest run of tests/conftest.py",
+    "tests/test_rank_daily.py": "git on local state directories, GIT_ALLOW_PROTOCOL=file",
     "tests/test_replay.py": "git on local state directories, GIT_ALLOW_PROTOCOL=file",
     "tests/test_state.py": "git on a local state directory, GIT_ALLOW_PROTOCOL=file",
     "tests/test_vendor.py": "python -c snippets the test writes",

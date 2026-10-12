@@ -269,5 +269,6 @@ def test_the_clean_column_follows_each_approachs_recorded_cutoff(ran, setup, tmp
     assert stats.clean_counts(rebuilt, aid) == (sum(d > cutoff for d in mine["date"]),
                                                 sum(d <= cutoff for d in mine["date"]))
     assert 0 < stats.clean_counts(rebuilt, aid)[0] < len(mine)
-    other = rebuilt[rebuilt["subject"] != aid]
+    # Decision 69: a portfolio row is clean only when every member's row is.
+    other = rebuilt[(rebuilt["subject"] != aid) & (rebuilt["subject"] != "portfolio")]
     assert other["clean"].all()

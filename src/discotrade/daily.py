@@ -1,5 +1,6 @@
-"""The daily run, steps 1 and 2 (DESIGN 16.1, 16.2, 5.4, 5.6, 9.2, 9.3, 15.2;
-decisions 2026-10-12 2, 3, 19, 50 to 53, 55; I-5, I-6, I-12, I-14).
+"""The daily run, steps 1, 2 and the rank persistence of step 6 (DESIGN 16.1,
+16.2, 5.4, 5.6, 9.2, 9.3, 10.5, 11.1, 15.2; decisions 2026-10-12 2, 3, 19, 50
+to 53, 55, 59, 62, 69, 70; I-5, I-6, I-12, I-14).
 
 ``run_day(state_dir, config_dir, track, clock, day=None)`` processes one
 trading day ``D`` of the track in a state directory ``init-state`` made
@@ -36,13 +37,22 @@ releasing it on success and on failure:
   the controls of decision 64, with a new draw's line of
   ``controls/<track>/pools.jsonl``) into the staging
   directory ``state.STAGING``, and, when the day is new, the paper records
-  with the staged day's records added (``paper.update``, equal to a rebuild
-  from the whole journal; mission 9 U3); then the
+  with the staged day's records and its two portfolio rows (decision 69,
+  members from the lifecycle rows dated before ``D``) added (``paper.update``,
+  equal to a rebuild from the whole journal; mission 9 U3); then the
   lifecycle's steps 1 to 4 (DESIGN 10.3; decision 63; ``lifecycle.run_steps``)
   on those paper records (the stored ones on a re-run), their rows appended
   to ``ledger/<track>/lifecycle.jsonl`` in the staging directory (decision
   62). An approach whose evaluation breaks decision 22's contract has its rows
-  of ``D`` dropped and is retired by step 1; the day goes on. Only when all of
+  of ``D`` dropped and is retired by step 1; the day goes on. Then, when the
+  day is new, rank persistence (decision 70): for each block of
+  ``stats.due_blocks`` (its last calendar day on or before ``D``, its previous
+  block starting on or after the first journaled day, no row yet), in
+  ascending order, decision 59's row over the approaches whose state after
+  ``D``'s steps is ``live`` or ``dormant`` (each on the track's basket, with
+  ``alerts.rank_min_population``) is appended to
+  ``stats/<track>/rank_persistence.jsonl`` in the staging directory
+  (``stats.append_rank_rows``); a re-run computes none. Only when all of
   this has succeeded are the staged files moved into place (``os.replace``,
   in path order) and the state committed as ``run <track> <D>``
   (``state.commit``; no commit when nothing was moved). A re-run whose rows
@@ -77,7 +87,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from discotrade import journal, ledger, lifecycle, paper, sources, state
+from discotrade import journal, ledger, lifecycle, paper, sources, state, stats
 from discotrade.bars.gaps import check_gaps, day_end, latest_closed_day
 from discotrade.bars.store import BarStore, BarStoreError, finite_rows
 from discotrade.clock import Clock
@@ -225,6 +235,29 @@ def _move(staging: Path, state_dir: Path) -> list[str]:
     return moved
 
 
+def _rank_persistence(state_dir: Path, setup: journal.Setup, day: date, first: date,
+                      records: pd.DataFrame, staging: Path) -> list[Mapping[str, object]]:
+    """Decision 70's rows of the new day ``day``, appended in ``staging``."""
+    track = setup.track
+    done = {int(row["block"]) for row in stats.read_rank_rows(state_dir, track.name,
+                                                              into=staging)}
+    blocks = stats.due_blocks(track.epoch, track.block_days, first, day, done)
+    if not blocks:
+        return []
+    rows = ledger.read(state_dir, track.name, ledger.LIFECYCLE, into=staging)
+    after = lifecycle.states(rows, state.read_approaches(state_dir), day + timedelta(days=1))
+    basket = [setup.calendars[inst.calendar] for inst in setup.instruments]
+    population = {aid: basket for aid, s in after.items()
+                  if s.state in (lifecycle.LIVE, lifecycle.DORMANT)}
+    out = [stats.rank_persistence(records, population, epoch=track.epoch,
+                                  block_days=track.block_days, bar_seconds=track.bar_seconds,
+                                  k=k,
+                                  min_population=int(
+                                      setup.thresholds["alerts.rank_min_population"]))
+           for k in blocks]
+    return stats.append_rank_rows(state_dir, track.name, out, into=staging)
+
+
 def run_day(state_dir: Path, config_dir: Path, track: str, clock: Clock,
             day: date | None = None) -> DayRun:
     """Run steps 1 and 2 of ``day`` (or decision 19's ``D``) and commit it."""
@@ -282,6 +315,8 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
             records = paper.read(state_dir, track)
         changes = lifecycle.run_steps(state_dir, setup, d, records, dict(result.failures),
                                       into=staging)
+        if result.status == journal.WRITTEN:
+            _rank_persistence(state_dir, setup, d, min(journaled | {d}), records, staging)
         moved = _move(staging, state_dir)
     except BarStoreError as exc:
         if _REVISED in str(exc):
