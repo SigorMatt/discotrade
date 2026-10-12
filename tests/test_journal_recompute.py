@@ -24,7 +24,7 @@ import pytest
 
 from discotrade import journal
 from discotrade.cli import REPO_ROOT, main
-from discotrade.state import LOCK, read_approaches, write_approach
+from discotrade.state import LOCK, canonical_json, content_hash, read_approaches, write_approach
 from discotrade.strategy import load_strategy_file
 
 FIXTURE_CONFIG = REPO_ROOT / "tests" / "fixtures" / "config"
@@ -179,6 +179,62 @@ def test_one_changed_field_exits_1_prints_the_pair_and_appends_one_journal_misma
     assert (event["kind"], event["level"], event["date"], event["subject"]) == \
         ("journal_mismatch", "alert", changed.isoformat(), subject)
     assert files(journal_dir) == before
+    assert not (state / LOCK).exists()
+
+
+def test_a_changed_stored_target_next_chained_into_the_next_day_reports_both_days(
+        state, config, setup, subjects, capsys):
+    # Decision 58 (b): the stored journal is what a journal chained through a changed
+    # target_next of D1 would hold. A recompute evaluated once from the subject's first
+    # journaled day (decision 54) reports D1 and D2; one that started D2 from the stored
+    # target_next of D1 would find D2 equal.
+    d1, d2 = DAYS[2], DAYS[3]          # 06-10 and the next journaled day 06-11; 5 days in all
+    subject, symbol, moved = subjects[0], "SYNA", 0.0
+    track_dir = state / "journal"
+
+    path1 = journal.journal_path(state, TRACK, d1)
+    rows1 = pd.read_parquet(path1)
+    mine = rows1.index[(rows1["subject"] == subject) & (rows1["instrument"] == symbol)]
+    last = rows1.loc[mine, "ts"].idxmax()
+    assert rows1.loc[last, "target_next"] == 1.0
+    rows1.loc[last, "target_next"] = moved
+    rows1.to_parquet(path1, index=False, engine="pyarrow")
+
+    # D2's rows of that subject as the journaling function computes them from the changed D1.
+    path2 = journal.journal_path(state, TRACK, d2)
+    stored2 = pd.read_parquet(path2)
+    chained = journal.day_rows(state, setup, d2)
+    chained = chained[chained["subject"] == subject]
+    first = chained[chained["instrument"] == symbol].sort_values("ts").iloc[0]
+    was = stored2[(stored2["subject"] == subject) & (stored2["instrument"] == symbol)]
+    assert (first["prev_position"], first["position"]) == (1.0, moved)
+    assert was.sort_values("ts").iloc[0]["position"] == 1.0   # the change moves the position
+    rows2 = journal._frame(pd.concat([stored2[stored2["subject"] != subject], chained],
+                                     ignore_index=True))
+    rows2.to_parquet(path2, index=False, engine="pyarrow")
+    index = journal.index_path(state, TRACK)
+    lines = index.read_text(encoding="utf-8").splitlines(keepends=True)
+    at = [k for k, line in enumerate(lines) if json.loads(line)["date"] == d2.isoformat()]
+    assert len(at) == 1
+    entry = json.loads(lines[at[0]])
+    entry.update(rows=len(rows2), content_hash=content_hash(rows2, journal.KEY))
+    lines[at[0]] = canonical_json(entry) + "\n"
+    index.write_text("".join(lines), encoding="utf-8")
+    assert len(journal.read_index(state, TRACK)) == len(DAYS) >= 3
+    before, log = files(track_dir), health(state)
+
+    assert recompute(state, config, "--all") == 1
+    out = capsys.readouterr().out
+    wrong = {(d1.isoformat(), subject), (d2.isoformat(), subject)}
+    assert pairs_printed(out) == [("MISMATCH" if (d, s) in wrong else "equal", d, s)
+                                  for d, s in every_pair(subjects)]
+    after = health(state)
+    assert after[:len(log)] == log and len(after) == len(log) + 2
+    events = [json.loads(line) for line in after[len(log):]]
+    assert [(e["kind"], e["date"], e["subject"]) for e in events] == \
+        [("journal_mismatch", d1.isoformat(), subject),
+         ("journal_mismatch", d2.isoformat(), subject)]
+    assert files(track_dir) == before
     assert not (state / LOCK).exists()
 
 

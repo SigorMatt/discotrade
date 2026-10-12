@@ -4,7 +4,10 @@ Decision 47 of meta/decisions/decisions-2026-10-12.md (I-11): from the start of
 the session every network connection fails with ``SocketBlocked``, in module-
 and session-scoped fixtures as well as in tests, and through ``_socket`` used
 directly as well as through ``socket``; a test marked ``network`` or ``live`` is
-left alone while it runs. Every file under tests/ and src/ whose text contains
+left alone while it runs. Decision 58 adds ``sendmsg`` with an address on a
+socket that is not ``AF_UNIX`` and the lookups ``gethostbyname``,
+``gethostbyname_ex``, ``gethostbyaddr`` and ``getnameinfo`` to what fails, in
+the same scopes and through both modules. Every file under tests/ and src/ whose text contains
 ``subprocess`` or ``os.system`` is named in ``SUBPROCESS_FILES`` with what it
 launches, so that a new call is classified when it is added.
 """
@@ -102,6 +105,136 @@ def test__socket_unix_domain_stays_open(tmp_path):
             raw.close()
 
 
+# --- sendmsg with an address and the name lookups (decision 58) ------------------------
+
+#: Each guarded name lookup with an argument that needs no resolver (a numeric
+#: loopback address), so that even an unguarded call sends no query.
+LOOKUPS = {
+    "gethostbyname": ("127.0.0.1",),
+    "gethostbyname_ex": ("127.0.0.1",),
+    "gethostbyaddr": ("127.0.0.1",),
+    "getnameinfo": (("127.0.0.1", 9), socket.NI_NUMERICHOST | socket.NI_NUMERICSERV),
+}
+
+
+def _paths() -> dict[str, object]:
+    """Try ``sendmsg`` with an address on an AF_INET datagram socket made through
+    ``socket`` and through ``_socket``, and each lookup of ``LOOKUPS`` through both
+    modules; what each raised (None when it returned), and under ``"received"``
+    whatever the loopback receiver got (None when nothing arrived)."""
+    import _socket
+    out: dict[str, object] = {}
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as receiver:
+        receiver.bind(("127.0.0.1", 0))
+        receiver.setblocking(False)
+        address = receiver.getsockname()
+        for module in (socket, _socket):
+            sender = module.socket(module.AF_INET, module.SOCK_DGRAM)
+            try:
+                sender.sendmsg([b"x"], [], 0, address)
+                out[f"{module.__name__}.sendmsg"] = None
+            except Exception as exc:  # noqa: BLE001 - the test inspects what was raised
+                out[f"{module.__name__}.sendmsg"] = exc
+            finally:
+                sender.close()
+        try:
+            out["received"] = receiver.recv(16)
+        except BlockingIOError:
+            out["received"] = None
+    for module in (socket, _socket):
+        for name, args in LOOKUPS.items():
+            try:
+                getattr(module, name)(*args)
+                out[f"{module.__name__}.{name}"] = None
+            except Exception as exc:  # noqa: BLE001
+                out[f"{module.__name__}.{name}"] = exc
+    return out
+
+
+PATHS = [f"{m}.{n}" for m in ("socket", "_socket") for n in ("sendmsg", *LOOKUPS)]
+
+
+def _all_blocked(found: dict[str, object]) -> None:
+    assert found["received"] is None, found["received"]
+    for path in PATHS:
+        assert isinstance(found[path], SocketBlocked), (path, found[path])
+        assert "socket backstop" in str(found[path]), path
+
+
+@pytest.fixture(scope="module")
+def module_paths():
+    return _paths()
+
+
+@pytest.fixture(scope="session")
+def session_paths():
+    return _paths()
+
+
+def test_sendmsg_with_an_address_and_the_lookups_fail_in_a_test():
+    _all_blocked(_paths())
+
+
+def test_sendmsg_with_an_address_and_the_lookups_fail_in_a_module_scoped_fixture(
+        module_paths):
+    _all_blocked(module_paths)
+
+
+def test_sendmsg_with_an_address_and_the_lookups_fail_in_a_session_scoped_fixture(
+        session_paths):
+    _all_blocked(session_paths)
+
+
+@pytest.mark.parametrize("module_name", ["socket", "_socket"])
+@pytest.mark.parametrize("name", ["getaddrinfo", *LOOKUPS])
+def test_a_lookup_is_refused_before_the_real_function_runs(monkeypatch, module_name, name):
+    # The backstop is put back around a spy standing for the real lookup: the spy
+    # is never called, so no query leaves the process.
+    import _socket
+
+    import conftest
+    module = {"socket": socket, "_socket": _socket}[module_name]
+    calls = []
+
+    def spy(*args, **kw):
+        calls.append(args)
+        return None
+
+    conftest.uninstall_backstop()
+    try:
+        monkeypatch.setattr(module, name, spy)
+        conftest.install_backstop()
+        with pytest.raises(SocketBlocked, match="socket backstop"):
+            getattr(module, name)("127.0.0.1", 9)
+        assert calls == []
+    finally:
+        conftest.uninstall_backstop()
+        monkeypatch.undo()
+        conftest.install_backstop()
+    assert getattr(module, name) is not spy
+
+
+def test_sendmsg_without_an_address_on_an_unconnected_socket_is_the_os_error():
+    # Only a sendmsg given an address is guarded; one without has nowhere to go.
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sender:
+        with pytest.raises(OSError):
+            sender.sendmsg([b"x"])
+
+
+def test_unix_domain_sendmsg_with_an_address_stays_open(tmp_path):
+    import _socket
+    path = str(tmp_path / "d")
+    with socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM) as receiver:
+        receiver.bind(path)
+        for module in (socket, _socket):
+            sender = module.socket(module.AF_UNIX, module.SOCK_DGRAM)
+            try:
+                assert sender.sendmsg([b"x"], [], 0, path) == 1
+            finally:
+                sender.close()
+            assert receiver.recv(16) == b"x"
+
+
 # --- a test marked network is left alone (scratch session) -----------------------------
 
 INNER_TESTS = '''
@@ -119,6 +252,22 @@ def _listener():
     return server
 
 
+LOOKUPS = {
+    "gethostbyname": ("127.0.0.1",),
+    "gethostbyname_ex": ("127.0.0.1",),
+    "gethostbyaddr": ("127.0.0.1",),
+    "getnameinfo": (("127.0.0.1", 9), socket.NI_NUMERICHOST | socket.NI_NUMERICSERV),
+}
+
+
+def _sendmsg(module, address):
+    sender = module.socket(module.AF_INET, module.SOCK_DGRAM)
+    try:
+        return sender.sendmsg([b"x"], [], 0, address)
+    finally:
+        sender.close()
+
+
 @pytest.mark.network
 def test_marked_network_connects():
     with _listener() as server:
@@ -128,12 +277,26 @@ def test_marked_network_connects():
             raw.connect(server.getsockname())
         finally:
             raw.close()
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as receiver:
+        receiver.bind(("127.0.0.1", 0))
+        for module in (socket, _socket):
+            assert _sendmsg(module, receiver.getsockname()) == 1
+            assert receiver.recv(16) == b"x"
+    for module in (socket, _socket):
+        for name, args in LOOKUPS.items():
+            getattr(module, name)(*args)
 
 
 def test_unmarked_after_network_is_blocked_again():
     with _listener() as server:
         with pytest.raises(SocketBlocked):
             socket.create_connection(server.getsockname(), timeout=5)
+    for module in (socket, _socket):
+        with pytest.raises(SocketBlocked):
+            _sendmsg(module, ("127.0.0.1", 9))
+        for name, args in LOOKUPS.items():
+            with pytest.raises(SocketBlocked):
+                getattr(module, name)(*args)
 
 
 def test_unmarked_forgets_its_fake():

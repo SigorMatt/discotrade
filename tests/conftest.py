@@ -12,9 +12,12 @@ deselects anything, so it holds under every selection.
 A test not marked ``network`` or ``live`` cannot open a network connection
 (decision 20 of meta/decisions/decisions-2026-10-12.md, I-11). From the start of
 the session (decision 47) ``socket.socket.connect``, ``connect_ex`` and
-``sendto`` on any address family but ``AF_UNIX``, the same three methods of a
-socket made through ``_socket`` directly, and ``socket.getaddrinfo`` and
-``_socket.getaddrinfo``, raise ``SocketBlocked``, which names the test that was
+``sendto``, and ``sendmsg`` given an address (decision 58), on any address
+family but ``AF_UNIX``, the same four methods of a socket made through
+``_socket`` directly, and the name lookups ``getaddrinfo``, ``gethostbyname``,
+``gethostbyname_ex``, ``gethostbyaddr`` and ``getnameinfo`` of ``socket`` and
+of ``_socket`` (decision 58), raise ``SocketBlocked`` before the real call is
+made, which names the test that was
 running (or being set up, for a module- or session-scoped fixture). It holds in
 fixtures of every scope, not only in function-scoped tests. It is a
 ``RuntimeError``, not an ``OSError``, so that no client code takes it for an
@@ -49,7 +52,13 @@ def network_allowed(item) -> bool:
 #: What the backstop knows of the running test: its node id, and whether it may
 #: open a network connection. Outside any test (collection) nothing may.
 _BACKSTOP = {"nodeid": "outside any test", "allowed": False}
-_GUARDED_METHODS = ("connect", "connect_ex", "sendto")
+_GUARDED_METHODS = ("connect", "connect_ex", "sendto", "sendmsg")
+#: The name lookups guarded in ``socket`` and in ``_socket`` (decisions 47 and 58).
+_GUARDED_LOOKUPS = ("getaddrinfo", "gethostbyname", "gethostbyname_ex", "gethostbyaddr",
+                    "getnameinfo")
+#: ``sendmsg(buffers, ancdata, flags, address)``: only a call given an address is
+#: guarded; one without sends on a connected socket, whose connect was guarded.
+_SENDMSG_ADDRESS = 3
 _ORIGINALS: dict = {}
 
 
@@ -64,17 +73,22 @@ def _guarded_method(real):
     def method(self, *args):
         if _BACKSTOP["allowed"] or self.family == getattr(socket, "AF_UNIX", None):
             return real(self, *args)
+        if real.__name__ == "sendmsg":
+            if len(args) <= _SENDMSG_ADDRESS:
+                return real(self, *args)
+            return _refuse(args[_SENDMSG_ADDRESS])
         return _refuse(args[-1] if args else None)
     method.__name__ = real.__name__
     return method
 
 
-def _guarded_getaddrinfo(real):
-    def getaddrinfo(host, *rest, **kw):
+def _guarded_lookup(real):
+    def lookup(target, *rest, **kw):
         if _BACKSTOP["allowed"]:
-            return real(host, *rest, **kw)
-        return _refuse(host)
-    return getaddrinfo
+            return real(target, *rest, **kw)
+        return _refuse(target)
+    lookup.__name__ = real.__name__
+    return lookup
 
 
 def install_backstop() -> None:
@@ -83,8 +97,9 @@ def install_backstop() -> None:
         return
     _ORIGINALS["socket.socket"] = {n: socket.socket.__dict__.get(n) for n in _GUARDED_METHODS}
     _ORIGINALS["_socket.socket"] = _socket.socket
-    _ORIGINALS["socket.getaddrinfo"] = socket.getaddrinfo
-    _ORIGINALS["_socket.getaddrinfo"] = _socket.getaddrinfo
+    for module in (socket, _socket):
+        _ORIGINALS[module.__name__ + ".lookups"] = {
+            n: getattr(module, n) for n in _GUARDED_LOOKUPS}
     for name in _GUARDED_METHODS:
         setattr(socket.socket, name, _guarded_method(getattr(socket.socket, name)))
     # ``_socket.socket`` is an immutable built-in type, so a socket made through it
@@ -94,8 +109,9 @@ def install_backstop() -> None:
     _socket.socket = type("socket", (base,), {
         name: _guarded_method(getattr(base, name)) for name in _GUARDED_METHODS
     })
-    socket.getaddrinfo = _guarded_getaddrinfo(socket.getaddrinfo)
-    _socket.getaddrinfo = _guarded_getaddrinfo(_socket.getaddrinfo)
+    for module in (socket, _socket):
+        for name in _GUARDED_LOOKUPS:
+            setattr(module, name, _guarded_lookup(getattr(module, name)))
 
 
 def uninstall_backstop() -> None:
@@ -108,8 +124,9 @@ def uninstall_backstop() -> None:
         else:
             setattr(socket.socket, name, real)
     _socket.socket = _ORIGINALS["_socket.socket"]
-    socket.getaddrinfo = _ORIGINALS["socket.getaddrinfo"]
-    _socket.getaddrinfo = _ORIGINALS["_socket.getaddrinfo"]
+    for module in (socket, _socket):
+        for name, real in _ORIGINALS[module.__name__ + ".lookups"].items():
+            setattr(module, name, real)
     _ORIGINALS.clear()
 
 
