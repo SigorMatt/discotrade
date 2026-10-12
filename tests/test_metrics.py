@@ -1,4 +1,4 @@
-"""Metrics (DESIGN 8; decisions 2026-10-12 23, 25; R-7; I-4).
+"""Metrics (DESIGN 8; decisions 2026-10-12 23, 25, 30; R-7; I-4).
 
 Every input is a hand-made per-bar frame with decision 25's columns and the
 roll flags of its bars; every expected value is computed by hand from the
@@ -21,7 +21,7 @@ NAN = float("nan")
 D1, D2, D3, D4 = date(2024, 1, 5), date(2024, 1, 6), date(2024, 1, 7), date(2024, 1, 8)
 
 
-def rows(dates, net_1x=None, net_2x=None, h=None, gross=None, trade=None):
+def rows(dates, net_1x=None, net_2x=None, h=None, gross=None, trade=None, roll=None):
     """A per-bar frame with decision 25's columns; unspecified numbers are 0."""
     n = len(dates)
 
@@ -39,8 +39,8 @@ def rows(dates, net_1x=None, net_2x=None, h=None, gross=None, trade=None):
         "fee": np.zeros(n),
         "spread": np.zeros(n),
         "slippage": np.zeros(n),
-        "roll": np.zeros(n),
-        "cost": np.zeros(n),
+        "roll": col(roll),
+        "cost": col(roll),
         "net_1x": col(net_1x),
         "net_2x": col(net_2x),
     })
@@ -135,6 +135,62 @@ def test_sharpe_by_hand():
 @pytest.mark.parametrize("d", [[0.02], [0.01, 0.01, 0.01], []])
 def test_sharpe_is_not_a_number_with_one_day_or_no_deviation(d):
     assert math.isnan(metrics.sharpe(pd.Series(d, dtype=float)))
+
+
+CONSTANT_SERIES = [[0.1] * 3, [0.03] * 10, [0.01] * 3, [1 / 3] * 10, [0.07] * 10,
+                   [-0.05] * 5, [0.0] * 4, [1e-6] * 20]
+OTHERS = [-math.inf, -1e17, -1e9, -1.0, 0.0, 1.0, 1e9, 1e17, math.inf, NAN]
+
+
+@pytest.mark.parametrize("d", CONSTANT_SERIES)
+def test_sharpe_of_a_constant_series_is_not_a_number(d):
+    # Decision 30: every value equals the first, so the deviation is 0,
+    # whatever rounding residue the floating-point std leaves.
+    assert math.isnan(metrics.sharpe(pd.Series(d, dtype=float)))
+
+
+@pytest.mark.parametrize("d", CONSTANT_SERIES)
+def test_sharpe_of_a_constant_series_is_never_positive_negative_nor_above(d):
+    s = metrics.sharpe(pd.Series(d, dtype=float))
+    assert positive(s) is False
+    assert metrics.negative(s) is False
+    for other in OTHERS:
+        assert above(s, other) is False
+        assert above(other, s) is False
+
+
+def test_sharpe_is_not_a_number_when_the_deviation_is_a_rounding_residue():
+    # Decision 30's second clause: std(d, ddof=1) not above 1e-12 * max|d|.
+    # The values differ in their last bits only, so the first clause misses.
+    d = pd.Series([0.1, 0.1 + 2 ** -56, 0.1])
+    assert len(set(d)) == 2
+    assert math.isnan(metrics.sharpe(d))
+
+
+def test_a_small_real_deviation_still_gives_its_sharpe():
+    # [0.1, 0.1, 0.1 + 1e-9]: mean 0.1 + 1e-9/3, std(ddof=1) 1e-9/sqrt(3).
+    d = pd.Series([0.1, 0.1, 0.1 + 1e-9])
+    expected = (0.1 + 1e-9 / 3) / (1e-9 / math.sqrt(3)) * math.sqrt(252)
+    s = metrics.sharpe(d)
+    assert math.isfinite(s)
+    assert s == pytest.approx(expected, rel=1e-6)
+
+
+def test_compute_gives_no_sharpe_for_a_constant_non_zero_daily_net_at_1x_and_2x():
+    # Ten days, one bar a day, net 0.07 at 1x and 0.03 at 2x every day: the
+    # daily net is constant and non-zero at both multiples, and the
+    # floating-point std of each is a rounding residue above 0.
+    a = one_day_legs([0.07] * 10, [0.03] * 10)[0]
+    m = compute([a])
+    d = daily_series([a])
+    assert len(set(d["net_1x"])) == 1 and d["net_1x"].iloc[0] != 0
+    assert len(set(d["net_2x"])) == 1 and d["net_2x"].iloc[0] != 0
+    assert math.isnan(m.sharpe)
+    assert math.isnan(m.sharpe_2x)
+    for s in (m.sharpe, m.sharpe_2x):
+        assert positive(s) is False and metrics.negative(s) is False
+        for other in OTHERS:
+            assert above(s, other) is False and above(other, s) is False
 
 
 @pytest.mark.parametrize("other", [-math.inf, -1e9, -1.0, 0.0, 1.0, math.inf, NAN])
@@ -233,6 +289,15 @@ def test_trades_counts_rows_above_the_floor_and_not_roll_trades():
     b = leg([D2] * 3, h=[0, -1, -1], trade=[0, 1, 0], rolled=[False, False, True])
     assert metrics.trades([a, b]) == 3
     assert metrics.trades([leg([])]) == 0
+
+
+def test_roll_trades_are_not_counted_and_a_bar_with_a_roll_and_a_real_trade_is():
+    # Bar 1: an ordinary trade (counted). Bar 2: a roll and a real trade of
+    # 0.5 > 1e-9 (counted). Bar 3: a roll with trade 0 and a roll cost of
+    # 0.0004 (not counted: its turnover is the roll, not a trade).
+    a = leg([D1] * 4, h=[0, 1, 0.5, 0.5], trade=[0, 1, 0.5, 0],
+            roll=[0, 0, 0.0002, 0.0004], rolled=[False, False, True, True])
+    assert metrics.trades([a]) == 2
 
 
 def test_avg_holding_bars_runs_broken_by_sign_change_and_by_zero():

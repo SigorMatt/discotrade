@@ -1,4 +1,4 @@
-"""Metrics (DESIGN 8; decisions 2026-10-12 23, 25; R-7; I-4).
+"""Metrics (DESIGN 8; decisions 2026-10-12 23, 25, 30; R-7; I-4).
 
 A subject runs on ``N`` instruments; each gives a :class:`Leg`, its per-bar
 rows (decision 25's columns) with the roll flags of those bars. Its daily
@@ -13,7 +13,10 @@ compounded, R-7):
 
 - ``total_return``: the sum of ``d``; ``total_return_2x`` the same at 2x.
 - ``sharpe``: ``mean(d) / std(d, ddof=1) * sqrt(252)``; not a number with
-  fewer than 2 days or a deviation of 0; ``sharpe_2x`` the same at 2x.
+  fewer than 2 days or a deviation of 0; ``sharpe_2x`` the same at 2x. By
+  decision 30 the deviation is 0 when every value of ``d`` equals the first,
+  or when ``std(d, ddof=1)`` is not above ``1e-12`` times the largest
+  absolute value in ``d`` (a floating-point rounding residue).
 - ``max_drawdown``: the largest fall of the running sum of ``d`` from a
   running peak, the start (0) counting as a peak; 0 with no fall.
 - ``fragile``: ``total_return`` positive and ``total_return_2x`` negative.
@@ -57,6 +60,9 @@ TRADE_FLOOR = 1e-9
 #: Trading days per year, for the annualised Sharpe (R-7).
 PERIODS_PER_YEAR = 252
 _BPS = 10000.0
+#: The deviation of a daily series is 0 when ``std(d, ddof=1)`` is not above
+#: this times the largest absolute value in ``d`` (decision 30).
+_DEVIATION_TOLERANCE = 1e-12
 
 
 @dataclass(frozen=True)
@@ -114,7 +120,7 @@ def sharpe(d: pd.Series) -> float:
     if len(x) < 2:
         return math.nan
     sd = float(np.std(x, ddof=1))
-    if not sd > 0:
+    if bool(np.all(x == x[0])) or not sd > _DEVIATION_TOLERANCE * float(np.max(np.abs(x))):
         return math.nan
     return float(np.mean(x)) / sd * math.sqrt(PERIODS_PER_YEAR)
 
