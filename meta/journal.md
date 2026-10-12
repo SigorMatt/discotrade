@@ -69,3 +69,4 @@
 2026-10-12T17:06:30.020Z  consult 0mv5hxoli-zzqz (architect done) on aux.done of aux job 0mv5gxabe-9ey7: VERDICT: next kit mission-8-kit
 - 2026-10-12 mission 8 U0: plan written (base fb1e244, roadmap S1.2, units U0-U5; REVIEW-7 should-fix 1 and 2 carried to U1).
 - 2026-10-12 mission 8 U1 done 060b5e2: backstop guards sendmsg-with-address and gethostbyname/_ex/gethostbyaddr/getnameinfo in test, module and session scope via socket and _socket; AF_UNIX works; network-marked left alone; recompute D1 target_next corruption reports (D1,s) and (D2,s), exit 1; 3 wrong changes seen red; check green 3/3 (1053 passed).
+- 2026-10-12 mission 8 U2 done abba5d3: stats.py (block dates, population, Spearman avg ties, E(N)/excess/threshold vs own bisection, mu_c/sd_c ddof 1, p(N)); paper clean column and counts, rebuild hash unchanged; 4 wrong changes seen red; check green 3/3 (1087 passed).

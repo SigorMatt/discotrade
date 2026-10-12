@@ -1,14 +1,15 @@
 # CHECKPOINT
 
 Mission: 8 (`meta/BUILDER-8-PROMPT.md`), roadmap step S1.2. Closes no milestone. Base fb1e244.
-Done: U0 b06c4b2, U1 060b5e2.
+Done: U0 b06c4b2, U1 060b5e2, U2 abba5d3.
 
-Unit in progress: U2 The statistics of §11 and the `clean` flag (decisions 30, 59, 60, 61; DESIGN §8, §9.3, §11.1-§11.4; I-3).
-Intent: new src/discotrade/stats.py (block dates, population, Spearman, E(N), excess, threshold,
-p(N)); `clean` column and clean/exposed counts in src/discotrade/paper.py; tests/test_stats.py,
-tests/test_paper.py.
-Done means: committed and pushed; wrong changes (ties by position, sd_c ddof 0, N not floored at 2,
-clean on/after cutoff) seen red; paper rebuild hash unchanged; ./scripts/check green 3/3.
+Unit in progress: U3 The ledgers and the lifecycle (decisions 22, 48, 62, 63; DESIGN §9.1, §10.2, §10.3, §16.2; I-5, I-6).
+Intent: new src/discotrade/ledger.py and lifecycle.py; trial writer in state.py; lifecycle steps 1-4
+in daily.py after journaling, staged with the day; journal.py drops a contract-failing approach's
+rows; tests/test_ledger.py, tests/test_lifecycle.py, tests/test_daily.py additions.
+Done means: committed and pushed; wrong changes (NaN Sharpe as negative in step 2, change effective
+on D, lifecycle row re-appended on re-run, contract failure failing the day) seen red;
+./scripts/check green 3/3.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
 (items 58-65 new, 1-57 still bind); no value of a frozen file changes (config/, existing entries
