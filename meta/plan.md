@@ -12,5 +12,5 @@ Carried items:
 - [x] U1 REVIEW-7's should-fix items (decisions 47, 54, 58; I-11; DESIGN §9.4, §18.1). — 060b5e2
 - [x] U2 The statistics of §11 and the `clean` flag (decisions 30, 59, 60, 61; DESIGN §8, §9.3, §11.1-§11.4; I-3). — abba5d3
 - [x] U3 The ledgers and the lifecycle (decisions 22, 48, 62, 63; DESIGN §9.1, §10.2, §10.3, §16.2; I-5, I-6). — 327c68a
-- [ ] U4 The controls (decisions 23, 25, 49, 54, 64; DESIGN §7, §9.2, §9.4, §10.1; I-1, I-5, I-6, I-12).
+- [x] U4 The controls (decisions 23, 25, 49, 54, 64; DESIGN §7, §9.2, §9.4, §10.1; I-1, I-5, I-6, I-12). — 451471e
 - [ ] U5 Final report (`meta/FINAL-REPORT-8.md`), with `./scripts/gate M0` at the pushed tip.

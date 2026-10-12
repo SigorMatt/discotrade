@@ -1,16 +1,13 @@
 # CHECKPOINT
 
 Mission: 8 (`meta/BUILDER-8-PROMPT.md`), roadmap step S1.2. Closes no milestone. Base fb1e244.
-Done: U0 b06c4b2, U1 060b5e2, U2 abba5d3, U3 327c68a.
+Done: U0 b06c4b2, U1 060b5e2, U2 abba5d3, U3 327c68a, U4 451471e.
 
-Unit in progress: U4 The controls (decisions 23, 25, 49, 54, 64; DESIGN §7, §9.2, §9.4, §10.1; I-1, I-5, I-6, I-12).
-Intent: new src/discotrade/controls.py; bh:<symbol> and rc:0..rc:49 journaled every day by run-day,
-monthly draws (seed YYYYMM) with pools.jsonl lines, matched/fallback draws, decision-64 hash and state
-machine; controls in journal recompute and paper (clean true); tests/test_controls.py plus named
-changes in test_daily/test_journal_recompute/test_journal/test_paper.
-Done means: committed and pushed; wrong changes (per-bar random not keyed by ts, state machine not
-restarted flat at redraw, redraw reusing previous month's seed, short entry on no-short instrument)
-seen red; ./scripts/check green 3/3.
+Unit in progress: U5 Final report.
+Intent: ./scripts/check green 3/3 at the pushed tip, then ./scripts/gate M0 once (foreground, >= 30 min
+timeout), output verbatim under `## M0 still passes`; meta/FINAL-REPORT-8.md drafted in meta/drafts/.
+Done means: meta/FINAL-REPORT-8.md committed and pushed with shas, decisions 58-64 -> tests, NOT
+PROVEN, findings, `## Review items` table (REVIEW-7 should-fix 1 and 2), verdict line.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
 (items 58-65 new, 1-57 still bind); no value of a frozen file changes (config/, existing entries
