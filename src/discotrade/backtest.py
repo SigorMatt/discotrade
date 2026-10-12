@@ -6,9 +6,10 @@ trading dates (decision 23). A stored bar is a window bar when its trading
 date, by the instrument's own calendar, lies in the range and its ``ts`` is
 not before the instrument's ``trusted_from`` (midnight UTC of that date). The
 stored bars before the first window bar ``u0``, up to ``history_cap_bars - 1``
-of them, are context, so that the slice at ``u0`` holds up to
-``history_cap_bars`` rows. Context bars are any stored bars: decision 23
-excludes nothing before ``trusted_from`` from context, so neither does this.
+of them and none with ``ts`` before ``trusted_from`` ("history before this
+date is never used", DESIGN 4.2), are context, so that the slice at ``u0``
+holds up to ``history_cap_bars`` rows, all trusted. No bar before
+``trusted_from`` is read into an :class:`Evaluation` at all.
 
 At each window bar ``t`` the harness builds the slice of DESIGN 6.2 from the
 bars up to ``t`` (never later: I-2), with prices adjusted as of ``t`` exactly
@@ -77,9 +78,10 @@ class Evaluation:
     """The evaluation of one strategy on one instrument over one window.
 
     ``rows`` holds one row per window bar (``ROW_COLUMNS``). ``bars`` holds the
-    raw stored bars read, context first: ``bars.iloc[first]`` is the first
-    window bar, and ``gaps[k]`` is the gap of the roll at ``bars.iloc[k]`` (0
-    where there is none, and at row 0, whose previous bar was not read).
+    raw stored bars read (none before ``trusted_from``), context first:
+    ``bars.iloc[first]`` is the first window bar, and ``gaps[k]`` is the gap
+    of the roll at ``bars.iloc[k]`` (0 where there is none, and at row 0,
+    whose previous bar was not read).
     ``rolled[k]`` says whether a roll happens there.
     """
 
@@ -164,6 +166,7 @@ def evaluate(state_dir: Path, track: Track, instrument: Instrument, calendar: Ca
                           np.zeros(0, dtype=bool))
     cap = track.history_cap_bars
     context = store.last_n(symbol, inside["ts"].iloc[0], cap)
+    context = context[context["ts"] >= _midnight(instrument.trusted_from)]
     bars = pd.concat([context.iloc[:-1], inside], ignore_index=True)
     first = len(context) - 1
     gaps, rolled = _roll_gaps(bars, Path(state_dir), track.name, symbol)

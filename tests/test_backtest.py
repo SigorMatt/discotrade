@@ -346,14 +346,37 @@ def test_gross_equals_hand_values_with_one_roll_and_one_missing_bar(
     assert ev.gaps.tolist() == [0.0] * 5 + [10.0, 0.0]
 
 
-def test_window_bars_start_at_trusted_from_and_earlier_bars_are_context(
+def test_no_bar_before_trusted_from_is_window_or_context(
         tmp_path, track, instruments, calendars):
+    # Stored bars exist on 2020-01-05, before trusted_from (DESIGN 4.2: never used).
     _hand_store(tmp_path)
     inst = replace(instruments["SYNX"], trusted_from=date(2020, 1, 6))
-    strat, frames = recording()
+    trusted = pd.Timestamp("2020-01-06 00:00", tz="UTC")
+    strat, frames = recording(lambda b, p: TARGET_BY_CLOSE[float(b["close"].iloc[-1])])
     ev = evaluate(tmp_path, track, inst, calendars["always_open"], strat,
                   window(date(2020, 1, 5), date(2020, 1, 6)))
-    assert ev.rows["ts"].iloc[0] == pd.Timestamp("2020-01-06 00:00", tz="UTC")
+    assert ev.rows["ts"].iloc[0] == trusted
+    assert ev.first == 0 and (ev.bars["ts"] >= trusted).all()
+    # Each slice holds only trusted bars: 1, 2, 3, 4, 5 rows, never the 98 or 99 closes.
+    assert [len(f) for f in frames] == [1, 2, 3, 4, 5]
+    assert frames[0]["close"].tolist() == [101.0]
+    assert frames[3]["close"].tolist() == [111.0, 112.0, 110.0, 111.0]
+    # With a small cap, the cap is filled from trusted bars only.
+    small = replace(track, history_cap_bars=3)
+    strat, frames = recording(lambda b, p: TARGET_BY_CLOSE[float(b["close"].iloc[-1])])
+    ev = evaluate(tmp_path, small, inst, calendars["always_open"], strat,
+                  window(date(2020, 1, 6)))
+    assert [len(f) for f in frames] == [1, 2, 3, 3, 3]
+    assert frames[-1]["close"].tolist() == [110.0, 111.0, 109.0]
+    assert (ev.bars["ts"] >= trusted).all()
+    # A window that starts the day after trusted_from takes context back to it, not before.
+    late = replace(instruments["SYNX"], trusted_from=date(2020, 1, 5))
+    later = replace(late, trusted_from=date(2020, 1, 6))
+    strat, frames = recording(lambda b, p: 0.0)
+    evaluate(tmp_path, track, later, calendars["always_open"], strat, window(date(2020, 1, 6)))
+    assert len(frames[0]) == 1
+    strat, frames = recording(lambda b, p: 0.0)
+    evaluate(tmp_path, track, late, calendars["always_open"], strat, window(date(2020, 1, 6)))
     assert len(frames[0]) == 3
 
 
