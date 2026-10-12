@@ -474,3 +474,110 @@ never asserts less than they say.
     and launch no subprocess; every seed a gate test uses is written in
     the test file. The I-11 note on subprocesses launched by tests
     therefore stays with step S1.1.
+
+## Added at consultation 8, after REVIEW-5
+
+Items 1 to 40 above are unchanged. Items 41 to 46 below bind mission 6
+and every later mission until a newer decisions file says otherwise; the
+same rules apply to them (no invariant broken, no gate moved, no
+threshold or frozen value changed). Item 41 records an answer already
+given and applied during mission 5; it changes nothing that mission
+built.
+
+41. **D-004, DESIGN §8: `max_drawdown` counts the starting 0 as a peak.**
+    `max_drawdown` is the largest fall of the running sum of `d` from its
+    running peak, where the running sum starts at 0 before the first day
+    and that starting 0 counts as a peak; it is 0 when there is no fall.
+    `src/discotrade/metrics.py` already does this; the independent
+    calculation was changed to match in de9fc09, with a hand-value case
+    for a series whose first day is a loss and whose running sum never
+    recovers above 0. Reason: every subject starts flat, so a loss on the
+    first day is a drawdown. (Answered by the phone architect on
+    2026-10-12 during mission 5 and recorded in `meta/plan.md` under
+    "Decision on D-004"; this item is that answer's place in the
+    decisions file, REVIEW-5 note on de9fc09.)
+
+42. **REVIEW-5 blocker 1, DESIGN §18.2 with decisions 27 and 39: "the
+    `--json` figures equal the module's" means every field.** The G0.1
+    test of the `backtest` command's `--json` output compares every key
+    the object carries with the module's evaluation of the same strategy,
+    window and store: each metric of §8 with `days`, `sharpe_2x` and
+    `total_return_2x`; the subject's cost totals; and, per instrument,
+    every key of its map (today `bars`, `trades`, `position_min`,
+    `position_max`, `fee`, `spread`, `slippage`, `roll`, `cost`, `net_1x`
+    and `net_2x`), each computed in the test from the module's per-bar rows
+    (not through the command's own helper), and, where the independent
+    calculation has the figure (every one of those but `trades`,
+    `position_min` and `position_max` per instrument, which the test
+    computes from the calculation's rows the same way), with the
+    calculation too. The descriptive keys (`strategy`, `params`, `track`,
+    `from`, `to`, `cost_model`, `config_hash`) equal the file, its
+    `PARAMS`, the track, the window, the string `c1` and the module's
+    config hash. The test asserts that the set of keys of the object and
+    of each per-instrument map is exactly the set it compares, so that a
+    key added later fails the test until it is compared. Under decision
+    39 a count is compared exactly and a real number to 1e-12. Reason:
+    DESIGN §18.2 makes a gate test that asserts less than it claims a
+    blocker; FINAL-REPORT-5 claimed this clause and the test did not hold
+    it.
+
+43. **D-005, REVIEW-5 should-fix 1, DESIGN §5.6, §7.3 and §18.3 G0.1: the
+    timing of the roll cost and the half-tick floor are each proven on
+    their own side, and the timing also through G0.1.** No frozen fixture
+    changes. (a) The independent calculation's self-test gains hand cases
+    in which the position changes on the roll bar (at least one carried
+    position that changes size or sign at the roll, and one flat position
+    that opens at the roll), so that a roll cost or a rolled turnover on
+    `h(u)` instead of `h(u-1)` fails it; its half-tick floor is already
+    seen to fail it (REVIEW-5, U3). (b) The product's unit tests hold a
+    roll at which the position changes, with the roll cost on `h(u-1)`
+    and the rolled turnover of `breakeven_cost` (decision 25) on `h(u-1)`;
+    the floor is already held by `tests/test_costs.py`. (c) G0.1 adds, as
+    a fourth comparison beside the three reference strategies, a
+    test-only strategy text `tests/fixtures/strategies/roll_probe.py`
+    whose position changes at the SYNA roll bar of the G0.1 window; it is
+    compared with the independent calculation under decision 39 through
+    the module API (the `backtest` command takes files under `reference/`
+    only, decision 21), and the test asserts that `h(u-1) != h(u)` at that
+    roll bar. The half-tick floor stays unseen by G0.1 on `test_mixed`,
+    whose spreads are all at least one tick; a new fixture track for it
+    would add a frozen-style fixture for one constant, and (a) and the
+    existing unit test already pin it on each side independently. Reason:
+    G0.1's words ("every cost component equal") hold on the fixture data
+    either way, but a comparison that cannot see a named mistake proves
+    less than it seems to; the probe makes the roll timing visible
+    without changing any existing fixture.
+
+44. **D-006, DESIGN §6.2, §12.1, §12.4 with I-2: each instrument's
+    evaluation gets a freshly loaded strategy; built in step S2.1.**
+    When a strategy text is evaluated on several instruments, each
+    instrument's evaluation runs on a strategy loaded afresh from the
+    text, in a namespace of its own, so that nothing a text keeps from
+    one instrument's frames is visible while it evaluates another. Step
+    S2.1 builds it with the sandbox's runner, through which every
+    worker's text will be evaluated, and drives the cheating strategy of
+    G0.2 through the multi-instrument path in its tests. Until then the
+    `backtest` command runs only trusted files under `reference/`
+    (decision 21), which keep no frames, so no result of today changes
+    and mission 6 does not touch it. Reason: a text that keeps frames
+    could otherwise read an earlier instrument's later bars; no
+    untrusted text can reach `backtest` before M2.
+
+45. **REVIEW-5 note (hands), DESIGN §18.2: `tests/test_gate_script.py`
+    does not turn `./scripts/check` red under load.** Its tests that run
+    `./scripts/gate` as a subprocess assert what they assert today, on
+    the cheapest item that shows it (an item whose tests take seconds,
+    such as G0.4, or a milestone with no gate test), never on an item
+    that replays or fetches for minutes, and any subprocess timeout they
+    keep is at least 1200 seconds. Reason: a 600-second timeout on a
+    three-minute item failed one reviewer's check when five checks shared
+    four CPUs; what the test proves (the script's lines, its exit status,
+    one-item runs) does not depend on which item runs.
+
+46. **`meta/ROADMAP.md`: mission 6 repairs step S0.4.** REVIEW-5 recorded
+    a blocker, so mission 6 closes it and REVIEW-5's should-fix item,
+    records findings D-004 to D-006 as answered here, and adds nothing
+    new (`meta/ARCHITECT.md` §3 case 1). Step S0.4 still closes M0, so
+    mission 6 ends with the gate run; step S0.4 is ticked, and M0 marked
+    met, when mission 6's review has no blocker and records the gate
+    PASS. No gate item moves.

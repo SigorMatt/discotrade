@@ -19,7 +19,25 @@ before the reader are taken by mission 5 (step S0.4, unit U1;
 decisions-2026-10-12 items 34 and 35). REVIEW-3's notes carried to step
 S0.4 (reads before `trusted_from`, a roll record with the right `ts` and
 the wrong contracts, the unlabelled cost lines of the `backtest` plain
-output) are taken by mission 5 (unit U2; items 36 to 38).
+output) are taken by mission 5 (unit U2; items 36 to 38). REVIEW-5
+blocker 1, its should-fix 1 (finding D-005), its note on D-004 and its
+note on `tests/test_gate_script.py`'s timeout are taken by mission 6
+(step S0.4, units U0 to U4; decisions-2026-10-12 items 41 to 43 and 45).
+
+- Finding D-006 (decision 44): each instrument's evaluation gets a
+  freshly loaded strategy, and the cheating strategy of G0.2 is driven
+  through the multi-instrument path. Step S2.1, with the sandbox's runner.
+- REVIEW-5 notes, not carried as work; the step that next touches the
+  file may take them: `rolls.py` reads, through `store.last_n`, up to 24
+  bars before a roll that may lie before `trusted_from`, and uses only
+  the first one's `ts`, clipped to `trusted_from` (decision 36 read
+  literally says no such bar is read); `gaps.py` checks no listed file's
+  hash when `start >= end`; the independent calculation's `ast` import
+  check does not catch `builtins.__import__`, `sys.modules` or `runpy`
+  (enough for honest code); G0.3 builds the gap-free series with the
+  product's `tradingcal.expected_bars`, so a calendar defect shared by
+  the generator and the gap check is not seen; G0.4 proves that contract
+  roots are collected only through its planted control.
 
 - REVIEW-3 note (I-11): the socket backstop is a function-scoped autouse
   fixture, so module-scoped fixtures (`test_gaps.py`, `test_rolls.py`)

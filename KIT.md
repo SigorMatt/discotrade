@@ -1,1 +1,1 @@
-plan: mission 5 kit (S0.4, independent calc, cheat, M0 gate tests)
+plan: mission 6 kit (S0.4, REVIEW-5 blocker, roll timing, M0 gate again)
