@@ -1,11 +1,11 @@
 # CHECKPOINT
 
 Mission: 7 (`meta/BUILDER-7-PROMPT.md`), roadmap step S1.1. Closes no milestone. Base c73a695.
-Done: U0 057f9d2, U1 de2a5b2.
+Done: U0 057f9d2, U1 de2a5b2, U2 c8342c4.
 
-Unit in progress: U2 The state directory, the lock, the state commit and the health log (decisions 7, 50, 52, 55; DESIGN §3, §9.1, §15.2, §16.2; I-5, I-12, I-14).
-Intent: src/discotrade/state.py, cli.py init-state, tests/test_state.py, additions to tests/test_cli.py.
-Done means: U2 gate in BUILDER-7-PROMPT met; wrong changes (non-exclusive lock; health-log duplicate check removed; commit dates from wall clock) seen red; check green x3; init-state --help exits 0; one commit pushed.
+Unit in progress: U3 Approaches and the decision journal (decisions 24, 25, 39, 48, 49, 51; DESIGN §6.2, §7, §9.1, §9.2; I-5, I-6, I-7).
+Intent: state.py approach writer, new src/discotrade/journal.py, backtest.py/executor.py only to share §7, new tests/test_journal.py.
+Done means: U3 gate in BUILDER-7-PROMPT met; wrong changes (position reset each day; first-row position = target; re-run rewriting file) seen red; check green x3; gate M0 G0.1 passes if backtest/executor changed; one commit pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
 (items 47-57 new, 1-46 still bind); no value of a frozen file changes (config/, existing entries

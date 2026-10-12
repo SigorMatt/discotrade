@@ -61,3 +61,4 @@
 2026-10-12T14:11:30.001Z  consult 0mv5bq5op-0o73 (architect done) on aux.done of aux job 0mv5ajqi9-pzef: VERDICT: next kit mission-7-kit
 - 2026-10-12 mission 7 U0: plan.md, CHECKPOINT.md, HF-007 (REVIEW-6 hands note: protocol step 2 vacuous on tests-only commits; check run once) filed; base c73a695.
 - 2026-10-12 mission 7 U1 done de2a5b2: socket block from session start (all fixture scopes, _socket connect/connect_ex/sendto/getaddrinfo), network/live tests let through (scratch session), subprocess/os.system listing test (6 files); function-scope and unguarded-_socket changes seen red; check green 3/3 (951 passed).
+- 2026-10-12 mission 7 U2 done c8342c4: state.py (init_state, lock, commit, health log), cli init-state; 34 tests; O_EXCL-less lock, dup-check removed, wall-clock dates seen red; also tests/test_offline.py SUBPROCESS_FILES += state.py, test_state.py (decision 47 list); check green 3/3 (985 passed).
