@@ -1,12 +1,11 @@
 # CHECKPOINT
 
 Mission: 5 (`meta/BUILDER-5-PROMPT.md`), roadmap step S0.4. Closes M0. Base 3854c96.
-Done: U0 9d2d781, U1 8e8215c, U2 8d27fe1, U3 3be4e9b, U5 2c64e8d, U6 tests 80ffc78, U4 calc fix de9fc09.
+Done: U0 9d2d781, U1 8e8215c, U2 8d27fe1, U3 3be4e9b, U5 2c64e8d, U6 tests 80ffc78, U4 calc fix de9fc09, U4 2881ee0.
 
-Unit in progress: U4 (resumed). Draft tests/gates/test_g0_1_reference.py popped from the stash
-into the working tree (untracked). D-004 settled; calc fixed at de9fc09.
-Done means: U4 committed with G0.1 passing for all three reference strategies (incl. max_drawdown,
-module and --json), >= 2 wrong product changes seen to fail; check green x3. Then U6 gate run, U7.
+Unit in progress: U6 gate run at the tip (tests already at 80ffc78): check green x3, then
+`./scripts/gate M0`; output saved verbatim to meta/drafts/gate-M0.txt for the report.
+Done means: `gate M0: PASS` with G0.1 holding the reference test, each item under 15 minutes.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
 (items 34-40 new, 1-33 still bind); no value of a frozen file changes (config/, existing entries

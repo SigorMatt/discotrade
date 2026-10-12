@@ -15,7 +15,7 @@ Carried items:
 - [x] U1 The store's readers, and callers that look at the index first (REVIEW-4 should-fix 1 and note on U3; decisions 5, 18, 31, 34, 35; DESIGN §5.2, §5.4, §5.6; I-5, I-6). — 8e8215c
 - [x] U2 Rolls and `backtest`: `trusted_from`, roll records, cost labels (REVIEW-3 notes; decisions 23, 24, 27, 36, 37, 38; DESIGN §4.2, §5.6, §7.1, §7.3; I-4). — 8d27fe1
 - [x] U3 The independent calculation (DESIGN §18.3 G0.1, §5.6, §6.2, §7, §8, §5.3; decisions 22-26, 29, 30, 36, 37, 39). Own sub-agent, forbidden-files words verbatim. — 3be4e9b
-- [ ] U4 (waiting: finding D-004, max_drawdown start; draft in stash `wip U4 2026-10-12`) Gate G0.1: reference strategies against the independent calculation (decisions 23-27, 39).
+- [x] U4 Gate G0.1: reference strategies against the independent calculation (decisions 23-27, 39). — calc fix de9fc09 (D-004), 2881ee0
 - [x] U5 Gate G0.2: the cheating strategy (DESIGN §18.3 G0.2, §6.2, §7.1, §12.1; I-2; decision 40). — 2c64e8d
 - [ ] U6 Gates G0.3 and G0.4, and the gate run (`./scripts/gate M0` prints `gate M0: PASS`). — tests 80ffc78; G0.2-G0.4 PASS; final gate run waits on U4 (D-004)
 - [ ] U7 Final report (`meta/FINAL-REPORT-5.md`).
