@@ -136,6 +136,8 @@ changes to match, with a unit test.
 
 Status: open
 
+D-004 status (appended 2026-10-12, mission 5 U4): Status: answered by the phone architect, recorded in meta/plan.md, to be carried as decision 41.
+
 ---
 
 ### D-005 — G0.1's data cannot see a roll cost on `h(u)` nor the half-tick spread floor
