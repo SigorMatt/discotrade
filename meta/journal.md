@@ -31,3 +31,4 @@
 - 2026-10-12 mission 3 U7 done a3cd937: final report, HF-006 filed; mission finished.
 2026-10-12T02:36:56.798Z  consult 0mv4n0qyw-fyo7 (architect done) on aux.done of aux job 0mv4milga-j5cz: VERDICT: next kit mission-4-kit
 - 2026-10-12 mission 4 U0: plan written, base 9f00d99; REVIEW-3 blocker 1 -> U1, should-fix 1 -> U1, 2 -> U2, 3 -> U3, 4 -> U4.
+- 2026-10-12 mission 4 U1 done 836c2ab: sharpe NaN at zero deviation (decision 30), trades test fails for both wrong changes.
