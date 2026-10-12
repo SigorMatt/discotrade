@@ -38,3 +38,4 @@
 - 2026-10-12 mission 4 U5 done e740b3b: final report; acceptance run by U5 sub-agent: check green x3, config check ok, config/ unchanged since 9f00d99, no tests/gates, gate M0 FAIL, gate M0 G0.3 FAIL, three reference backtests exit 0; no findings filed; mission finished.
 2026-10-12T04:15:41.877Z  consult 0mv4qedfr-bdyj (architect done) on aux.done of aux job 0mv4pnr0t-zgjp: VERDICT: next kit mission-5-kit
 - 2026-10-12 mission 5 U0: plan, checkpoint for S0.4 (closes M0), base 3854c96.
+- 2026-10-12 mission 5 U1 done 8e8215c: BarStore.index_entry reader; classification test over every public name incl. properties; gaps/update_rolls/adjusted_as_of refuse on unlisted month with no index entry (decision 35).

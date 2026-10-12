@@ -1,14 +1,14 @@
 # CHECKPOINT
 
 Mission: 5 (`meta/BUILDER-5-PROMPT.md`), roadmap step S0.4. Closes M0. Base 3854c96.
-Done: U0.
+Done: U0 9d2d781, U1 8e8215c.
 
-Unit in progress: U1 (next).
-Intent: U1 — BarStore classification test enumerates every public name, properties included
-(decision 34); gaps.py, update_rolls and adjusted_as_of refuse with decision 18's errors when the
-index has no entry but the directory holds an unlisted month file (decision 35).
-Done means: one commit pushed with the U1 tests seen to fail first (or by a wrong change made and
-reverted), ./scripts/check green three times.
+Unit in progress: U2 (next).
+Intent: U2 — reads before trusted_from (roll gap both paths, adjusted_as_of, evaluation context,
+sigma) refused; a contract change across trusted_from is no roll (decision 36); backtest exits 1
+on a roll record with right ts and wrong contracts (decision 37); plain-output cost labels
+(decision 38).
+Done means: one commit pushed, tests seen to fail first or by wrong change, check green x3.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
 (items 34-40 new, 1-33 still bind); no value of a frozen file changes (config/, existing entries
