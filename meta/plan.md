@@ -1,19 +1,18 @@
-# PLAN — mission 6 (roadmap step S0.4, repaired)
+# PLAN — mission 7 (roadmap step S1.1)
 
-Base commit: 19196da (`plan: mission 6 kit (S0.4, REVIEW-5 blocker, roll timing, M0 gate again)`).
-Brief: `meta/BUILDER-6-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-12.md` (items 41-46 new; 1-40 still bind).
-Roadmap step: S0.4. This mission closes milestone M0.
+Base commit: c73a695 (`plan: mission 7 kit (S1.1, state, health log, journal, run-day)`).
+Brief: `meta/BUILDER-7-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-12.md` (items 47-57 new; 1-46 still bind).
+Roadmap step: S1.1. This mission closes no milestone and adds no test under `tests/gates/`.
 
 Carried items:
-- REVIEW-5 blocker 1: G0.1's `backtest --json` test does not compare every field the object carries (decision 42). — taken by U1
-- REVIEW-5 should-fix 1 with finding D-005: the timing of the roll cost (`h(u-1)`) is not visible to the independent calculation's self-test, the product's unit tests or G0.1 (decision 43). — taken by U2 (self-test) and U3 (unit tests, probe in G0.1)
-- REVIEW-5 note on D-004: `max_drawdown` counts the starting 0 as a peak (decision 41). — recorded answered by U0
-- REVIEW-5 note on the timeout of `tests/test_gate_script.py` under load (decision 45). — taken by U4
+- REVIEW-3 note on the socket backstop outside function-scoped tests (decision 47). — taken by U1
+- REVIEW-6 should-fix 1: FINAL-REPORT-6 describes the probe test as asserting more than it does (decision 56). — taken by U6
+- REVIEW-6 `hands:` note (protocol step 2 vacuous on tests-only commits; check run once). — recorded as HF-007 by U0
 
-- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, D-004..D-006 status lines in `meta/findings/FINDINGS.md`. — cdc031f
-- [x] U1 G0.1: every field of `backtest --json` (REVIEW-5 blocker 1; decisions 27, 39, 42; DESIGN §3, §8, §18.2, §18.3 G0.1). — c1a2100
-- [x] U2 The independent calculation's self-test: a position that changes at the roll (REVIEW-5 should-fix 1; D-005; decisions 24, 25, 39, 43 (a); DESIGN §5.6, §7.3). Own sub-agent, forbidden-files words verbatim. — 9ca8575
-- [x] U3 The roll timing in product unit tests and in G0.1 (D-005; decisions 21, 24, 25, 39, 43 (b), (c); DESIGN §5.6, §7.3, §8, §18.3 G0.1). — 9e16050
-- [x] U4 `tests/test_gate_script.py` under load (REVIEW-5 note; decision 45; DESIGN §18.2). — b268252
-- [x] U5 The gate run (`./scripts/gate M0` prints `gate M0: PASS` at the pushed tip). — gate M0 PASS at 65718c5
-- [x] U6 Final report (`meta/FINAL-REPORT-6.md`). — this report commit
+- [ ] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, HF-007 in `meta/findings/FINDINGS.md`.
+- [ ] U1 The socket backstop outside function-scoped tests (REVIEW-3 note; decisions 20, 47; I-11; DESIGN §18.1).
+- [ ] U2 The state directory, the lock, the state commit and the health log (decisions 7, 50, 52, 55; DESIGN §3, §9.1, §15.2, §16.2).
+- [ ] U3 Approaches and the decision journal (decisions 24, 25, 39, 48, 49, 51; DESIGN §6.2, §7, §9.1, §9.2).
+- [ ] U4 `run-day` and the paper records (decisions 2, 3, 19, 50-53, 55; DESIGN §9.3, §15.2, §16.1 steps 1-2, §16.2).
+- [ ] U5 `journal recompute` (decision 54; DESIGN §9.4, §15.2).
+- [ ] U6 Final report (`meta/FINAL-REPORT-7.md`), with `./scripts/gate M0` at the pushed tip.

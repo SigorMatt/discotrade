@@ -354,6 +354,28 @@ brief may name the timeout.
 
 Status: open
 
+### HF-007 — the review protocol's step 2 proves nothing on a tests-only unit commit
+
+Severity: low · Component: the review protocol of hands' templates and
+this project's `meta/REVIEW-PROTOCOL.md` · Found: 2026-10-12, REVIEW-6
+(`hands:` note), recorded by mission 7 U0.
+
+Symptom. The protocol's step 2 (revert the non-test files of a unit
+commit and expect red) is vacuous when a unit commit changes only tests,
+as all four of mission 6's unit commits did. The reviewer's sub-agents
+made the wrong changes the commit bodies name instead, a path the
+protocol does not name. Separately, each review sub-agent ran
+`./scripts/check` once, not three times.
+
+Direction (for the hands Project). Name in the protocol the path for a
+tests-only commit: make, in a worktree and without committing, each wrong
+change the commit body names, and expect red; and say how many
+`./scripts/check` runs a reviewer owes.
+
+What this project does meanwhile: nothing in product code.
+
+Status: open
+
 D-004 status (appended 2026-10-12, mission 6 U0): Status: answered meta/decisions/decisions-2026-10-12.md (item 41)
 
 D-005 status (appended 2026-10-12, mission 6 U0): Status: answered meta/decisions/decisions-2026-10-12.md (item 43)

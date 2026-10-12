@@ -58,3 +58,5 @@
 - 2026-10-12 mission 6 U4 done b268252: test_gate_script.py runs M0 G0.4 instead of G0.3, gate subprocess timeout 600->1200s; file 180.2s -> 11.3s; PASS-for-failing-item change turns it red (3 fail); check green 3/3. Scratch-pytest helpers keep 120s timeouts (outside decision 45).
 - 2026-10-12 mission 6 U5 gate run at 65718c5: check green x3 (orchestrator); gate M0: PASS (G0.1 62/63.5s, G0.2 7/119.5s, G0.3 13/171.3s, G0.4 4/0.25s), 357s, exit 0.
 - 2026-10-12 mission 6 U6 done: final report meta/FINAL-REPORT-6.md; gate M0 PASS at 65718c5; no product change, no mismatch; D-004/D-005 answered, D-006 deferred S2.1; mission finished.
+2026-10-12T14:11:30.001Z  consult 0mv5bq5op-0o73 (architect done) on aux.done of aux job 0mv5ajqi9-pzef: VERDICT: next kit mission-7-kit
+- 2026-10-12 mission 7 U0: plan.md, CHECKPOINT.md, HF-007 (REVIEW-6 hands note: protocol step 2 vacuous on tests-only commits; check run once) filed; base c73a695.
