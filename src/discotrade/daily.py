@@ -80,6 +80,10 @@ source per adapter (``sources.sources_for``) and uses it for every step of
 the day, so that each instrument's source is built once per run (mission 9
 U3).
 
+The whole day runs inside ``bars.store.day_run()`` (decision 2026-10-14 80
+(b)): each listed month file is hashed once per index entry in the day, and
+the next day (of a ``replay`` too) checks every file it reads again.
+
 No wall clock is read (I-12): the instant is the clock's, and the commit's
 dates are its.
 """
@@ -97,7 +101,7 @@ import pandas as pd
 
 from discotrade import journal, ledger, lifecycle, paper, sources, state, stats, table
 from discotrade.bars.gaps import check_gaps, day_end, latest_closed_day
-from discotrade.bars.store import BarStore, BarStoreError, finite_rows
+from discotrade.bars.store import BarStore, BarStoreError, day_run, finite_rows
 from discotrade.clock import Clock
 from discotrade.config import Calendar, TrackConfig, load_track_config
 from discotrade.rolls import update_rolls
@@ -273,7 +277,7 @@ def run_day(state_dir: Path, config_dir: Path, track: str, clock: Clock,
     admission of ``candidate`` when given, and commit it."""
     state_dir = Path(state_dir)
     state.require_state_directory(state_dir)
-    with state.lock(state_dir):
+    with state.lock(state_dir), day_run():
         return _locked(state_dir, Path(config_dir), track, clock, day, candidate)
 
 

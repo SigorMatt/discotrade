@@ -50,13 +50,25 @@ silently leave out. The writer and ``bars fetch`` read the indexed
 last ``ts`` through ``_indexed_last_ts``, which does not refuse. The date of a
 notice is the caller's ``day``; inside ``append`` it is the UTC date of
 ``available_until``.
+
+Within one day run (``day_run()``, which ``daily.run_day`` holds around a
+day; decision 2026-10-14 80 (b), O-3) a listed month file is read and hashed
+at most once per index entry: the frame of the first read that matched the
+index is kept, keyed by the file's path and the entry's row count and hash,
+and every later read of that run with the same entry is served from it, on
+every ``BarStore`` of the process. An append changes the entry, so the
+appended file is read and checked again. The kept frames are dropped when the
+day run ends, so a file changed after it was verified is refused by the next
+day run's first read of it. Nothing is written for this; outside a day run
+every read checks its file as before.
 """
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -74,6 +86,30 @@ STORE_RECOVERED = "store_recovered"
 
 class BarStoreError(ValueError):
     """A refused write or read."""
+
+
+#: The month frames verified in the current day run, keyed by the file's path
+#: and the index entry's row count and hash; None outside a day run.
+_RUN: dict[tuple[str, int, str], pd.DataFrame] | None = None
+
+
+@contextlib.contextmanager
+def day_run() -> Iterator[None]:
+    """The scope of one day run (decision 2026-10-14 80 (b)): inside it, each
+    listed month file is hashed once per index entry and the verified frame
+    serves every later read; on exit, success or failure, everything kept is
+    dropped. One process, no threads (80 (c))."""
+    global _RUN
+    outer = _RUN
+    _RUN = {}
+    try:
+        yield
+    finally:
+        _RUN = outer
+
+
+def _run_key(path: Path, entry: dict[str, Any]) -> tuple[str, int, str]:
+    return (os.path.abspath(path), int(entry["rows"]), str(entry["hash"]))
 
 
 def _iso(ts: pd.Timestamp) -> str:
@@ -250,9 +286,16 @@ class BarStore:
             if not path.exists():
                 raise BarStoreError(f"{symbol} {month}: month file missing, listed in the "
                                     f"index (a revised data point); refused")
+            run = _RUN
+            key = None if listed is None or run is None else _run_key(path, listed)
+            if run is not None and key in run:
+                verified[month] = (listed["hash"], run[key])  # verified in this day run
+                continue
             frame = pd.read_parquet(path)
             if listed is not None and self._matches(frame, listed):
                 verified[month] = (listed["hash"], frame)
+                if run is not None and key is not None:
+                    run[key] = frame
                 continue
             if not self._interrupted(frame, listed, last):
                 raise BarStoreError(self._revised(symbol, month))
@@ -311,6 +354,10 @@ class BarStore:
 
     def _read_month(self, symbol: str, month: str, entry: dict[str, Any]) -> pd.DataFrame:
         path = self.month_path(symbol, month)
+        run = _RUN
+        key = _run_key(path, entry)
+        if run is not None and key in run:
+            return run[key]                   # verified in this day run
         if not path.exists():
             raise BarStoreError(f"{symbol} {month}: month file missing, listed in the index")
         frame = pd.read_parquet(path)
@@ -322,6 +369,8 @@ class BarStore:
                     f"index; refused until the next append or bars fetch completes it"
                 )
             raise BarStoreError(self._revised(symbol, month))
+        if run is not None:
+            run[key] = frame
         return frame
 
     def _months(self, symbol: str) -> dict[str, Any]:
