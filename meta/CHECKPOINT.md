@@ -1,14 +1,16 @@
 # CHECKPOINT
 
 Mission: 9 (`meta/BUILDER-9-PROMPT.md`), roadmap step S1.3. Closes milestone M1. Base 974b700.
-Done: U0 3c0b023, U1 94e1294, U2 15754e9 (D-007 filed), U3 d65964f, U4 04aee87, U5 33cfe7a.
+Done: U0 3c0b023, U1 94e1294, U2 15754e9 (D-007 filed), U3 d65964f, U4 04aee87, U5 33cfe7a, U6 984cc0c.
 Carried risk: U3 measured 2.480 s per replay day (3.702 before) over the first 20 days of a
 controls-only test_synth replay on the gate configuration, a lower bound: ~37 min for M1's ~900
 days against DESIGN §18.2's 15 minutes. Handled at U7 as the brief says (finding with per-item
-times; VERDICT: question if gate M1 cannot finish iUnit in progress: U6 (next) — scripted candidates in the replay (decision 73): `replay
---candidates <file>`, admission after lifecycle steps 1-4 of D, staged with the day.
-Done means: the U6 gate tests, both named wrong changes seen red, check green 3/3, one commit
-pushed.
+times; VERDICT: question if gate M1 canUnit in progress: U7 (next) — the M1 gate tests G1.1-G1.4 (decision 74), then gate M1 and gate
+M0 at the pushed tip (each one foreground call, 20-minute timeout, outputs kept verbatim under
+meta/drafts/ with wall times).
+Done means: the four gate test files, the four named wrong changes seen red via
+`./scripts/gate M1 G1.<n>`, check green 3/3, one commit pushed, both gate outputs kept; a finding
+with per-item times if gate M1 exceeds 15 min; VERDICT: question if it cannot finish in 20 min.
 
 it
 pushed.

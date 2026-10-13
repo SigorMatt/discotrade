@@ -16,6 +16,6 @@ Carried items:
 - [x] U3 The two performance items (BACKLOG; DESIGN §5.2, §5.5, §16.1 step 1, §18.2; decisions 4, 5, 18, 31, 35). — d65964f
 - [x] U4 The combined portfolio and rank persistence in the day loop (decisions 59, 62, 63, 69, 70; DESIGN §9.3, §10.5, §11.1, §16.1 steps 2 and 6). — 04aee87
 - [x] U5 The table (decisions 25, 30, 41, 60, 62, 71; DESIGN §10.4, §8, §11.2). — 33cfe7a
-- [ ] U6 Scripted candidates in the replay (decisions 48, 63, 73; DESIGN §10.2, §10.3, §16.1 step 5).
+- [x] U6 Scripted candidates in the replay (decisions 48, 63, 73; DESIGN §10.2, §10.3, §16.1 step 5). — 984cc0c
 - [ ] U7 The M1 gate tests (decisions 9, 59, 60, 69-74; DESIGN §18.2, §18.3 M1), then `./scripts/gate M1` and `./scripts/gate M0` at the pushed tip.
 - [ ] U8 Final report (`meta/FINAL-REPORT-9.md`).
