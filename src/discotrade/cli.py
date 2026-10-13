@@ -569,7 +569,7 @@ def _replay(ctx: Context, args: argparse.Namespace) -> int:
     from discotrade.config import ConfigError, load_track_config
     from discotrade.daily import DailyError
     from discotrade.journal import WRITTEN, JournalError, Setup
-    from discotrade.replay import DayFailed, replay
+    from discotrade.replay import CandidatesError, DayFailed, read_candidates, replay
     from discotrade.sources import NotBuiltError
     from discotrade.state import StateError
     from discotrade.strategy import ResultError, StrategyError
@@ -585,6 +585,12 @@ def _replay(ctx: Context, args: argparse.Namespace) -> int:
                      "day's last expected bar (decision 2026-10-12 72)")
     if ctx.state is None:
         return usage(f"give --state <dir> or set {STATE_ENV}")
+    candidates = None
+    if args.candidates is not None:
+        try:
+            candidates = read_candidates(args.candidates)
+        except CandidatesError as exc:
+            return usage(str(exc))
     failures = (DailyError, StateError, JournalError, ConfigError, BarStoreError,
                 StrategyError, ResultError, EvaluationError, NotBuiltError, OSError, ValueError)
     try:
@@ -599,13 +605,17 @@ def _replay(ctx: Context, args: argparse.Namespace) -> int:
             what = f"journal written, {run.rows} rows; committed {run.commit}"
         else:
             what = "already journaled with equal rows; nothing written"
+        cand = ""
+        if run.admission is not None:
+            verdict = "admitted" if run.admission.admitted else "refused"
+            cand = f"; candidate {run.admission.id} {verdict} ({run.admission.reason})"
         print(f"replay: {ctx.track} {run.day.isoformat()} at {instant.isoformat()}: {what}; "
-              f"{len(run.events)} health events, {len(run.changes)} lifecycle rows",
+              f"{len(run.events)} health events, {len(run.changes)} lifecycle rows{cand}",
               flush=True)
 
     try:
         replay(ctx.state, ctx.config, ctx.track, tc, calendars, args.first, args.last, line,
-               failures)
+               failures, candidates)
     except DayFailed as exc:
         print(f"replay: FAIL: {ctx.track} {exc}", file=sys.stderr)
         return 1
@@ -619,6 +629,14 @@ def _add_replay(subparsers: argparse._SubParsersAction, common: argparse.Argumen
         "--to, in order, in one state directory, with the clock at the close of each day's "
         "last expected bar; one line per day; stops at the first day that fails, exit 1 "
         "naming it (DESIGN 16.4; decision 2026-10-12 72); --as-of is refused",
+    )
+    replay.add_argument(
+        "--candidates", metavar="FILE", type=Path, default=None,
+        help="a JSON lines file of scripted candidates, at most one per day, each line "
+        "holding day, source (a file under the repository's reference/ or tests/fixtures/), "
+        "params, cell, model_id, model_version, cutoff, description, profile_version and "
+        "metrics_t; each is admitted or refused after lifecycle steps 1 to 4 of its day; "
+        "a file refused is a usage error before any day runs (decision 2026-10-12 73)",
     )
     replay.add_argument("--from", dest="first", metavar="YYYY-MM-DD", required=True,
                         type=date.fromisoformat, help="first day of the span")

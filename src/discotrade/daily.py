@@ -45,7 +45,12 @@ releasing it on success and on failure:
   to ``ledger/<track>/lifecycle.jsonl`` in the staging directory (decision
   62). An approach whose evaluation breaks decision 22's contract has its rows
   of ``D`` dropped and is retired by step 1; the day goes on. Then, when the
-  day is new, rank persistence (decision 70): for each block of
+  day is new and a scripted candidate is given (``candidate``; decision 73:
+  only ``replay`` gives one, ``run-day`` takes none), its admission or refusal
+  after those steps (``lifecycle.admit``, decision 63): its trial row, and its
+  approach and lifecycle rows or its ``trials/<id>/`` files, in the staging
+  directory; a re-run admits nothing (the day's rows are already in the
+  ledgers, I-6). Then, when the day is new, rank persistence (decision 70): for each block of
   ``stats.due_blocks`` (its last calendar day on or before ``D``, its previous
   block starting on or after the first journaled day, no row yet), in
   ascending order, decision 59's row over the approaches whose state after
@@ -117,6 +122,7 @@ class DayRun:
     commit: str | None
     events: tuple[HealthEvent, ...]      # appended to the health log by this run
     changes: tuple[Mapping[str, object], ...] = ()   # lifecycle rows appended by this run
+    admission: lifecycle.Admission | None = None      # the day's candidate, when it had one
 
 
 def _sources(tc: TrackConfig, calendars: Mapping[str, Calendar]) -> dict[str, BarSource]:
@@ -262,16 +268,17 @@ def _rank_persistence(state_dir: Path, setup: journal.Setup, day: date, first: d
 
 
 def run_day(state_dir: Path, config_dir: Path, track: str, clock: Clock,
-            day: date | None = None) -> DayRun:
-    """Run steps 1 and 2 of ``day`` (or decision 19's ``D``) and commit it."""
+            day: date | None = None, candidate: lifecycle.Candidate | None = None) -> DayRun:
+    """Run steps 1 and 2 of ``day`` (or decision 19's ``D``), with the
+    admission of ``candidate`` when given, and commit it."""
     state_dir = Path(state_dir)
     state.require_state_directory(state_dir)
     with state.lock(state_dir):
-        return _locked(state_dir, Path(config_dir), track, clock, day)
+        return _locked(state_dir, Path(config_dir), track, clock, day, candidate)
 
 
 def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
-            day: date | None) -> DayRun:
+            day: date | None, candidate: lifecycle.Candidate | None) -> DayRun:
     setup = journal.Setup.load(config_dir, track)
     tc = load_track_config(config_dir, track)
     calendars = dict(setup.calendars)
@@ -316,8 +323,12 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
             paper.write(staging, track, records)
         else:
             records = paper.read(state_dir, track)
-        changes = lifecycle.run_steps(state_dir, setup, d, records, dict(result.failures),
-                                      into=staging)
+        changes = list(lifecycle.run_steps(state_dir, setup, d, records,
+                                           dict(result.failures), into=staging))
+        admission = None
+        if result.status == journal.WRITTEN and candidate is not None:
+            admission = lifecycle.admit(state_dir, setup, candidate, d, into=staging)
+            changes += admission.lifecycle
         if result.status == journal.WRITTEN:
             _rank_persistence(state_dir, setup, d, min(journaled | {d}), records, staging)
             table.write(staging, track, table.build(state_dir, setup, d, records,
@@ -331,7 +342,8 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     sha = state.commit(state_dir, track, d, clock) if moved else None
-    return DayRun(d, result.status, result.rows, sha, tuple(appended), tuple(changes))
+    return DayRun(d, result.status, result.rows, sha, tuple(appended), tuple(changes),
+                  admission)
 
 
 def describe(run: DayRun, track: str) -> Sequence[str]:
