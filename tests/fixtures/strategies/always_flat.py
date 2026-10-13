@@ -1,0 +1,12 @@
+"""Always flat: the target position is 0 at every bar, whatever ``tag`` says
+(``tag`` only gives each copy its own approach id, DESIGN 9.1). Its paper
+net returns are all 0, so its paper Sharpe is not a number (DESIGN 8,
+decision 30): it never goes dormant by step 2 and, once displaced, never
+returns by step 3, so it is retired at the dormant limit (step 4). A fixture
+for gate item G1.3 (DESIGN 10.3, 18.3; decisions 63, 74)."""
+
+PARAMS = {"tag": 1}
+
+
+def position(bars, params):
+    return 0.0
