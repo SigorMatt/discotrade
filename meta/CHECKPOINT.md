@@ -1,14 +1,14 @@
 # CHECKPOINT
 
 Mission: 9 (`meta/BUILDER-9-PROMPT.md`), roadmap step S1.3. Closes milestone M1. Base 974b700.
-Done: U0 3c0b023, U1 94e1294, U2 15754e9 (D-007 filed), U3 d65964f, U4 04aee87.
+Done: U0 3c0b023, U1 94e1294, U2 15754e9 (D-007 filed), U3 d65964f, U4 04aee87, U5 33cfe7a.
 Carried risk: U3 measured 2.480 s per replay day (3.702 before) over the first 20 days of a
 controls-only test_synth replay on the gate configuration, a lower bound: ~37 min for M1's ~900
 days against DESIGN §18.2's 15 minutes. Handled at U7 as the brief says (finding with per-item
-times; VERDICT: question if gate M1 cannot finish in its 20-minUnit in progress: U5 (next) — the table (§10.4, decision 71): table.json and table.md written
-with the day, staged.
-Done means: tests/test_table.py asserts the U5 gate, the three named wrong changes seen red, check
-green 3/3, one commit pushed.
+times; VERDICT: question if gate M1 cannot finish iUnit in progress: U6 (next) — scripted candidates in the replay (decision 73): `replay
+--candidates <file>`, admission after lifecycle steps 1-4 of D, staged with the day.
+Done means: the U6 gate tests, both named wrong changes seen red, check green 3/3, one commit
+pushed.
 
 it
 pushed.
