@@ -18,4 +18,4 @@ Carried items:
 - [x] U5 The table (decisions 25, 30, 41, 60, 62, 71; DESIGN §10.4, §8, §11.2). — 33cfe7a
 - [x] U6 Scripted candidates in the replay (decisions 48, 63, 73; DESIGN §10.2, §10.3, §16.1 step 5). — 984cc0c
 - [x] U7 The M1 gate tests (decisions 9, 59, 60, 69-74; DESIGN §18.2, §18.3 M1), then `./scripts/gate M1` and `./scripts/gate M0` at the pushed tip. — tests ae7158b, findings 6163568; stopped on D-008 and D-009, answered by owner O-1 and O-2 (5acec56); resumed b62f5f0: gate M1 PASS item by item (O-2), gate M0 PASS
-- [ ] U8 Final report (`meta/FINAL-REPORT-9.md`).
+- [x] U8 Final report (`meta/FINAL-REPORT-9.md`). — this commit

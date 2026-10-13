@@ -6,8 +6,10 @@ U6 984cc0c, U7 ae7158b + 6163568 (D-008, D-009) + b62f5f0 (under owner O-1, O-2)
 Gate M1 at b62f5f0, item by item (O-2): G1.1 PASS 892 s, G1.2 PASS 324 s, G1.3 PASS 1083 s,
 G1.4 PASS 1 s. Gate M0 PASS 342 s.
 
-Unit in progress: U8 (next) — final report meta/FINAL-REPORT-9.md (drafted under meta/drafts/).
-Done means: check green 3/3 at the tip, the report committed and pushed with the verdict line.
+Unit in progress: none. Mission 9 finished; meta/FINAL-REPORT-9.md exists. Milestone M1 closed
+(gate M1 PASS item by item per O-2 at b62f5f0; gate M0 PASS).
+Intent: next: the cold review of mission 9, then the architect's next kit (O-3's speed work first).
+Done means: n/a
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
 (items 66-75 new, 1-65 still bind); no value of a frozen file changes (config/, existing entries
