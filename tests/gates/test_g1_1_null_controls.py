@@ -16,9 +16,14 @@ deviation over the slots (ddof 1) divided by the square root of their number:
 - the mean summed cost (``gross - net_1x``) is positive;
 - the mean summed ``net_1x`` is within four SE (of the summed ``net_1x``) of
   minus the mean summed cost;
-- decision 59's statistic (``stats.rank_persistence``), computed for each block
-  completed in the year with the random slots as the population, has at least
-  40 values that are not missing, and their mean is within four SE of 0;
+- decision 59's statistic (``stats.rank_persistence``), taken on each random
+  slot's summed paper ``gross`` (owner decision O-1, which replaces ``net_1x``
+  here), computed for each block completed in the year with the random slots as
+  the population, has at least 40 values that are not missing, and their mean
+  is within four SE of 0. The same statistic on ``net_1x`` is also computed and
+  its mean, SE and count reported as a pytest warning (visible in pytest's
+  warnings summary; ``scripts/gate`` shows only its count), asserting nothing
+  about it (O-1);
 - ``stats/test_synth/rank_persistence.jsonl`` holds one row per completed
   block, blocks 1 to 51 (decision 70: block ``k`` is the 7 days from
   2019-06-03 + 7k; block 51 is 2020-05-25 to 2020-05-31, the last that ends by
@@ -32,6 +37,7 @@ replay's clock.
 """
 
 import math
+import warnings
 from datetime import date
 
 import numpy as np
@@ -126,18 +132,34 @@ def test_mean_summed_net_is_within_four_se_of_minus_the_cost(slot_sums):
     assert abs(mean - (-cost)) <= 4 * se, (mean, cost, se)
 
 
-def test_rank_persistence_of_the_random_slots_is_centred_on_zero(records, setup):
+def rank_values(records, setup, column):
     cal = setup.calendars["synth_week"]
     subjects = {f"rc:{k}": [cal] for k in range(SLOTS)}
     values = []
     for k in BLOCKS:
         row = stats.rank_persistence(
             records, subjects, epoch=FIRST, block_days=7, bar_seconds=3600, k=k,
-            min_population=int(setup.thresholds["alerts.rank_min_population"]))
+            min_population=int(setup.thresholds["alerts.rank_min_population"]),
+            column=column)
         first, last = stats.block_dates(FIRST, 7, k)
         assert last <= LAST
         if row["statistic"] is not None:
             values.append(row["statistic"])
+    return values
+
+
+def test_rank_persistence_of_the_random_slots_is_centred_on_zero(records, setup):
+    # owner decision O-1: the clause reads the slots' summed paper gross
+    values = rank_values(records, setup, "gross")
+    # O-1: the net statistic is computed and reported, nothing asserted about it
+    net = rank_values(records, setup, "net_1x")
+    report = "G1.1 rank persistence on net_1x (reported, not asserted, O-1): "
+    if len(net) >= 2:
+        net_mean, net_se = mean_se(net)
+        report += f"mean {net_mean:.4f}, SE {net_se:.4f}, {len(net)} values"
+    else:
+        report += f"{len(net)} values not missing"
+    warnings.warn(report, stacklevel=1)
     assert len(values) >= MIN_VALUES, len(values)
     mean, se = mean_se(values)
     assert abs(mean) <= 4 * se, (mean, se, len(values))

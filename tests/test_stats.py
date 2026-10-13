@@ -193,6 +193,39 @@ def test_statistic_is_missing_below_the_minimum_population():
     assert row["size"] == MIN_POP and row["statistic"] is not None
 
 
+def test_the_column_parameter_chooses_the_paper_column_summed():
+    # owner decision O-1: the column is a parameter, default net_1x. Five basket
+    # subjects whose gross and net_1x rankings differ; each day of a block holds
+    # the block's sum divided by 7 (sums are whole numbers so ranks are exact).
+    gross_prev, gross_cur = [1.0, 2.0, 3.0, 4.0, 5.0], [2.0, 1.0, 4.0, 3.0, 5.0]
+    net_prev, net_cur = [1.0, 2.0, 3.0, 4.0, 5.0], [5.0, 3.0, 4.0, 1.0, 2.0]
+    prev = days(date(2019, 6, 3), date(2019, 6, 9))
+    cur = days(date(2019, 6, 10), date(2019, 6, 16))
+    records, subjects = [], {}
+    for i in range(5):
+        name = f"s{i}"
+        subjects[name] = BASKET
+        for block, g, n in ((prev, gross_prev[i], net_prev[i]), (cur, gross_cur[i], net_cur[i])):
+            records += [{"date": d, "subject": name, "kind": "approach", "gross": g / 7,
+                         "net_1x": n / 7, "net_2x": 0.0, "trades": 0, "clean": True}
+                        for d in block]
+    paper_frame = pd.DataFrame(records)[list(paper.COLUMNS)]
+
+    def at(**kw):
+        return stats.rank_persistence(paper_frame, subjects, epoch=TRACK.epoch,
+                                      block_days=TRACK.block_days,
+                                      bar_seconds=TRACK.bar_seconds, k=1,
+                                      min_population=MIN_POP, **kw)["statistic"]
+
+    # by hand, 1 - 6 sum(d^2) / (n (n^2 - 1)) with n = 5:
+    # gross ranks 1 2 3 4 5 / 2 1 4 3 5: sum d^2 = 4, 1 - 24/120 = 0.8
+    # net_1x ranks 1 2 3 4 5 / 5 3 4 1 2: sum d^2 = 36, 1 - 216/120 = -0.8
+    assert eq(at(column="gross"), 0.8)
+    assert eq(at(column="net_1x"), -0.8)
+    assert eq(at(), -0.8)                       # the default is net_1x
+    assert at(column="net_2x") is None          # net_2x is 0 throughout: zero deviation
+
+
 def test_statistic_is_missing_when_a_rank_series_has_zero_deviation():
     paper_frame, subjects = two_blocks([0.01] * 6, CUR)
     assert persistence(paper_frame, subjects)["statistic"] is None

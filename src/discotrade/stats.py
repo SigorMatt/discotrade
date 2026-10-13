@@ -15,11 +15,12 @@ Rank persistence (11.1, decision 59):
   instrument of the subject), a date counting for a calendar when it expects
   a bar in it, as the daily run's ``is_trading_day`` counts it.
 - ``rank_persistence(paper, subjects, *, epoch, block_days, bar_seconds, k,
-  min_population)``: decision 59's row for block ``k >= 1``. ``subjects``
+  min_population, column="net_1x")``: decision 59's row for block ``k >= 1``. ``subjects``
   maps each candidate subject to its own instruments' calendars; a candidate
   belongs to the population when its trading dates hold at least one day in
   each of blocks ``k - 1`` and ``k`` and it has a paper row on every one of
-  them. The statistic is ``spearman`` of the summed paper ``net_1x`` in block
+  them. The statistic is ``spearman`` of the summed paper ``column`` (default
+  ``net_1x``, which every production caller uses; owner decision O-1) in block
   ``k - 1`` and in block ``k``, ``None`` with fewer than ``min_population``
   members. The row's keys are ``block``, ``first``, ``last`` (block ``k``),
   ``previous_first``, ``previous_last`` (block ``k - 1``), dates in ISO form,
@@ -205,8 +206,9 @@ def spearman(x: Sequence[float], y: Sequence[float]) -> float | None:
 
 def rank_persistence(paper: pd.DataFrame, subjects: Mapping[str, Sequence[Calendar]], *,
                      epoch: date, block_days: int, bar_seconds: int, k: int,
-                     min_population: int) -> dict[str, Any]:
-    """Decision 59's row for block ``k`` over the candidate ``subjects``."""
+                     min_population: int, column: str = "net_1x") -> dict[str, Any]:
+    """Decision 59's row for block ``k`` over the candidate ``subjects``, summing the
+    paper ``column`` (owner decision O-1; production callers keep ``net_1x``)."""
     if k < 1:
         raise ValueError(f"block {k} has no block before it")
     prev = block_dates(epoch, block_days, k - 1)
@@ -215,7 +217,7 @@ def rank_persistence(paper: pd.DataFrame, subjects: Mapping[str, Sequence[Calend
     span = paper[paper["subject"].isin(list(subjects)) & (paper["date"] >= prev[0])
                  & (paper["date"] <= cur[1])]
     for subject, mine in span.groupby("subject", sort=True):
-        held[str(subject)] = {d: float(x) for d, x in zip(mine["date"], mine["net_1x"],
+        held[str(subject)] = {d: float(x) for d, x in zip(mine["date"], mine[column],
                                                           strict=True)}
     members, sums_prev, sums_cur = [], [], []
     for subject in sorted(subjects):
