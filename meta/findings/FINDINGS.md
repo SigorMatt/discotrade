@@ -229,6 +229,77 @@ Status: open
 
 ---
 
+### D-008 — G1.1's rank-persistence assertion cannot hold: the random slots' costs persist from block to block
+
+Severity: high (gate M1 cannot pass as specified) · Component: DESIGN
+§18.3 G1.1 with §10.1 and §11.1; decisions 59, 64 and 74 (G1.1);
+`tests/gates/test_g1_1_null_controls.py::test_rank_persistence_of_the_random_slots_is_centred_on_zero`
+· Found: 2026-10-13, mission 9 U7 (ae7158b).
+
+Symptom. The one-year controls-only replay of test_synth on the gate
+configuration (2019-06-03 to 2020-06-01, 50 random slots) gives, for
+decision 59's statistic over blocks 1 to 51 with the random slots as the
+population, 51 values that are not missing with mean 0.7066 and SE 0.0427.
+Four SE is 0.171, so the assertion fails (`./scripts/gate M1 G1.1`: "1
+failed, 5 passed"; output kept in meta/drafts/gate-M1-mission9.txt). The
+other five G1.1 tests pass: mean summed gross -0.0092 (sd over slots 0.067),
+mean summed cost 2.547 (sd 0.766), mean summed net_1x -2.556 (sd 0.769).
+
+Cause. Measured on the same state: the same statistic on `gross` in place
+of `net_1x` has mean -0.0195 and SE 0.0199, within four SE of 0. Each draw
+gives each slot its own `H` (log-uniform on 1 to 48 bars) with `q = 1/H`
+(DESIGN 10.1, decision 64), so a slot's turnover, hence its cost, is set
+for a whole month; costs are about ten times the gross dispersion, so the
+ranking of summed `net_1x` is the ranking of costs, and it persists from
+one 7-day block to the next. Rank persistence of net returns across
+heterogeneous random controls is not centred on zero, whatever the
+implementation. With the costs made zero (the seen-to-fail change of
+G1.1) the same rank-persistence test passes and only the positive-cost
+test goes red, which confirms it.
+
+Direction (for the architect). G1.1's rank-persistence clause, as decision
+74 states it, cannot be met. Options: compute the statistic on the slots'
+gross returns; or on net returns of slots that share one `(H, q)`; or keep
+net returns and assert something else (for example that the statistic is
+positive and explained by cost). The test keeps decision 74's assertion
+until a decision changes it; nothing was weakened.
+
+Status: open
+
+---
+
+### D-009 — gate M1 takes about 38 minutes, beyond DESIGN 18.2's 15
+
+Severity: medium · Component: DESIGN §18.2 with §18.3 M1 and decision 74;
+the day loop's speed (`src/discotrade/daily.py` and what it calls) ·
+Found: 2026-10-13, mission 9 U7 (ae7158b).
+
+Symptom. Measured on the builder's laptop, each item's pytest process:
+
+- G1.1 (one year, controls only, about 260 replay days): 876 s run
+  directly, 869 s and 888 s through `./scripts/gate`;
+- G1.2 (two replays of 2019-06-03 to 2019-08-02, recompute, a re-run):
+  329 s run directly, 287 s through `./scripts/gate M1 G1.2`;
+- G1.3 (2019-06-03 to 2020-06-10, about 265 days with approaches): 1069 s
+  run directly, 1058 s through `./scripts/gate M1 G1.3`;
+- G1.4: 1 s.
+
+The sum is about 2275 s (38 min). `./scripts/gate M1` at ae7158b, in one
+foreground call wrapped in `timeout 1185`, printed `G1.1 FAIL` after 889 s
+and was terminated at 1185 s while G1.2 ran; it printed no milestone
+verdict. A replay day costs about 2.4 to 3.3 s with controls only (rising
+with the history) and about 4 s with two approaches journaled.
+
+Direction (for the architect). The spans are fixed by decision 74 (G1.1's
+year, G1.3's 365-calendar-day dormant limit) and were not shortened. The
+gate needs either a faster day loop (the performance items) or a time limit
+for M1 that the spans allow; until then `./scripts/gate M1` does not finish
+within one 20-minute call, and each item has to be run on its own.
+
+Status: open
+
+---
+
 ## hands findings
 
 ### HF-001 — after an autonomous apply, the engine sends the kickoff of the playbook it loaded before the apply
