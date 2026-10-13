@@ -282,18 +282,18 @@ def _carries(state_dir: Path, track: str, day: date, subjects: Mapping[str, date
     return out
 
 
-def _rows(subject: str, kind: str, day: date | None, ev: Evaluation, previous: float
-          ) -> pd.DataFrame:
-    """The journal rows of ``ev``, dated ``day``, or each its own trading date
-    (``ev.rows["date"]``) when ``day`` is None."""
+def _columns(subject: str, kind: str, day: date | None, ev: Evaluation, previous: float
+             ) -> dict[str, Any]:
+    """The columns of ``_rows``, each one value per row."""
     r = ev.rows
+    n = len(r)
     h = r["h"].to_numpy(dtype=np.float64)
-    return pd.DataFrame({
-        "date": list(r["date"]) if day is None else [day] * len(r),
+    return {
+        "date": list(r["date"]) if day is None else [day] * n,
         "ts": r["ts"].to_numpy(),
-        "subject": subject,
-        "kind": kind,
-        "instrument": ev.symbol,
+        "subject": [subject] * n,
+        "kind": [kind] * n,
+        "instrument": [ev.symbol] * n,
         "prev_position": np.concatenate([[previous], h[:-1]]),
         "position": h,
         "target_next": r["p"].to_numpy(dtype=np.float64),
@@ -307,7 +307,24 @@ def _rows(subject: str, kind: str, day: date | None, ev: Evaluation, previous: f
         "gross": r["gross"].to_numpy(dtype=np.float64),
         "net_1x": r["net_1x"].to_numpy(dtype=np.float64),
         "net_2x": r["net_2x"].to_numpy(dtype=np.float64),
-    })
+    }
+
+
+def _rows(subject: str, kind: str, day: date | None, ev: Evaluation, previous: float
+          ) -> pd.DataFrame:
+    """The journal rows of ``ev``, dated ``day``, or each its own trading date
+    (``ev.rows["date"]``) when ``day`` is None."""
+    return pd.DataFrame(_columns(subject, kind, day, ev, previous))
+
+
+def _joined(parts: Sequence[dict[str, Any]]) -> pd.DataFrame:
+    """The rows of several ``_columns``, in order, as one frame: the rows
+    ``pd.concat`` of their ``_rows`` frames gives, built once."""
+    return pd.DataFrame({name: np.concatenate([np.asarray(p[name], dtype=object)
+                                               if name in ("date", "ts", "subject", "kind",
+                                                           "instrument")
+                                               else p[name] for p in parts])
+                         for name in COLUMNS})
 
 
 def subject_rows(state_dir: Path, setup: Setup, day: date, subject: str, kind: str,
@@ -527,11 +544,13 @@ def _day_rows(state_dir: Path, setup: Setup, day: date, failures: dict[str, str]
             if failures is None:
                 raise
             failures[a.id] = str(exc)
-    for name, kind, ev, previous in control_evaluations(
-            state_dir, setup, DateRange(day, day), draws, carries,
-            check=(day, first - timedelta(days=1))):
-        if not ev.rows.empty:
-            frames.append(_rows(name, kind, day, ev, previous))
+    parts = [_columns(name, kind, day, ev, previous)
+             for name, kind, ev, previous in control_evaluations(
+                 state_dir, setup, DateRange(day, day), draws, carries,
+                 check=(day, first - timedelta(days=1)))
+             if not ev.rows.empty]
+    if parts:  # the controls' rows as one frame, not one per (control, instrument)
+        frames.append(_joined(parts))
     rows = _frame(pd.concat(frames, ignore_index=True)) if frames else _empty()
     return rows, drawn
 

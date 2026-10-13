@@ -304,24 +304,32 @@ def score(win: Window, subjects: Sequence[tuple[str, np.ndarray, tuple[float, fl
     fills = SimExecutor().execute(orders, {symbol: market})
     out = []
     width = n - first
+    # The columns every subject shares, typed once (as each subject's frame
+    # would type them from the same values).
+    shared = pd.DataFrame({"ts": win.inside["ts"].to_numpy(),
+                           "contract": win.inside["contract"].to_numpy(),
+                           "date": list(win.dates)}, index=win.inside.index)
+    ts, contract, dates = shared["ts"], shared["contract"], shared["date"]
     for j, (targets, held, gross) in enumerate(legs):
         mine = fills[j * width:(j + 1) * width]
+        cost = np.array([f.cost for f in mine], dtype=np.float64)
         columns: dict[str, Any] = {
-            "ts": win.inside["ts"].to_numpy(),
-            "contract": win.inside["contract"].to_numpy(),
-            "date": list(win.dates),
+            "ts": ts,
+            "contract": contract,
+            "date": dates,
             "p": targets,
             "h": held,
             "gross": gross,
-            "trade": [f.order.trade for f in mine],
+            "trade": np.array([f.order.trade for f in mine], dtype=np.float64),
         }
-        for name in ("fee", "spread", "slippage", "roll", "cost"):
-            columns[name] = [getattr(f, name) for f in mine]
-        columns["net_1x"] = [costs.net(g, f.cost, 1) for g, f in zip(gross, mine, strict=True)]
-        columns["net_2x"] = [costs.net(g, f.cost, 2) for g, f in zip(gross, mine, strict=True)]
-        rows = pd.DataFrame(columns, index=win.inside.index)
-        out.append(Evaluation(symbol, rows[list(ROW_COLUMNS)], bars, first, gaps,
-                              win.rolled))
+        for name in ("fee", "spread", "slippage", "roll"):
+            columns[name] = np.array([getattr(f, name) for f in mine], dtype=np.float64)
+        columns["cost"] = cost
+        # costs.net elementwise: the same float operations as one value at a time.
+        columns["net_1x"] = costs.net(gross, cost, 1)
+        columns["net_2x"] = costs.net(gross, cost, 2)
+        rows = pd.DataFrame(columns, index=win.inside.index)  # ROW_COLUMNS, in order
+        out.append(Evaluation(symbol, rows, bars, first, gaps, win.rolled))
     return out
 
 

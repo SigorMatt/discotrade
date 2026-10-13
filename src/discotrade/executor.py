@@ -89,6 +89,7 @@ class _Priced:
     def __init__(self, market: Market) -> None:
         self.market = market
         self.ts = pd.DatetimeIndex(market.bars["ts"])
+        self.stamps = list(self.ts)   # self.ts[k], each made once
         self.open = market.bars["open"].to_numpy(dtype=np.float64)
         self.sigma = costs.sigma(market.bars["close"].to_numpy(dtype=np.float64),
                                  market.gaps)
@@ -104,7 +105,8 @@ class _Priced:
             m = self.market
             inst = m.instrument
             o = float(self.open[u])
-            ticks = spread_ticks(inst, m.calendar, m.spread_table, self.ts[u].to_pydatetime())
+            ticks = spread_ticks(inst, m.calendar, m.spread_table,
+                                 self.stamps[u].to_pydatetime())
             self.units[u] = (costs.fee(inst, o), costs.half_spread(inst, ticks, o),
                              costs.slip(inst, float(self.sigma[u])))
         return self.units[u]
@@ -143,7 +145,7 @@ class SimExecutor:
             unit = costs.unit_cost(fee, half, slip)
             trade = order.trade
             fills.append(Fill(
-                order=order, bar=p.ts[u], price=o,
+                order=order, bar=p.stamps[u], price=o,
                 fee=trade * fee, spread=trade * half, slippage=trade * slip,
                 roll=costs.roll_cost(order.previous, unit, bool(m.rolled[u])),
             ))

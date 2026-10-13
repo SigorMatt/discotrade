@@ -80,15 +80,23 @@ import pandas as pd
 
 from discotrade.clock import Clock
 
+_BOOL = (bool, np.bool_)
+_FLOAT = (float, np.floating)
+_INT = (int, np.integer)
+
 
 def _field(value: Any) -> str:
+    if type(value) is str:  # the common case, decided as the last branch below would
+        if "\t" in value or "\n" in value or "\r" in value:
+            raise ValueError(f"field {value!r} holds a tab or a newline")
+        return value
     if value is None or value is pd.NaT:
         return ""
-    if isinstance(value, bool | np.bool_):
+    if isinstance(value, _BOOL):
         return "true" if value else "false"
-    if isinstance(value, float | np.floating):
+    if isinstance(value, _FLOAT):
         return f"{float(value):.17g}"  # identical to "%.17g" % value
-    if isinstance(value, int | np.integer):
+    if isinstance(value, _INT):
         return str(int(value))
     if isinstance(value, pd.Timestamp):
         if value.tzinfo is not None:
@@ -104,8 +112,35 @@ def _field(value: Any) -> str:
     return text
 
 
+_FLOAT_TEXT = "{:.17g}".format
+
+
+def _column_fields(column: pd.Series) -> list[str]:
+    """``_field`` of each value of ``column`` as iterating it yields them (as
+    ``itertuples`` does), computed a column at a time: a NumPy float, integer or
+    boolean column through ``tolist`` (the same Python scalars ``item`` gives),
+    a datetime column from its nanoseconds since the epoch in UTC (what
+    ``Timestamp.value`` gives; NaT empty), any other value by ``_field``."""
+    values = column._values
+    if isinstance(values, np.ndarray):
+        kind = values.dtype.kind
+        if kind == "f":
+            return list(map(_FLOAT_TEXT, values.tolist()))
+        if kind in "iu":
+            return list(map(str, values.tolist()))
+        if kind == "b":
+            return ["true" if v else "false" for v in values.tolist()]
+    elif isinstance(values, pd.arrays.DatetimeArray):
+        nanos = values.as_unit("ns").asi8.tolist()
+        missing = values.isna().tolist()
+        return ["" if m else str(v) for v, m in zip(nanos, missing, strict=True)]
+    return [_field(v) for v in column]
+
+
 def content_text(frame: pd.DataFrame, key: Sequence[str]) -> str:
-    """The text whose sha256 is the content hash of ``frame``."""
+    """The text whose sha256 is the content hash of ``frame``. Built a column
+    at a time (``_column_fields``); the text is the one a row at a time with
+    ``_field`` gives."""
     columns = [str(c) for c in frame.columns]
     missing = [k for k in key if k not in columns]
     if missing:
@@ -114,9 +149,9 @@ def content_text(frame: pd.DataFrame, key: Sequence[str]) -> str:
         if "\t" in name or "\n" in name:
             raise ValueError(f"column name {name!r} holds a tab or a newline")
     rows = frame.sort_values(list(key), kind="mergesort") if len(key) else frame
+    fields = [_column_fields(rows.iloc[:, k]) for k in range(len(columns))]
     lines = ["\t".join(columns)]
-    for row in rows.itertuples(index=False, name=None):
-        lines.append("\t".join(_field(v) for v in row))
+    lines.extend(map("\t".join, zip(*fields, strict=True)))  # no column: no row line
     return "\n".join(lines) + "\n"
 
 
