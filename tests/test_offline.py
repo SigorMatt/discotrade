@@ -390,6 +390,7 @@ SUBPROCESS_FILES = {
     "tests/test_rank_daily.py": "git on local state directories, GIT_ALLOW_PROTOCOL=file",
     "tests/test_replay.py": "git on local state directories, GIT_ALLOW_PROTOCOL=file",
     "tests/test_state.py": "git on a local state directory, GIT_ALLOW_PROTOCOL=file",
+    "tests/test_table.py": "git on local state directories, GIT_ALLOW_PROTOCOL=file",
     "tests/test_vendor.py": "python -c snippets the test writes",
 }
 

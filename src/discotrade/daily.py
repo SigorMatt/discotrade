@@ -1,6 +1,6 @@
 """The daily run, steps 1, 2 and the rank persistence of step 6 (DESIGN 16.1,
-16.2, 5.4, 5.6, 9.2, 9.3, 10.5, 11.1, 15.2; decisions 2026-10-12 2, 3, 19, 50
-to 53, 55, 59, 62, 69, 70; I-5, I-6, I-12, I-14).
+16.2, 5.4, 5.6, 9.2, 9.3, 10.4, 10.5, 11.1, 15.2; decisions 2026-10-12 2, 3, 19,
+50 to 53, 55, 59, 62, 69, 70, 71; I-5, I-6, I-12, I-14).
 
 ``run_day(state_dir, config_dir, track, clock, day=None)`` processes one
 trading day ``D`` of the track in a state directory ``init-state`` made
@@ -52,7 +52,10 @@ releasing it on success and on failure:
   ``D``'s steps is ``live`` or ``dormant`` (each on the track's basket, with
   ``alerts.rank_min_population``) is appended to
   ``stats/<track>/rank_persistence.jsonl`` in the staging directory
-  (``stats.append_rank_rows``); a re-run computes none. Only when all of
+  (``stats.append_rank_rows``); a re-run computes none. Then, when the day is
+  new, the table (DESIGN 10.4; decision 71; ``table.build`` and ``table.write``):
+  ``table/<track>/table.json`` and ``table.md`` written to the staging
+  directory; a re-run writes neither. Only when all of
   this has succeeded are the staged files moved into place (``os.replace``,
   in path order) and the state committed as ``run <track> <D>``
   (``state.commit``; no commit when nothing was moved). A re-run whose rows
@@ -87,7 +90,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from discotrade import journal, ledger, lifecycle, paper, sources, state, stats
+from discotrade import journal, ledger, lifecycle, paper, sources, state, stats, table
 from discotrade.bars.gaps import check_gaps, day_end, latest_closed_day
 from discotrade.bars.store import BarStore, BarStoreError, finite_rows
 from discotrade.clock import Clock
@@ -317,6 +320,8 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
                                       into=staging)
         if result.status == journal.WRITTEN:
             _rank_persistence(state_dir, setup, d, min(journaled | {d}), records, staging)
+            table.write(staging, track, table.build(state_dir, setup, d, records,
+                                                    into=staging))
         moved = _move(staging, state_dir)
     except BarStoreError as exc:
         if _REVISED in str(exc):
