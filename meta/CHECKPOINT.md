@@ -1,11 +1,11 @@
 # CHECKPOINT
 
 Mission: 10 (`meta/BUILDER-10-PROMPT.md`), roadmap step S2.0a. Closes no milestone. Base 54cac11.
-Done: (none yet)
+Done: U0 b03a349, U1 4bf827d (controls 2.460->1.744 s/day, G1.3 3.078->2.059 s/day), U2 164c8ce (controls 1.771->1.032, G1.3 2.132->1.375 s/day)
 
-Unit in progress: U0 Plan.
-Intent: write meta/plan.md, this checkpoint, the journal line and the D-007 status line; one `plan:` commit, pushed.
-Done means: the four files committed and pushed in one `plan:` commit.
+Unit in progress: U3 REVIEW-9 should-fix 1: the paper update heals an interrupted day (decision 78).
+Intent: before updating paper/<track>/daily.parquet for D, compare its dates with the journal index's dates before D; any difference -> full rebuild; docstrings say "equal to a rebuild" only with the rule.
+Done means: missing-day and extra-date tests green, the old fallback seen to fail; six-day test still passes; check green 3/3; committed and pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-14 (76-82) and the owner's
 decisions-2026-10-13-owner (O-N wins over 76-82) bind; decisions-2026-10-12 items 1-75 still bind;

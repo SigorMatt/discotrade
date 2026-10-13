@@ -11,9 +11,9 @@ Carried items:
 - REVIEW-9 should-fix 3: a test pinning the T days `replay` passes to admission (decision 79 (b)). — taken by U4
 - Finding D-007: the refusal rule mission 9 U2 built is confirmed (decision 77), held by decision 79's tests. — taken by U4
 
-- [ ] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, D-007 status line in `meta/findings/FINDINGS.md`.
-- [ ] U1 Where a replay day's time goes, and the bar files' hashes (O-3; decision 80; DESIGN §5.2, §9.2, §16.1, §18.2; decisions 18, 31, 35).
-- [ ] U2 The rest of the measured cost (O-3; decision 80; DESIGN §7, §9.2, §9.3, §10.4, §16.1).
+- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, D-007 status line in `meta/findings/FINDINGS.md`. — b03a349
+- [x] U1 Where a replay day's time goes, and the bar files' hashes (O-3; decision 80; DESIGN §5.2, §9.2, §16.1, §18.2; decisions 18, 31, 35). — 4bf827d
+- [x] U2 The rest of the measured cost (O-3; decision 80; DESIGN §7, §9.2, §9.3, §10.4, §16.1). — 164c8ce
 - [ ] U3 REVIEW-9 should-fix 1: the paper update heals an interrupted day (decision 78; DESIGN §9.3, §16.2).
 - [ ] U4 REVIEW-9 should-fix 2 and 3, and finding D-007 (decisions 77, 79; DESIGN §4.1, §10.3, §16.1, §16.4; decisions 51, 63, 72, 73).
 - [ ] U5 Static exposure, unit return and the adjusted series (O-4; decision 81; DESIGN §7.2, §8, §9.2, §9.3; decisions 23, 24, 25, 39, 78).
