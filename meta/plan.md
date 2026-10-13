@@ -17,5 +17,5 @@ Carried items:
 - [x] U4 The combined portfolio and rank persistence in the day loop (decisions 59, 62, 63, 69, 70; DESIGN §9.3, §10.5, §11.1, §16.1 steps 2 and 6). — 04aee87
 - [x] U5 The table (decisions 25, 30, 41, 60, 62, 71; DESIGN §10.4, §8, §11.2). — 33cfe7a
 - [x] U6 Scripted candidates in the replay (decisions 48, 63, 73; DESIGN §10.2, §10.3, §16.1 step 5). — 984cc0c
-- [ ] U7 The M1 gate tests (decisions 9, 59, 60, 69-74; DESIGN §18.2, §18.3 M1), then `./scripts/gate M1` and `./scripts/gate M0` at the pushed tip. — tests ae7158b, findings 6163568; STOPPED (VERDICT: question): G1.1 red as written (D-008), gate M1 cannot finish in a 20-minute call (D-009)
+- [ ] U7 The M1 gate tests (decisions 9, 59, 60, 69-74; DESIGN §18.2, §18.3 M1), then `./scripts/gate M1` and `./scripts/gate M0` at the pushed tip. — tests ae7158b, findings 6163568; stopped on D-008 and D-009, answered by owner decisions O-1 and O-2 (5acec56); resumed under them
 - [ ] U8 Final report (`meta/FINAL-REPORT-9.md`).

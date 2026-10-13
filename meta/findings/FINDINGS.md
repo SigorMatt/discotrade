@@ -264,7 +264,7 @@ net returns and assert something else (for example that the statistic is
 positive and explained by cost). The test keeps decision 74's assertion
 until a decision changes it; nothing was weakened.
 
-Status: open
+Status: answered — owner decision O-1 of `meta/decisions/decisions-2026-10-13-owner.md` (5acec56): G1.1's rank-persistence clause reads each random slot's summed paper `gross`; `stats.py`'s function takes the paper column as a parameter, default `net_1x`; the day loop and every production caller keep `net_1x` until step S4.1; the test reports the net statistic's mean and standard error and asserts nothing about it. Taken by mission 9 U7.
 
 ---
 
@@ -296,7 +296,7 @@ gate needs either a faster day loop (the performance items) or a time limit
 for M1 that the spans allow; until then `./scripts/gate M1` does not finish
 within one 20-minute call, and each item has to be run on its own.
 
-Status: open
+Status: answered — owner decision O-2 of `meta/decisions/decisions-2026-10-13-owner.md` (5acec56): for M1 the gate is run item by item (`./scripts/gate M1 G1.1` to `G1.4`, each its own foreground 20-minute call at one pushed commit), PASS when all four print their item PASS line; `scripts/gate` and the spans of decision 74 unchanged; §18.2's 15-minute limit waived for M1 only. Speed work is planned for the next mission (O-3). Taken by mission 9 U7.
 
 ---
 
