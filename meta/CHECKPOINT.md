@@ -1,28 +1,26 @@
 # CHECKPOINT
 
-Mission: 9 (`meta/BUILDER-9-PROMPT.md`), roadmap step S1.3. Closes milestone M1. Base 974b700.
-Done: U0 3c0b023, U1 94e1294, U2 15754e9 (D-007 filed), U3 d65964f, U4 04aee87, U5 33cfe7a,
-U6 984cc0c, U7 ae7158b + 6163568 (D-008, D-009) + b62f5f0 (under owner O-1, O-2).
-Gate M1 at b62f5f0, item by item (O-2): G1.1 PASS 892 s, G1.2 PASS 324 s, G1.3 PASS 1083 s,
-G1.4 PASS 1 s. Gate M0 PASS 342 s.
+Mission: 10 (`meta/BUILDER-10-PROMPT.md`), roadmap step S2.0a. Closes no milestone. Base 54cac11.
+Done: (none yet)
 
-Unit in progress: none. Mission 9 finished; meta/FINAL-REPORT-9.md exists. Milestone M1 closed
-(gate M1 PASS item by item per O-2 at b62f5f0; gate M0 PASS).
-Intent: next: the cold review of mission 9, then the architect's next kit (O-3's speed work first).
-Done means: n/a
+Unit in progress: U0 Plan.
+Intent: write meta/plan.md, this checkpoint, the journal line and the D-007 status line; one `plan:` commit, pushed.
+Done means: the four files committed and pushed in one `plan:` commit.
 
-Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-12 wins over DESIGN
-(items 66-75 new, 1-65 still bind); no value of a frozen file changes (config/, existing entries
-of tests/fixtures/config_frozen.json, existing records under tests/fixtures/config/; the gate
-configuration is built under tmp with thresholds_gate.toml copied unchanged, decision 72);
-config/models.toml is not created; tests write state only under tmp, read time only via
-FixedClock, --as-of or the replay's clock; run `discotrade` in-process via the console-script
-function (except tests of the script itself); tests running git pass GIT_ALLOW_PROTOCOL=file and
-local paths only (decision 47); day-running tests on test_mixed/test_synth (gate tests on
-test_synth with the gate configuration), seeds and dates in the file; each rule tested at its
-production value (a lower value only on a copy under tmp, said so); test-first, or the wrong
-change made and reverted in the worktree and named in the body; each unit's named wrong changes
-seen to fail; existing tests unchanged in what they assert unless a cited decision changes it
-(body says so); one commit per unit, files listed, never `git add -A`, push; ./scripts/check
-green three times before each commit, each run its own foreground call with a 20-minute timeout
-(HF-006); sub-agents in the foreground only.
+Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-14 (76-82) and the owner's
+decisions-2026-10-13-owner (O-N wins over 76-82) bind; decisions-2026-10-12 items 1-75 still bind;
+no value of a frozen file changes (config/, existing entries of tests/fixtures/config_frozen.json,
+existing records under tests/fixtures/config/; the gate configuration is built under tmp with
+thresholds_gate.toml copied unchanged, decision 72); config/models.toml is not created; no file
+under tests/gates/ changes (decision 82); speed units change nothing a day computes or stores
+(decision 80 (a)-(c)): identical state byte for byte at parent and commit, one process, no threads;
+tests write state only under tmp, read time only via FixedClock, --as-of or the replay's clock;
+run `discotrade` in-process via the console-script function (except tests of the script itself);
+tests running git pass GIT_ALLOW_PROTOCOL=file and local paths only (decision 47), new git-running
+test files go in SUBPROCESS_FILES; day-running tests on test_mixed/test_synth, seeds and dates in
+the file; each rule tested at its production value; test-first, or the wrong change made and
+reverted in the worktree and named in the body; each unit's named wrong changes seen to fail;
+existing tests unchanged in what they assert unless a cited decision changes it (body says so);
+one commit per unit, files listed, never `git add -A`, push; ./scripts/check green three times
+before each commit, each run its own foreground call with a 20-minute timeout (HF-006); timing
+measurements one per foreground call; sub-agents in the foreground only.

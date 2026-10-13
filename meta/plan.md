@@ -1,21 +1,21 @@
-# PLAN — mission 9 (roadmap step S1.3)
+# PLAN — mission 10 (roadmap step S2.0a)
 
-Base commit: 974b700 (`plan: mission 9 kit (S1.3, table, portfolio, replay, M1 gate)`).
-Brief: `meta/BUILDER-9-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-12.md` (items 66-75 new; 1-65 still bind).
-Roadmap step: S1.3 (as decisions 66-75 cut it). This mission closes milestone M1 and adds the gate tests G1.1-G1.4 under `tests/gates/`.
+Base commit: 54cac11 (`plan: mission 10 kit (S2.0a, speed, REVIEW-9 items, static exposure)`).
+Brief: `meta/BUILDER-10-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-14.md` (items 76-82 new; 1-75 still bind); owner `meta/decisions/decisions-2026-10-13-owner.md` (O-3, O-4, O-10 this mission; O-1, O-2 still bind).
+Roadmap step: S2.0a (as decisions 76-82 cut it). This mission closes no milestone; it runs gate M1 again item by item and gate M0 at its pushed tip, as decision 82 says (U6).
 
 Carried items:
-- REVIEW-8 should-fix 1: revival must count trading days of the track, not calendar days (decision 66). — taken by U1
-- REVIEW-8 should-fix 2: the scratch session's `network`-marked test may call for real only the lookups decision 67 lists; `gethostbyaddr` left alone by identity (decision 67). — taken by U1
-- BACKLOG (REVIEW-1 should-fix U6): `bars fetch` and synthetic regeneration performance (decisions 4, 5, 18, 31, 35). — taken by U3
-- BACKLOG (REVIEW-2 note U1): `recover` reads and hashes only files that can be an interrupted append (decision 5). — taken by U3
+- Owner decision O-3: the day loop's speed, each gate M1 item under 10 minutes (decision 80). — taken by U1 and U2
+- REVIEW-9 should-fix 1: the per-day paper update heals an interrupted day (decision 78). — taken by U3
+- REVIEW-9 should-fix 2: a test of decision 77's refusal on a mixed-calendar weekend day, and its equivalence with mission 8's rule on one calendar (decision 79 (a)). — taken by U4
+- REVIEW-9 should-fix 3: a test pinning the T days `replay` passes to admission (decision 79 (b)). — taken by U4
+- Finding D-007: the refusal rule mission 9 U2 built is confirmed (decision 77), held by decision 79's tests. — taken by U4
 
-- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`. — 3c0b023
-- [x] U1 REVIEW-8's should-fix items and decision 68 (b) (decisions 63, 66, 67, 68; I-11; DESIGN §10.3, §18.1). — 94e1294
-- [x] U2 The replay command (decisions 19, 51, 55, 72; DESIGN §16.4, §16.1, §3; I-6, I-12). — 15754e9 (finding D-007: daily.py refusal changed for decision 72)
-- [x] U3 The two performance items (BACKLOG; DESIGN §5.2, §5.5, §16.1 step 1, §18.2; decisions 4, 5, 18, 31, 35). — d65964f
-- [x] U4 The combined portfolio and rank persistence in the day loop (decisions 59, 62, 63, 69, 70; DESIGN §9.3, §10.5, §11.1, §16.1 steps 2 and 6). — 04aee87
-- [x] U5 The table (decisions 25, 30, 41, 60, 62, 71; DESIGN §10.4, §8, §11.2). — 33cfe7a
-- [x] U6 Scripted candidates in the replay (decisions 48, 63, 73; DESIGN §10.2, §10.3, §16.1 step 5). — 984cc0c
-- [x] U7 The M1 gate tests (decisions 9, 59, 60, 69-74; DESIGN §18.2, §18.3 M1), then `./scripts/gate M1` and `./scripts/gate M0` at the pushed tip. — tests ae7158b, findings 6163568; stopped on D-008 and D-009, answered by owner O-1 and O-2 (5acec56); resumed b62f5f0: gate M1 PASS item by item (O-2), gate M0 PASS
-- [x] U8 Final report (`meta/FINAL-REPORT-9.md`). — this commit
+- [ ] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, D-007 status line in `meta/findings/FINDINGS.md`.
+- [ ] U1 Where a replay day's time goes, and the bar files' hashes (O-3; decision 80; DESIGN §5.2, §9.2, §16.1, §18.2; decisions 18, 31, 35).
+- [ ] U2 The rest of the measured cost (O-3; decision 80; DESIGN §7, §9.2, §9.3, §10.4, §16.1).
+- [ ] U3 REVIEW-9 should-fix 1: the paper update heals an interrupted day (decision 78; DESIGN §9.3, §16.2).
+- [ ] U4 REVIEW-9 should-fix 2 and 3, and finding D-007 (decisions 77, 79; DESIGN §4.1, §10.3, §16.1, §16.4; decisions 51, 63, 72, 73).
+- [ ] U5 Static exposure, unit return and the adjusted series (O-4; decision 81; DESIGN §7.2, §8, §9.2, §9.3; decisions 23, 24, 25, 39, 78).
+- [ ] U6 Gate M1 again item by item, and gate M0 (decision 82; O-2, O-3; DESIGN §18.2).
+- [ ] U7 Final report (`meta/FINAL-REPORT-10.md`).

@@ -86,3 +86,5 @@
 - 2026-10-13 mission 9: owner decisions file committed 5acec56 (plan:); D-008 answered by O-1, D-009 by O-2 (FINDINGS statuses updated); U7 resumed under them.
 - 2026-10-13 mission 9 U7 done b62f5f0: rank_persistence takes the paper column (default net_1x, O-1), G1.1 reads gross and reports net via a warning; check green 3/3; gate M1 item by item (O-2) G1.1 892 s, G1.2 324 s, G1.3 1083 s, G1.4 1 s, all PASS; gate M0 PASS 342 s.
 - 2026-10-13 mission 9 U8 done: check green 3/3 at 77f2ea3 (1222 passed); final report meta/FINAL-REPORT-9.md; gate M1 PASS item by item (O-2), gate M0 PASS; findings D-007 open, D-008/D-009 answered (O-1, O-2); mission finished.
+2026-10-13T22:15:24.236Z  consult 0mv78fi2p-6hm1 (architect done) on aux.done of aux job 0mv72g3b3-im7q: VERDICT: next kit mission-10-kit
+- 2026-10-14 mission 10 U0: plan written (base 54cac11, step S2.0a, closes no milestone; carried O-3 -> U1/U2, REVIEW-9 SF1 -> U3, SF2/SF3 + D-007 -> U4); D-007 status answered (decision 77).
