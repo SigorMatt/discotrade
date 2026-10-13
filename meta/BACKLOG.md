@@ -33,7 +33,22 @@ item 58). REVIEW-8 should-fix 1 (no test shows revival counts trading
 days) and 2 (the scratch session's unguarded reverse lookup) are taken by
 mission 9 (step S1.3, unit U1; items 66 and 67); its notes on the matched
 draw's reading and on two transitions for one approach on one day are
-answered by item 68 (a test of the second in U1).
+answered by item 68 (a test of the second in U1). REVIEW-9 should-fix 1
+(the per-day paper update no longer heals an interrupted day) is taken by
+mission 10 (step S2.0a, unit U3; decisions-2026-10-14 item 78), and its
+should-fix 2 (the untested branch of the not-closed refusal) and 3 (the T
+days passed to admission), with finding D-007, by mission 10 (unit U4;
+items 77 and 79).
+
+- REVIEW-9 notes, not carried as work unless named: the net-return
+  rank-persistence statistic G1.1 reports goes to a pytest warning that
+  `scripts/gate` does not print (step S2.0b, which runs gate M1 again, or
+  step S4.1, which builds O-5's net version beside the timing statistic,
+  may make it readable); G1.3 does not assert the random pool's seeds as
+  literals (a deterministic rule, decision 64); no test drives a block row
+  due on a weekend day, the candidates file's refusal of a symlink or a
+  `..` path, or decision 68 (b) with the day's admission doing the
+  displacing (step S2.0b, which changes admission, may take the last).
 
 - REVIEW-8 notes, not carried as work: a state journaled before the
   controls existed would fail `journal.py`'s carry check (no state of this
