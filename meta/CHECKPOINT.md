@@ -2,12 +2,15 @@
 
 Mission: 11 (`meta/BUILDER-11-PROMPT.md`), roadmap step S2.0b. Closes no milestone. Base c3a3f1d.
 Done: U0 7629de6, U1 93c2f91 (records unit.parquet, positions.parquet; G1.3 30 days 1.341->1.469 s/day;
-one changed existing test: test_nothing_is_stored_for_it -> ..._but_the_records, decision 84 replaces 81 (d)).
+one changed existing test: test_nothing_is_stored_for_it -> ..._but_the_records, decision 84 replaces 81 (d)),
+U2 489e749 (steps 2-3 adjusted; G1.3 30 days 1.474->1.486 s/day; ledger.py gained FIGURES/FIGURE_REASONS,
+finding D-010 open; 7 existing lifecycle tests changed under decisions 85, 87).
 
-Unit in progress: U2 Dormancy, return and displacement on the adjusted measure (O-11, O-12; decisions 85, 87).
-Intent: lifecycle steps 2 and 3 read metrics.sharpe of paper.adjusted net_1x over decision 85's W, each subject
-with its own average positions; dormant/returned/displaced rows carry adjusted and plain (decision 87).
-Done means: one pushed commit; tests as the brief's U2 gate; named wrong changes seen to fail; timings in body;
+Unit in progress: U3 Admission on the adjusted measure and the candidates file (O-11 to O-13; decisions 86, 87).
+Intent: candidates lines require adjusted_t; admission score adjusted_t["sharpe"]; full cell compares live
+approaches on their own adjusted series over T; trial row gains adjusted_t/adjusted_w; admitted/displaced rows
+carry adjusted/plain; decision 86 (f) test.
+Done means: one pushed commit; tests as the brief's U3 gate; named wrong changes seen to fail;
 ./scripts/check green three times.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-14-m11 (83-90) and the owner's

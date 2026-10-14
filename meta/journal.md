@@ -98,3 +98,4 @@
 2026-10-14T02:40:34.930Z  consult 0mv7hxlzd-ammr (architect done) on aux.done of aux job 0mv7gfmo3-f3gn: VERDICT: next kit mission-11-kit
 - 2026-10-14 mission 11 U0: plan written (S2.0b, units U1-U7, base c3a3f1d); HF-008 recorded (REVIEW-10 note 7, decision 90 (d)); next U1.
 - 2026-10-14 mission 11 U1 done 93c2f91: derived exposure records staged with the day, paper.adjusted reads them (decision 84); 16 new tests; one existing test renamed/changed under decision 84; G1.3 30 days 1.341->1.469 s/day; check green 3/3.
+- 2026-10-14 mission 11 U2 done 489e749: lifecycle steps 2 and 3 on the adjusted Sharpe, rows carry adjusted and plain (decisions 85, 87); ledger.py changed outside the file list, finding D-010 filed (open); G1.3 30 days 1.474->1.486 s/day; check green 3/3.
