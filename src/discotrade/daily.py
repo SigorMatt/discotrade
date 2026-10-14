@@ -39,7 +39,11 @@ releasing it on success and on failure:
   directory ``state.STAGING``, and, when the day is new, the paper records
   with the staged day's records and its two portfolio rows (decision 69,
   members from the lifecycle rows dated before ``D``) added (``paper.update``,
-  equal to a rebuild from the whole journal; mission 9 U3); then the
+  mission 9 U3), or, when the dates the stored paper file holds are not
+  exactly those of the journal index before ``D`` (a date missing, a date
+  extra, no file), rebuilt from the whole journal (decision 2026-10-14 78),
+  so that with that rule it equals a rebuild from the whole journal (when
+  the stored rows of the dates it holds are a rebuild's); then the
   lifecycle's steps 1 to 4 (DESIGN 10.3; decision 63; ``lifecycle.run_steps``)
   on those paper records (the stored ones on a re-run), their rows appended
   to ``ledger/<track>/lifecycle.jsonl`` in the staging directory (decision

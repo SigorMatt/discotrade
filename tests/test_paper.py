@@ -13,7 +13,9 @@ builds, and on a rebuild of the run-day state after the test rewrites one
 approach's recorded ``cutoff`` in a copy under its temporary directory. The
 synthetic instruments' seeds are those of their fixture records
 (``SEEDS``, asserted); no other random draw is made. Time comes only from
-``--as-of``.
+``--as-of``. Decision 2026-10-14 78 is tested by damaging the stored paper
+file of a three-day run (a journaled day's rows removed, an extra date added,
+the file removed) and running the next day.
 """
 
 import json
@@ -272,3 +274,94 @@ def test_the_clean_column_follows_each_approachs_recorded_cutoff(ran, setup, tmp
     # Decision 69: a portfolio row is clean only when every member's row is.
     other = rebuilt[(rebuilt["subject"] != aid) & (rebuilt["subject"] != "portfolio")]
     assert other["clean"].all()
+
+
+# ------------------------------------------------------------- an interrupted day (decision 78)
+
+#: The days run before the stored paper file is damaged, and the next day.
+HEAL_DAYS = DAYS[:3]           # 06-08 .. 06-10
+HEAL_NEXT = DAYS[3]            # 06-11
+
+
+def run_day(state, config, d):
+    return main(["--state", str(state), "--config", str(config), "--track", TRACK,
+                 "--as-of", AS_OF, "run-day", "--day", d.isoformat()])
+
+
+def every_file(root) -> dict[str, bytes]:
+    return {p.relative_to(root).as_posix(): p.read_bytes() for p in sorted(root.rglob("*"))
+            if p.is_file() and ".git" not in p.relative_to(root).parts}
+
+
+@pytest.fixture(scope="module")
+def short(tmp_path_factory, config, setup):
+    """A state directory run for ``HEAL_DAYS``; tests copy it and never change it."""
+    state = tmp_path_factory.mktemp("pshort") / "state"
+    assert main(["init-state", "--state", str(state), "--as-of", AS_OF]) == 0
+    admit(state, setup, "trend_ma.py", FIRST)
+    admit(state, setup, "zscore_reversal.py", LATER)
+    for d in HEAL_DAYS:
+        assert run_day(state, config, d) == 0
+    return state
+
+
+def heals(state, config, setup, damaged):
+    """Write ``damaged`` as the stored paper file, run ``HEAL_NEXT``, and check
+    that the file equals a full rebuild's content hash; return both."""
+    paper.write(state, TRACK, damaged)
+    assert run_day(state, config, HEAL_NEXT) == 0
+    stored = paper.read(state, TRACK)
+    rebuilt = paper.rebuild(state, TRACK, len(setup.instruments))
+    assert content_hash(stored, paper.KEY) == content_hash(rebuilt, paper.KEY)
+    assert sorted(set(stored["date"])) == [*HEAL_DAYS, HEAL_NEXT]
+    # I-6: a re-run of the healed day writes nothing.
+    before = every_file(state)
+    assert run_day(state, config, HEAL_NEXT) == 0
+    assert every_file(state) == before
+    return stored, rebuilt
+
+
+def test_a_journaled_day_missing_from_the_paper_file_is_back_after_the_next_day(
+        short, config, setup, tmp_path):
+    """Decision 78: a day whose paper rows an interrupted move left out (its
+    journal file and index line in place) is restored by the next day, whose
+    paper file then has the content hash of a full rebuild."""
+    state = tmp_path / "state"
+    shutil.copytree(short, state)
+    whole = paper.read(state, TRACK)
+    gone = HEAL_DAYS[1]
+    lost = whole[whole["date"] == gone]
+    assert {"portfolio"} <= set(lost["subject"]) and (lost["kind"] == "approach").any()
+    stored, rebuilt = heals(state, config, setup,
+                            whole[whole["date"] != gone].reset_index(drop=True))
+    back = stored[stored["date"] == gone].reset_index(drop=True)
+    assert content_hash(back, paper.KEY) == content_hash(lost.reset_index(drop=True),
+                                                         paper.KEY)
+    assert set(back["subject"]) == set(lost["subject"])
+
+
+def test_a_date_the_journal_does_not_hold_is_dropped_from_the_paper_file_by_the_next_day(
+        short, config, setup, tmp_path):
+    """Decision 78: a paper file holding a date the journal index does not
+    name before the day is rebuilt from the whole journal."""
+    state = tmp_path / "state"
+    shutil.copytree(short, state)
+    whole = paper.read(state, TRACK)
+    extra = whole[whole["date"] == HEAL_DAYS[0]].copy()
+    extra["date"] = FIRST                     # a day before the first journaled day
+    damaged = pd.concat([extra, whole], ignore_index=True)
+    assert FIRST not in {date.fromisoformat(e["date"])
+                         for e in journal.read_index(state, TRACK)}
+    stored, _ = heals(state, config, setup, damaged)
+    assert FIRST not in set(stored["date"])
+
+
+def test_an_absent_paper_file_is_rebuilt_by_the_next_day(short, config, setup, tmp_path):
+    state = tmp_path / "state"
+    shutil.copytree(short, state)
+    paper.paper_path(state, TRACK).unlink()
+    assert run_day(state, config, HEAL_NEXT) == 0
+    stored = paper.read(state, TRACK)
+    rebuilt = paper.rebuild(state, TRACK, len(setup.instruments))
+    assert content_hash(stored, paper.KEY) == content_hash(rebuilt, paper.KEY)
+    assert sorted(set(stored["date"])) == [*HEAL_DAYS, HEAL_NEXT]

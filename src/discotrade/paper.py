@@ -57,12 +57,16 @@ The API:
   it is moved into place.
 - ``update(state_dir, track, n_instruments, day, overlay=None)``: the stored
   records with ``build`` of ``day``'s journal file (read from ``overlay``
-  first) and ``day``'s ``portfolio`` rows merged in, in ``KEY`` order: what
-  ``rebuild`` gives when the stored records are a rebuild of the journal
-  before ``day``, since a day's records depend only on that day's rows and
+  first) and ``day``'s ``portfolio`` rows merged in, in ``KEY`` order, when
+  the set of dates the stored records hold is exactly the set of dates of the
+  journal index before ``day``; otherwise (no records stored, a journaled
+  date missing, a date the index does not name before ``day``) it is
+  ``rebuild`` (decision 2026-10-14 78: this heals a day whose paper rows an
+  interrupted move left out). With that rule the result equals a rebuild
+  from the whole journal (when the stored rows of the dates it holds are a
+  rebuild's), since a day's records depend only on that day's rows and
   the lifecycle rows dated before it (mission 9 U3: the day no longer
-  rebuilds every day from the whole journal). When no records are stored, or they
-  hold a day on or after ``day``, it is ``rebuild``.
+  rebuilds every day from the whole journal).
 - ``write(root, track, frame)`` writes the file under ``root`` atomically;
   ``read(state_dir, track)`` reads it back (None when there is none);
   ``paper_path(root, track)``.
@@ -226,11 +230,21 @@ def rebuild(state_dir: Path, track: str, n_instruments: int,
     return _merge(records, portfolio(records, days, life, approaches))
 
 
+def _journaled_before(state_dir: Path, track: str, day: date,
+                      overlay: Path | None) -> set[date]:
+    """The dates of the journal index of ``track`` before ``day``, ``overlay``'s
+    index read first."""
+    staged = overlay is not None and journal.index_path(overlay, track).exists()
+    index = journal.read_index(Path(overlay) if staged else Path(state_dir), track)
+    return {d for d in (date.fromisoformat(e["date"]) for e in index) if d < day}
+
+
 def update(state_dir: Path, track: str, n_instruments: int, day: date,
            overlay: Path | None = None) -> pd.DataFrame:
     """The stored paper records with ``day``'s journal rows added, sorted by ``KEY``."""
     stored = read(state_dir, track)
-    if stored is None or (len(stored) and max(stored["date"]) >= day):
+    if stored is None or set(stored["date"]) != _journaled_before(state_dir, track, day,
+                                                                  overlay):
         return rebuild(state_dir, track, n_instruments, overlay=overlay)
     rows = None if overlay is None else journal.read_day(overlay, track, day)
     if rows is None:
