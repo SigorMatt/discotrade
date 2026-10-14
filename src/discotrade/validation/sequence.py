@@ -77,7 +77,11 @@ again on W in a new job of the same backend, mode ``positions``, and its
 targets must equal stage 2's exactly (rule ``rerun``); then one job in mode
 ``reverse_sample`` calls the function, inside one process, on a sample of each
 instrument's window bars in descending time order, and its targets must equal
-stage 2's for those bars (rule ``reverse_sample``). The sample
+stage 2's for those bars (rule ``reverse_sample``). The bars the reverse job
+says it called must be the sample requested, per instrument, in descending
+order; a difference is the harness's failure, not the submission's (a text
+cannot change what the runner reports calling), and raises
+:class:`ValidationError` (decision 101 (e) of 2026-10-14-m13). The sample
 (:func:`reverse_sample`) is at most :data:`REVERSE_SAMPLE` window bars per
 instrument, drawn without replacement by ``numpy.random.default_rng`` seeded
 with the integer of the first 16 hex digits of the text's sha256
@@ -414,9 +418,13 @@ def determinism(ctx: Context, submission: Submission, first: Outcome) -> Outcome
     back = ctx.backend.run(ctx.job(submission, fixed, mode="reverse_sample", samples=samples))
     if back.error is not None:
         return failed("determinism", back.error.rule, f"determinism: {back.error.text}")
-    for symbol, want in first.targets.items():
-        called = np.asarray(back.bars[(0, symbol)], dtype=np.int64)
-        got = np.asarray(back.targets[(0, symbol)], dtype=np.float64)
+    for j, (symbol, want) in enumerate(first.targets.items()):
+        called = np.asarray(back.bars.get((0, symbol), ()), dtype=np.int64)
+        got = np.asarray(back.targets.get((0, symbol), ()), dtype=np.float64)
+        if [int(i) for i in called] != list(samples[symbol]) or len(got) != len(called):
+            raise ValidationError(
+                f"determinism [reverse_sample]: the backend reports calling other bars "
+                f"than the sample requested for the basket's instrument {j} (decision 101 (e))")
         for i, value in zip(called, got, strict=True):
             if value != want[int(i)]:
                 return failed("determinism", "reverse_sample",

@@ -5,7 +5,8 @@ it, and returns ``None`` when the text passes or the first failure as a
 :class:`Refusal` (a rule name from :data:`RULES` and a message). The rules
 are checked in the order 12.1 lists them, which is the order of
 :data:`RULES`; within a rule the first offending node in source order is
-named. The numbers come from ``config/thresholds.toml`` (``validation.*``,
+named (an attribute by where its name begins, decision 101 (d) of
+2026-10-14-m13). The numbers come from ``config/thresholds.toml`` (``validation.*``,
 I-10). Lines are physical lines (R-24).
 
 Two readings of decision 94 made here, each the simplest that leaves no gap:
@@ -137,7 +138,15 @@ def _walk(tree: ast.AST) -> Iterator[ast.AST]:
 
 
 def _order(item: tuple[ast.AST, str, str]) -> tuple[int, int]:
-    return _position(item[0])
+    """Where an identifier's name begins: for an attribute, the name after the dot
+    (decision 101 (d) of 2026-10-14-m13), so that of a chain such as
+    ``np.load(1).to_csv(2)`` the first name in the source is named; for any other
+    node, the node's start."""
+    node, name, _ = item
+    if isinstance(node, ast.Attribute) and node.end_lineno is not None:
+        # The name is the node's last token; offsets count UTF-8 bytes.
+        return node.end_lineno, (node.end_col_offset or 0) - len(name.encode("utf-8"))
+    return _position(node)
 
 
 # --- PARAMS and GRID ----------------------------------------------------------------

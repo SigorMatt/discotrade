@@ -22,7 +22,11 @@ is a result with stage ``limit``: rule ``wall_clock``, ``output``,
 ``cpu_time`` (the child ended by ``SIGXCPU``), ``abnormal_exit`` (any other
 end that is not a clean exit, a memory exhaustion that kills the interpreter
 among them) or ``unreadable_output`` (a clean exit whose output is not one
-result document). Call times are recorded by the runner; nothing here enforces
+result document). A clean exit with nothing on standard output is the run the
+text ended before the runner wrote its result (for example by ``os._exit(0)``):
+stage ``dry_run``, rule ``no_result`` (:data:`discotrade.sandbox.runner.NO_RESULT`,
+decision 101 (b) of 2026-10-14-m13), never a harness failure and never a
+result. Call times are recorded by the runner; nothing here enforces
 them (DESIGN 12.2), and no measured time enters a result (I-12).
 
 The child's environment is :data:`CHILD_ENV` exactly, built from no variable
@@ -166,6 +170,8 @@ class ProcessSandbox:
         if proc.returncode != 0:
             return _limit(job, "abnormal_exit", "the runner ended without a result "
                           "(a resource limit, such as memory, may have stopped it)")
+        if not out:
+            return result_from_doc(job, runner.error_doc(*runner.NO_RESULT))
         try:
             doc = json.loads(out.decode("utf-8"))
             return result_from_doc(job, doc)

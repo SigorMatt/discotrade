@@ -34,7 +34,6 @@ import ast
 import dataclasses
 import json
 import math
-import re
 import shutil
 import tomllib
 from datetime import date
@@ -43,6 +42,7 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 import pytest
+from error_texts import assert_clean, forbidden_words
 
 from discotrade import backtest, journal
 from discotrade.cli import REPO_ROOT, main
@@ -62,7 +62,6 @@ DAY = date(2019, 7, 15)
 W_FIRST, W_LAST = date(2019, 6, 11), date(2019, 7, 8)
 AS_OF = "2019-07-25T00:00:00+00:00"
 LEAN = STRATEGIES / "grid_lean.py"
-ERROR_TEXTS: list[str] = []
 
 
 def eq(a, b) -> bool:
@@ -93,6 +92,15 @@ def state(tmp_path_factory, config):
     assert main(["--state", str(path), "--config", str(config), "--track", TRACK,
                  "--as-of", AS_OF, "bars", "fetch"]) == 0
     return path
+
+
+@pytest.fixture(scope="module")
+def words(state):
+    """What no error text may hold (decision 95 (e), 101 (f)): every symbol, venue
+    and contract of the records, and every contract of the stored bars."""
+    found = forbidden_words(state, TRACK, SEEDS)
+    assert {"SYNA", "SYNA-2019-06", "MES"} <= found
+    return found
 
 
 @pytest.fixture(scope="module")
@@ -149,7 +157,7 @@ def test_the_grid_runs_its_combinations_in_that_order(lean):
 
 
 def test_a_combination_returning_a_value_out_of_range_fails_the_dry_run(
-        state, config, setup, scratch):
+        state, config, setup, scratch, words):
     out = sequence.dry_run_and_grid(context(state, config, setup, ProcessSandbox(scratch)),
                                     from_file(STRATEGIES / "grid_out_of_range.py"))
     assert not out.ok
@@ -158,17 +166,17 @@ def test_a_combination_returning_a_value_out_of_range_fails_the_dry_run(
                         "at window bar 0 (parameter set 1)")
     with pytest.raises(ValueError):
         out.result()
-    ERROR_TEXTS.append(out.text)
+    assert_clean([out.text], words)
 
 
-def test_a_text_that_fails_to_load_fails_the_dry_run(state, config, setup, scratch):
+def test_a_text_that_fails_to_load_fails_the_dry_run(state, config, setup, scratch, words):
     # The runner's stage ``load`` maps to the sequence's ``dry_run`` (decision 95 (d)).
     source = (STRATEGIES / "no_position.py").read_text(encoding="utf-8")
     out = sequence.dry_run_and_grid(context(state, config, setup, ProcessSandbox(scratch)),
                                     Submission.from_source(source))
     assert (out.stage, out.rule) == ("dry_run", "no_position")
     assert out.text.startswith("dry_run: load [no_position]: ")
-    ERROR_TEXTS.append(out.text)
+    assert_clean([out.text], words)
 
 
 # ------------------------------------------------------------- the test's own computation
@@ -437,12 +445,12 @@ def flat_submission() -> Submission:
     (1.0, 1, 501.0, "call_max"),      # one call above call_max_ms = 500, p95 at 1
 ])
 def test_a_backend_that_enforces_the_call_time_limits_fails_a_slow_run(
-        state, config, setup, base, slow, slow_ms, rule):
+        state, config, setup, base, slow, slow_ms, rule, words):
     enforcing = TimedSandbox(True, base, slow, slow_ms)
     out = sequence.dry_run_and_grid(context(state, config, setup, enforcing), flat_submission())
     assert (out.stage, out.rule) == ("dry_run", rule)
     assert out.text.startswith(f"dry_run [{rule}]: ")
-    ERROR_TEXTS.append(out.text)
+    assert_clean([out.text], words)
     lax = TimedSandbox(False, base, slow, slow_ms)
     assert sequence.dry_run_and_grid(context(state, config, setup, lax), flat_submission()).ok
 
@@ -453,24 +461,7 @@ def test_at_the_limits_a_run_passes(state, config, setup):
     assert sequence.dry_run_and_grid(context(state, config, setup, at), flat_submission()).ok
 
 
-def test_zz_no_error_text_holds_a_symbol_venue_contract_or_date(state):
-    # Runs after the failing tests of this file (pytest keeps file order).
-    assert len(ERROR_TEXTS) >= 4
-    words = set()
-    for root in (REPO_ROOT / "config", FIXTURE_CONFIG):
-        for path in sorted((root / "instruments").glob("*.toml")):
-            record = tomllib.loads(path.read_text(encoding="utf-8"))
-            words |= {record["symbol"], record["venue"]}
-            words |= {str(v) for k, v in record.get("source", {}).items()
-                      if "contract" in k or k in ("dataset", "symbol")}
-    for symbol in SEEDS:
-        words |= set(own_bars(state, symbol)["contract"])
-    words = {w for w in words if w}
-    assert {"SYNA", "SYNA-2019-06", "MES"} <= words
-    for text in ERROR_TEXTS:
-        for word in words:
-            assert word not in text, (word, text)
-        assert not re.search(r"\d{4}-\d{2}|\d{1,2}:\d{2}|\d\.\d", text), text
+
 
 
 # ------------------------------------------------------------- the register, O-4's one subtraction

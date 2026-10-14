@@ -480,6 +480,15 @@ def test_first_offending_node_in_source_order(thresholds):
     assert "_b" not in r.message
     two = helper("y = x.query", "return x.eval")
     assert "eval" not in refused(text(extra=two), thresholds, "forbidden_attribute").message
+    # REVIEW-12 should-fix 3 (decision 101 (d)): within a chain, the attribute whose
+    # name comes first in the source is named, not the outer node.
+    for extra, rule, first, later in (
+        ('x = np.load("f").eval', "forbidden_attribute", "'load'", "'eval'"),
+        ("x = np.zz._a._b", "underscore", "'_a'", "'_b'"),
+        ("x = np.load(1).to_csv(2)", "forbidden_attribute", "'load'", "'to_csv'"),
+    ):
+        r = refused(text(extra=extra), thresholds, rule, first)
+        assert later not in r.message, (extra, r.message)
 
 
 def test_order_within_params_and_grid(thresholds):

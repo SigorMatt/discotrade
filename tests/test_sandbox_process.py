@@ -30,6 +30,7 @@ from datetime import date
 
 import numpy as np
 import pytest
+from error_texts import assert_clean, forbidden_words
 
 from discotrade.cli import REPO_ROOT, main
 from discotrade.config import (
@@ -291,3 +292,34 @@ def test_a_memory_bomb_returns_limit_or_a_dry_run_error(tmp_path, tmp_path_facto
     if result.error.stage == "dry_run":
         assert result.error.text == "dry_run [raised]: position raised MemoryError at window " \
             "bar 0 (parameter set 0)"
+
+
+# --- decision 101 (b): the runner's private result channel -------------------------
+
+
+FORGED = STRATEGIES / "forged_result.py"
+
+
+def test_a_text_that_forges_a_result_on_descriptor_1_and_exits_gives_no_result(
+        tmp_path, state, tc, calendars, config):
+    """REVIEW-12 should-fix 2: the text writes a forged result document to
+    descriptor 1 and calls ``os._exit(0)``; the result is stage ``dry_run``, rule
+    ``no_result``, not the forged targets."""
+    job = job_for(state, tc, calendars, config, FORGED.read_text(encoding="utf-8"),
+                  [{"exit": 1}], window=SHORT, instruments=tc.instruments[:1])
+    result = bounded(lambda: ProcessSandbox(tmp_path).run(job))
+    assert not result.ok and not result.targets
+    assert (result.error.stage, result.error.rule) == ("dry_run", "no_result"), result.error
+    assert result.error.text == "dry_run [no_result]: the run ended without a result"
+    assert_clean([result.error.text], forbidden_words(state, TRACK, SEEDS))
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_what_a_text_writes_to_descriptor_1_or_prints_never_reaches_the_result(
+        tmp_path, state, tc, calendars, config):
+    job = job_for(state, tc, calendars, config, FORGED.read_text(encoding="utf-8"),
+                  [{"exit": 0}], window=SHORT, instruments=tc.instruments[:1])
+    result = bounded(lambda: ProcessSandbox(tmp_path).run(job))
+    assert result.ok, result.error
+    targets = result.targets[(0, tc.instruments[0].symbol)]
+    assert len(targets) > 1 and np.all(targets == 0.0)

@@ -29,14 +29,13 @@ except the reverse sample's, whose seed is pinned.
 
 import hashlib
 import math
-import re
 import shutil
 import tomllib
 from datetime import UTC, date, datetime
 
 import numpy as np
-import pyarrow.parquet as pq
 import pytest
+from error_texts import assert_clean, forbidden_words
 
 from discotrade import backtest, journal, ledger, state
 from discotrade.cli import REPO_ROOT, main
@@ -77,7 +76,6 @@ KEEPS_STATE_SAMPLE = {
     "SYND": (431, 422, 396, 368, 364, 363, 355, 344, 321, 296, 281, 269, 245, 226, 218, 213,
              120, 49, 36, 30),
 }
-ERROR_TEXTS: list[str] = []
 
 
 # ------------------------------------------------------------- fixtures
@@ -143,6 +141,15 @@ def live_state(bars_state, tmp_path_factory, setup):
 @pytest.fixture(scope="module")
 def scratch(tmp_path_factory):
     return tmp_path_factory.mktemp("jobs")
+
+
+@pytest.fixture(scope="module")
+def words(bars_state):
+    """What no error text may hold (decision 95 (e), 101 (f)): every symbol, venue
+    and contract of the records, and every contract of the stored bars."""
+    found = forbidden_words(bars_state, TRACK, SEEDS)
+    assert {"SYNA", "SYNA-2019-06", "MES"} <= found
+    return found
 
 
 class Recorder:
@@ -297,26 +304,27 @@ def test_the_sequence_writes_nothing_to_the_state_directory(passing, live_state)
 # ------------------------------------------------------------- each stage fails and stops there
 
 
-def test_stage_static_fails_and_stops_there(live_state, config, setup, scratch):
+def test_stage_static_fails_and_stops_there(live_state, config, setup, scratch, words):
     path, _ = live_state
     rec = Recorder(scratch)
     out = sequence.validate(context(path, config, setup, rec), text(STRATEGIES / "six_params.py"))
     assert (out.stage, out.rule) == ("static", "max_params")
     assert out.text == "static [max_params]: line 1: PARAMS has 6 entries; at most 5 are allowed"
     assert rec.jobs == []
-    ERROR_TEXTS.append(out.text)
+    assert_clean([out.text], words)
 
 
-def test_a_text_that_does_not_parse_fails_stage_static(live_state, config, setup, scratch):
+def test_a_text_that_does_not_parse_fails_stage_static(live_state, config, setup, scratch,
+                                                       words):
     path, _ = live_state
     rec = Recorder(scratch)
     out = sequence.validate(context(path, config, setup, rec), "PARAMS = {\n")
     assert (out.stage, out.rule) == ("static", "parse")
     assert rec.jobs == []
-    ERROR_TEXTS.append(out.text)
+    assert_clean([out.text], words)
 
 
-def test_stage_dry_run_fails_and_stops_there(live_state, config, setup, scratch):
+def test_stage_dry_run_fails_and_stops_there(live_state, config, setup, scratch, words):
     path, _ = live_state
     rec = Recorder(scratch)
     out = sequence.validate(context(path, config, setup, rec),
@@ -324,7 +332,7 @@ def test_stage_dry_run_fails_and_stops_there(live_state, config, setup, scratch)
     assert (out.stage, out.rule) == ("dry_run", "out_of_range")
     assert out.text.startswith("dry_run [out_of_range]: ")
     assert rec.modes == ["positions"]
-    ERROR_TEXTS.append(out.text)
+    assert_clean([out.text], words)
 
 
 @pytest.fixture(scope="module")
@@ -335,7 +343,7 @@ def stateful(live_state, config, setup, scratch):
 
 
 def test_a_fixture_keeping_state_passes_static_and_fails_determinism_on_the_reverse_sample(
-        stateful, setup):
+        stateful, setup, words):
     from discotrade.validation import static
     assert static.check(text(KEEPS_STATE), setup.thresholds) is None
     out, rec = stateful
@@ -345,7 +353,7 @@ def test_a_fixture_keeping_state_passes_static_and_fails_determinism_on_the_reve
                         "(the function keeps state between calls)")
     # Stage 2, the second run (which agreed), the reverse sample; no later stage ran.
     assert rec.modes == ["positions", "positions", "reverse_sample"]
-    ERROR_TEXTS.append(out.text)
+    assert_clean([out.text], words)
 
 
 def test_the_reverse_sample_is_drawn_as_decision_98_a_says(stateful):
@@ -388,7 +396,7 @@ class Perturbing:
 
 
 def test_the_second_run_is_a_new_job_whose_positions_must_equal_the_first(
-        live_state, config, setup, scratch):
+        live_state, config, setup, scratch, words):
     path, _ = live_state
     backend = Perturbing(scratch)
     out = sequence.validate(context(path, config, setup, backend),
@@ -397,11 +405,48 @@ def test_the_second_run_is_a_new_job_whose_positions_must_equal_the_first(
     assert (out.stage, out.rule) == ("determinism", "rerun")
     assert out.text == ("determinism [rerun]: a second run on W in a new sandbox gave other "
                         "positions, first at window bar 5")
-    ERROR_TEXTS.append(out.text)
+    assert_clean([out.text], words)
+
+
+class Misreporting:
+    """The child-process backend, but the job in mode ``reverse_sample`` reports
+    for its first instrument other bars than it was given: ``drop`` leaves out one
+    sampled bar (and its target), ``ascending`` lists them in ascending order."""
+
+    def __init__(self, scratch, how):
+        self.inner = ProcessSandbox(scratch)
+        self.how = how
+        self.reverse = 0
+
+    def run(self, job):
+        result = self.inner.run(job)
+        if job.mode == "reverse_sample":
+            self.reverse += 1
+            key = (0, job.instruments[0].symbol)
+            bars, targets = result.bars[key], result.targets[key]
+            if self.how == "drop":
+                result.bars[key], result.targets[key] = bars[:-1], targets[:-1]
+            else:
+                result.bars[key], result.targets[key] = bars[::-1], targets[::-1]
+        return result
+
+
+@pytest.mark.parametrize("how", ["drop", "ascending"])
+def test_a_reverse_job_that_did_not_call_its_sample_is_a_harness_error(
+        live_state, config, setup, scratch, how):
+    """Decision 101 (e), REVIEW-12 should-fix 4: the bars the reverse job says it
+    called must be the sample requested, per instrument, in descending order;
+    else the harness, not the submission, has failed."""
+    path, _ = live_state
+    backend = Misreporting(scratch, how)
+    with pytest.raises(sequence.ValidationError, match="reverse_sample"):
+        sequence.validate(context(path, config, setup, backend),
+                          text(STRATEGIES / "always_flat.py"))
+    assert backend.reverse == 1
 
 
 def test_stage_activity_fails_below_min_changes_w_and_stops_there(
-        live_state, config, setup, scratch):
+        live_state, config, setup, scratch, words):
     path, _ = live_state
     _, counts = own_h(path, setup, CHANGES_29)
     assert sum(counts) == 29, counts
@@ -412,14 +457,14 @@ def test_stage_activity_fails_below_min_changes_w_and_stops_there(
                         "basket; at least min_changes_w (30) are needed")
     # The live approach was never run: the correlation gate did not start.
     assert rec.modes == ["positions", "positions", "reverse_sample"]
-    ERROR_TEXTS.append(out.text)
+    assert_clean([out.text], words)
 
 
 # ------------------------------------------------------------- the correlation gate
 
 
 def test_the_sign_flipped_duplicate_fails_stage_correlation_naming_the_approach(
-        live_state, config, setup, scratch):
+        live_state, config, setup, scratch, words):
     path, aid = live_state
     mine, counts = own_h(path, setup, FLIPPED)
     theirs, _ = own_h(path, setup, TREND_MA, DUPLICATED)
@@ -432,7 +477,7 @@ def test_the_sign_flipped_duplicate_fails_stage_correlation_naming_the_approach(
     assert out.text == ("correlation [duplicate]: the position series on W has an absolute "
                         f"correlation above corr_max with approach {aid}")
     assert rec.modes == ["positions", "positions", "reverse_sample", "positions"]
-    ERROR_TEXTS.append(out.text)
+    assert_clean([out.text], words)
 
 
 @pytest.fixture(scope="module")
@@ -459,7 +504,7 @@ def test_a_retired_approach_is_not_compared_and_a_flat_one_is_not_a_duplicate(
 
 
 def test_a_dormant_approach_is_compared_and_of_two_over_the_limit_the_larger_is_named(
-        bars_state, tmp_path_factory, config, setup, scratch, flipped_first):
+        bars_state, tmp_path_factory, config, setup, scratch, flipped_first, words):
     # One state for both: the duplicated approach is dormant, its neighbour live, and
     # both are over the limit; naming the dormant one shows it was compared, and that
     # the larger absolute correlation wins over the lower id.
@@ -480,28 +525,4 @@ def test_a_dormant_approach_is_compared_and_of_two_over_the_limit_the_larger_is_
     assert (out.stage, out.rule) == ("correlation", "duplicate")
     assert out.text.endswith(f"with approach {duplicated}")
     assert sorted(p[0]["fast"] for _, p, _ in rec.jobs) == [6, 12]
-    ERROR_TEXTS.append(out.text)
-
-
-# ------------------------------------------------------------- decision 95 (e)
-
-
-def test_zz_no_error_text_holds_a_symbol_venue_contract_or_date(bars_state):
-    # Runs after the failing tests of this file (pytest keeps file order).
-    assert len(ERROR_TEXTS) >= 8
-    words = set()
-    for root in (REPO_ROOT / "config", FIXTURE_CONFIG):
-        for path in sorted((root / "instruments").glob("*.toml")):
-            record = tomllib.loads(path.read_text(encoding="utf-8"))
-            words |= {record["symbol"], record["venue"]}
-            words |= {str(v) for k, v in record.get("source", {}).items()
-                      if "contract" in k or k in ("dataset", "symbol")}
-    for symbol in SEEDS:
-        for f in sorted((bars_state / "bars" / TRACK / symbol).glob("*.parquet")):
-            words |= set(pq.read_table(f).column("contract").to_pylist())
-    words = {w for w in words if w}
-    assert {"SYNA", "SYNA-2019-06", "MES"} <= words
-    for message in ERROR_TEXTS:
-        for word in words:
-            assert word not in message, (word, message)
-        assert not re.search(r"\d{4}-\d{2}|\d{1,2}:\d{2}|\d\.\d", message), message
+    assert_clean([out.text], words)

@@ -33,13 +33,25 @@ The first failure ends the run with an error (decision 95 (d), (e)): stage
 ``load`` (the text raised while loading, or defines no callable
 ``position``) or ``dry_run`` (a call raised or returned a result outside the
 contract), a rule, and a text naming the stage, the rule, the window bar's
-index and what was wrong. The text never holds a value the function was given
-or returned, an exception's message, a symbol or a date. Stage ``limit`` is the
-backend's, which enforces the limits from outside. Each call's time is
-recorded in milliseconds; nothing here enforces it (DESIGN 12.2).
+index and what was wrong. Any raise is caught, a ``BaseException`` that is not
+an ``Exception`` (``SystemExit``, ``KeyboardInterrupt``, ``GeneratorExit``)
+included (decision 101 (c) of 2026-10-14-m13). The text never holds a value
+the function was given or returned, an exception's message, a symbol or a
+date, nor any name the text chose (decision 101 (a)): a raised exception's
+type is named only when it is, by identity, one of :data:`BUILTIN_EXCEPTIONS`
+(else ``an exception``), and a result that is not a number is described by its
+type only when that type is, by identity, one of :data:`RESULT_TYPES` (else
+``an object``). Stage ``limit`` is the backend's, which enforces the limits
+from outside. Each call's time is recorded in milliseconds; nothing here
+enforces it (DESIGN 12.2).
 
-What the text writes to standard output goes to standard error, so that it
-cannot reach the result.
+Before any text loads, :func:`main` duplicates file descriptor 1 to a private
+descriptor, points descriptor 1 at descriptor 2 (and Python's ``sys.stdout``
+at ``sys.stderr``), and writes its result document only to the private
+descriptor (decision 101 (b)): what the text writes or prints, to either,
+goes to standard error and cannot reach the result. A run the text ends
+before the result is written leaves standard output empty, which the backend
+reports as stage ``dry_run``, rule ``no_result`` (:data:`NO_RESULT`).
 """
 
 from __future__ import annotations
@@ -49,6 +61,7 @@ import contextlib
 import json
 import math
 import numbers
+import os
 import sys
 import time
 from collections.abc import Callable, Mapping, Sequence
@@ -73,6 +86,49 @@ ARRAYS = ("open", "high", "low", "close", "volume", "hour", "weekday", "rolled",
 #: The name under which a strategy sees the indicator library (DESIGN 6.3).
 INDICATORS_NAME = "indicators"
 _PRICES = ("open", "high", "low", "close")
+
+#: The exception classes of Python's ``builtins`` an error text may name
+#: (decision 101 (a)); any other raised type is named ``an exception``.
+BUILTIN_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    BaseException, Exception, ArithmeticError, AssertionError, AttributeError,
+    BlockingIOError, BrokenPipeError, BufferError, ChildProcessError,
+    ConnectionAbortedError, ConnectionError, ConnectionRefusedError, ConnectionResetError,
+    EOFError, FileExistsError, FileNotFoundError, FloatingPointError, GeneratorExit,
+    ImportError, IndentationError, IndexError, InterruptedError, IsADirectoryError,
+    KeyError, KeyboardInterrupt, LookupError, MemoryError, ModuleNotFoundError, NameError,
+    NotADirectoryError, NotImplementedError, OSError, OverflowError, PermissionError,
+    ProcessLookupError, RecursionError, ReferenceError, RuntimeError, StopAsyncIteration,
+    StopIteration, SyntaxError, SystemError, SystemExit, TabError, TimeoutError, TypeError,
+    UnboundLocalError, UnicodeDecodeError, UnicodeEncodeError, UnicodeError,
+    UnicodeTranslateError, ValueError, ZeroDivisionError,
+)
+#: The types of a result that is not a number an error text may name (decision
+#: 101 (a)): built-in and ``numpy`` types; any other is named ``an object``.
+RESULT_TYPES: tuple[type, ...] = (
+    type(None), bool, complex, str, bytes, bytearray, list, tuple, dict, set, frozenset,
+    range, np.ndarray, np.bool_, np.complex64, np.complex128, np.str_, np.bytes_,
+    np.datetime64, np.timedelta64,
+)
+#: The error a backend reports when the runner ended without writing a result
+#: document (decision 101 (b)): its stage, rule and what.
+NO_RESULT = ("dry_run", "no_result", "the run ended without a result")
+
+
+def _named(cls: type, fixed: tuple[type, ...]) -> bool:
+    return any(cls is known for known in fixed)
+
+
+def exception_name(exc: BaseException) -> str:
+    """The name of ``exc``'s type when it is a built-in exception class, by
+    identity; else ``an exception`` (decision 101 (a))."""
+    cls = type(exc)
+    return cls.__name__ if _named(cls, BUILTIN_EXCEPTIONS) else "an exception"
+
+
+def result_name(value: object) -> str:
+    """How an error text names a result that is not a number (decision 101 (a))."""
+    cls = type(value)
+    return f"a value of type {cls.__name__}" if _named(cls, RESULT_TYPES) else "an object"
 
 
 class LoadFailure(Exception):
@@ -116,9 +172,9 @@ def load_text(source: str) -> Callable[..., Any]:
     }
     try:
         exec(compile(source, "<strategy>", "exec"), namespace)
-    except (Exception, SystemExit) as exc:
+    except BaseException as exc:  # noqa: BLE001 - every raise is the text's (101 (c))
         raise LoadFailure(
-            "raised", f"the text raised {type(exc).__name__} while loading") from None
+            "raised", f"the text raised {exception_name(exc)} while loading") from None
     position = namespace.get("position")
     if not callable(position):
         raise LoadFailure("no_position", "the text defines no callable position(bars, params)")
@@ -130,7 +186,7 @@ def check(value: Any, shorting: bool) -> float:
     allowed; else :class:`BadResult`. The rule of :func:`discotrade.strategy.check_result`."""
     if isinstance(value, bool) or not isinstance(value, numbers.Real):
         raise BadResult("not_a_number",
-                        f"position returned a {type(value).__name__}, not a real number")
+                        f"position returned {result_name(value)}, not a real number")
     result = float(value)
     if not math.isfinite(result):
         raise BadResult("not_finite", "position returned a number that is not finite")
@@ -201,9 +257,9 @@ def execute(job: Mapping[str, Any], bars: Sequence[Mapping[str, np.ndarray]],
                 start = time.perf_counter_ns()
                 try:
                     value = position(frame, dict(params))
-                except (Exception, SystemExit) as exc:
+                except BaseException as exc:  # noqa: BLE001 - decision 101 (c)
                     return error_doc("dry_run", "raised",
-                                     f"position raised {type(exc).__name__}", p, i)
+                                     f"position raised {exception_name(exc)}", p, i)
                 call_ms.append((time.perf_counter_ns() - start) / 1e6)
                 try:
                     targets.append(check(value, shorting))
@@ -239,13 +295,25 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"runner: cannot read the job: {type(exc).__name__}", file=sys.stderr)
         return 1
     source = job["source"]
-    out = sys.stdout
-    with contextlib.redirect_stdout(sys.stderr):
-        doc = execute(job, bars, lambda: load_text(source))
-    out.write(json.dumps(doc))
-    out.write("\n")
-    out.flush()
+    sys.stdout.flush()
+    private = os.dup(1)
+    try:
+        os.dup2(2, 1)
+        with contextlib.redirect_stdout(sys.stderr):
+            doc = execute(job, bars, lambda: load_text(source))
+        sys.stdout.flush()
+        _write_all(private, (json.dumps(doc) + "\n").encode("utf-8"))
+    finally:
+        os.dup2(private, 1)
+        os.close(private)
     return 0
+
+
+def _write_all(fd: int, data: bytes) -> None:
+    """Write all of ``data`` to the descriptor ``fd``."""
+    view = memoryview(data)
+    while view:
+        view = view[os.write(fd, view):]
 
 
 if __name__ == "__main__":

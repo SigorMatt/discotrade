@@ -2,8 +2,11 @@
 decision 95 (b) to (f); decisions 2026-10-12 22, 23, 24, 44; finding D-006; I-2, I-7).
 
 The runner is exercised in-process: its ``main`` is called on a job directory
-the test writes with ``write_job``, and its standard output (one JSON
-document) is read back with ``capsys``. The stores are filled by ``bars
+the test writes with ``write_job``, and its result (one JSON document) is
+read back from file descriptor 1 with ``capfd``: the runner writes it to a
+private duplicate of descriptor 1 (decision 101 (b)). Every error text a test
+produces is checked by that test with ``tests/error_texts.py`` (decision 101
+(f)). The stores are filled by ``bars
 fetch`` on the fixture track ``test_mixed`` (SYNA rolls on 2019-06-14, SYNL
 cannot be shorted, SYNX is always open), run in-process
 (``discotrade.cli.main``) with the clock given by ``--as-of``, under a pytest
@@ -19,18 +22,16 @@ in ``SEEDS`` and checked against them; the reverse sample is drawn with
 import ast
 import json
 import math
-import re
 import shutil
 import sys
-import tomllib
 from datetime import date
 
 import numpy as np
 import pandas as pd
 import pytest
+from error_texts import assert_clean, forbidden_words
 
 from discotrade.backtest import evaluate
-from discotrade.bars.store import BarStore
 from discotrade.cli import REPO_ROOT, main
 from discotrade.config import DateRange, load_calendar, load_thresholds, load_track_config
 from discotrade.sandbox import runner
@@ -50,7 +51,6 @@ STRATEGIES = REPO_ROOT / "tests" / "fixtures" / "strategies"
 CHEAT = STRATEGIES / "cheat_lookahead.py"
 RUNNER = REPO_ROOT / "src" / "discotrade" / "sandbox" / "runner.py"
 TRACK = "test_mixed"
-HOUR = 3600
 #: The seed of each instrument's synthetic source, as its fixture record gives it.
 SEEDS = {"SYNA": 101, "SYNL": 105, "SYNX": 106}
 AS_OF = "2019-06-21T00:00:00+00:00"
@@ -65,8 +65,6 @@ REFERENCES = {
     "zscore_reversal.py": {"lookback": 24, "entry": 1.0},
     "hour_of_day.py": {"start_hour": 8, "end_hour": 20},
 }
-#: Every error text a test of this file produced, checked at the end (decision 95 (e)).
-ERROR_TEXTS: list[str] = []
 
 
 @pytest.fixture(scope="module")
@@ -107,13 +105,23 @@ def job_for(state, tc, calendars, *, source=None, function=None, param_sets, win
                      limits=LIMITS, mode=mode, samples=samples)
 
 
-def run_runner(job: SandboxJob, directory, capsys):
+@pytest.fixture(scope="module")
+def words(state):
+    """What no error text may hold (decision 95 (e), 101 (f)): every symbol, venue
+    and contract of the records, and every contract of the test's store."""
+    found = forbidden_words(state, TRACK, SEEDS)
+    assert {"SYNA", "SYNTH", "SYNA-2019-06", "MES", "CME"} <= found
+    return found
+
+
+def run_runner(job: SandboxJob, directory, capfd):
     """Write ``job`` under ``directory``, call the runner's ``main`` on it, and
-    return its result read back from standard output."""
+    return its result read back from file descriptor 1 (decision 101 (b): the
+    runner writes its result to a private duplicate of descriptor 1)."""
     path = write_job(job, directory)
-    capsys.readouterr()
+    capfd.readouterr()
     assert runner.main([str(path)]) == 0
-    out = capsys.readouterr().out
+    out = capfd.readouterr().out
     return result_from_doc(job, json.loads(out))
 
 
@@ -176,14 +184,14 @@ def test_the_runner_imports_only_the_standard_library_numpy_pandas_and_indicator
 
 @pytest.mark.parametrize("name", sorted(REFERENCES))
 def test_the_runners_targets_equal_backtest_evaluate_for_two_parameter_sets(
-        name, state, tc, calendars, thresholds, tmp_path, capsys):
+        name, state, tc, calendars, thresholds, tmp_path, capfd):
     path = REPO_ROOT / "reference" / name
     strat = load_strategy_file(path, thresholds)
     param_sets = [strat.params, REFERENCES[name]]
     assert set(REFERENCES[name]) == set(strat.params)
     job = job_for(state, tc, calendars, source=path.read_text(encoding="utf-8"),
                   param_sets=param_sets)
-    result = run_runner(job, tmp_path / "job", capsys)
+    result = run_runner(job, tmp_path / "job", capfd)
     assert result.error is None
     for p, params in enumerate(param_sets):
         for symbol in tc.track.instruments:
@@ -265,67 +273,145 @@ RETURNS_TEXT = "PARAMS = {'a': 1}\n\ndef position(bars, params):\n    return 'lo
 ], ids=["load-raises", "position-not-callable", "no-position-fixture", "syntax",
         "call-raises", "returns-2.0", "returns-nan", "returns-text"])
 def test_a_bad_text_gives_its_stage_and_an_error_text(source, stage, rule, bar, state, tc,
-                                                     calendars, tmp_path, capsys):
+                                                     calendars, tmp_path, capfd, words):
     job = _one_instrument_job(state, tc, calendars, source)
-    result = run_runner(job, tmp_path / "job", capsys)
+    result = run_runner(job, tmp_path / "job", capfd)
     err = result.error
     assert err is not None and not result.targets
     assert (err.stage, err.rule, err.bar) == (stage, rule, bar)
     assert err.text.startswith(f"{stage} [{rule}]: ")
     if bar is not None:
         assert f"window bar {bar}" in err.text
-    ERROR_TEXTS.append(err.text)
+    assert_clean([err.text], words)
 
 
 def test_an_error_stops_the_run_at_the_first_bad_result(state, tc, calendars, tmp_path,
-                                                        capsys):
+                                                        capfd, words):
     job = job_for(state, tc, calendars, source=RETURNS_TWO, param_sets=[{"a": 1}, {"a": 2}])
-    result = run_runner(job, tmp_path / "job", capsys)
+    result = run_runner(job, tmp_path / "job", capfd)
     assert result.error.param_set == 0 and result.error.bar == 0
-    ERROR_TEXTS.append(result.error.text)
+    assert_clean([result.error.text], words)
 
 
-def _forbidden_words(state):
-    """Every symbol, venue and contract in config/ and tests/fixtures/config/, and
-    every contract in the test's store."""
-    words = set()
-    for root in (REPO_ROOT / "config", FIXTURE_CONFIG):
-        for path in sorted((root / "instruments").glob("*.toml")):
-            record = tomllib.loads(path.read_text(encoding="utf-8"))
-            words |= {record["symbol"], record["venue"]}
-            words |= {str(v) for k, v in record.get("source", {}).items()
-                      if "contract" in k or k in ("dataset", "symbol")}
-    store = BarStore(state, TRACK, HOUR)
-    for symbol in SEEDS:
-        bars = store.read_range(symbol, pd.Timestamp("2019-01-01", tz="UTC"),
-                                pd.Timestamp("2019-07-01", tz="UTC"))
-        words |= set(bars["contract"])
-    return {w for w in words if w}
+# --------------------------- decision 101 (a), (c): names a text cannot choose
 
 
-def test_zz_no_error_text_holds_a_symbol_venue_contract_date_or_price(state):
-    # Runs after the error tests of this file (pytest keeps file order).
-    assert len(ERROR_TEXTS) >= 9
-    words = _forbidden_words(state)
-    assert {"SYNA", "SYNTH", "SYNA-2019-06", "MES", "CME"} <= words
-    for text in ERROR_TEXTS:
-        for word in words:
-            assert word not in text, (word, text)
-        assert not re.search(r"\d{4}-\d{2}|\d{1,2}:\d{2}|\d\.\d", text), text
+def _position(*body: str) -> str:
+    return "PARAMS = {'a': 1}\n\ndef position(bars, params):\n" + "".join(
+        f"    {line}\n" for line in body)
+
+
+#: REVIEW-12 should-fix 1: the reviewer's text, a class named from the data.
+CLASS_NAMED_FROM_THE_DATA = _position(
+    "c = bars['close'].iloc[-1]",
+    "raise type('SYNA_close_' + repr(float(c)) + '_2019-06-14', (Exception,), {})()")
+#: A result whose class is named like the last close.
+OBJECT_NAMED_LIKE_A_PRICE = _position(
+    "return type(repr(float(bars['close'].iloc[-1])), (), {})()")
+CLASS_NAMED_FROM_THE_TEXT_ON_LOAD = (
+    "PARAMS = {'a': 1}\nraise type('SYNA_2019-06-14_4125.25', (Exception,), {})()\n\n"
+    "def position(bars, params):\n    return 0.0\n")
+FAKE_VALUE_ERROR = _position("raise type('ValueError', (Exception,), {})()")
+VALUE_ERROR_SUBCLASS = _position("raise type('ValueError', (ValueError,), {})()")
+FAKE_FLOAT = _position("return type('float', (), {})()")
+
+
+@pytest.mark.parametrize("source, stage, rule, what", [
+    (CLASS_NAMED_FROM_THE_DATA, "dry_run", "raised", "position raised an exception"),
+    (OBJECT_NAMED_LIKE_A_PRICE, "dry_run", "not_a_number",
+     "position returned an object, not a real number"),
+    (CLASS_NAMED_FROM_THE_TEXT_ON_LOAD, "load", "raised",
+     "the text raised an exception while loading"),
+    (FAKE_VALUE_ERROR, "dry_run", "raised", "position raised an exception"),
+    (VALUE_ERROR_SUBCLASS, "dry_run", "raised", "position raised an exception"),
+    (FAKE_FLOAT, "dry_run", "not_a_number", "position returned an object, not a real number"),
+    (RAISES_AT_BAR_3, "dry_run", "raised", "position raised ValueError"),
+    (RETURNS_TEXT, "dry_run", "not_a_number", "position returned a value of type str, not a "
+     "real number"),
+    (_position("return [0.5]"), "dry_run", "not_a_number",
+     "position returned a value of type list, not a real number"),
+    (_position("return None"), "dry_run", "not_a_number",
+     "position returned a value of type NoneType, not a real number"),
+    (_position("return bars['close'].to_numpy()[-1:]"), "dry_run", "not_a_number",
+     "position returned a value of type ndarray, not a real number"),
+    (RAISES_ON_LOAD, "load", "raised", "the text raised ZeroDivisionError while loading"),
+], ids=["class-named-from-the-data", "object-named-like-a-price", "class-named-on-load",
+        "fake-value-error", "value-error-subclass", "fake-float", "built-in-value-error",
+        "built-in-str", "built-in-list", "none", "numpy-array", "built-in-on-load"])
+def test_an_error_text_names_only_a_built_in_type_never_a_name_the_text_chose(
+        source, stage, rule, what, state, tc, calendars, tmp_path, capfd, words):
+    """Decision 101 (a): run past the static check (the runner called directly);
+    a type is named only when it is, by identity, a built-in or numpy type of the
+    runner's fixed tuples, else ``an exception`` or ``an object``."""
+    job = _one_instrument_job(state, tc, calendars, source)
+    result = run_runner(job, tmp_path / "job", capfd)
+    err = result.error
+    assert err is not None and not result.targets
+    assert (err.stage, err.rule) == (stage, rule)
+    assert err.text.startswith(f"{stage} [{rule}]: {what}"), err.text
+    for name in ("SYNA", "close", "2019", "4125", "type("):
+        assert name not in err.text, (name, err.text)
+    assert_clean([err.text], words)
+
+
+def test_the_names_the_runner_may_print_are_the_built_in_and_numpy_types_by_identity():
+    import builtins
+    for cls in runner.BUILTIN_EXCEPTIONS:
+        assert getattr(builtins, cls.__name__) is cls, cls
+        assert issubclass(cls, BaseException)
+    assert ValueError in runner.BUILTIN_EXCEPTIONS
+    assert SystemExit in runner.BUILTIN_EXCEPTIONS
+    assert KeyboardInterrupt in runner.BUILTIN_EXCEPTIONS
+    for cls in runner.RESULT_TYPES:
+        assert (getattr(builtins, cls.__name__, None) is cls or cls is type(None)
+                or getattr(np, cls.__name__, None) is cls), cls
+    fake = type("ValueError", (ValueError,), {})
+    assert runner.exception_name(fake()) == "an exception"
+    assert runner.exception_name(ValueError()) == "ValueError"
+    assert runner.result_name(type("list", (), {})()) == "an object"
+    assert runner.result_name([1]) == "a value of type list"
+
+
+@pytest.mark.parametrize("exc", ["SystemExit(0)", "KeyboardInterrupt()", "GeneratorExit()",
+                                 "SystemExit('SYNA 2019-06-14')"])
+@pytest.mark.parametrize("where", ["load", "call"])
+def test_a_base_exception_while_loading_or_in_a_call_is_an_error_of_its_stage(
+        exc, where, state, tc, calendars, tmp_path, capfd, words):
+    """Decision 101 (c): ``SystemExit``, ``KeyboardInterrupt`` and
+    ``GeneratorExit`` are caught and reported as stage ``load`` or ``dry_run``."""
+    if where == "load":
+        source = (f"PARAMS = {{'a': 1}}\nraise {exc}\n\n"
+                  "def position(bars, params):\n    return 0.0\n")
+    else:
+        source = _position(f"raise {exc}")
+    job = _one_instrument_job(state, tc, calendars, source)
+    result = run_runner(job, tmp_path / "job", capfd)
+    err = result.error
+    assert err is not None and not result.targets
+    name = exc.split("(")[0]
+    if where == "load":
+        assert (err.stage, err.rule, err.bar) == ("load", "raised", None)
+        assert err.text == (f"load [raised]: the text raised {name} while loading "
+                            "(parameter set 0)")
+    else:
+        assert (err.stage, err.rule, err.bar) == ("dry_run", "raised", 0)
+        assert err.text == (f"dry_run [raised]: position raised {name} at window bar 0 "
+                            "(parameter set 0)")
+    assert_clean([err.text], words)
 
 
 # ------------------------------------------------- D-006, a fresh load
 
 
 def test_the_cheating_text_through_the_runner_gives_each_instrument_its_targets_alone(
-        state, tc, calendars, thresholds, tmp_path, capsys):
+        state, tc, calendars, thresholds, tmp_path, capfd):
     """D-006 (decision 44): the cheating text keeps every frame at module level;
     through the runner, each instrument's targets under each parameter set equal
     those of the text loaded afresh and evaluated on that instrument alone."""
     param_sets = [{"lookback": 24, "tail": 6}, {"lookback": 12, "tail": 4}]
     job = job_for(state, tc, calendars, source=CHEAT.read_text(encoding="utf-8"),
                   param_sets=param_sets)
-    result = run_runner(job, tmp_path / "job", capsys)
+    result = run_runner(job, tmp_path / "job", capfd)
     assert result.error is None
     for p, params in enumerate(param_sets):
         for symbol in tc.track.instruments:
@@ -339,12 +425,12 @@ def test_the_cheating_text_through_the_runner_gives_each_instrument_its_targets_
 
 
 def test_reverse_sample_gives_for_its_bars_the_targets_of_positions(
-        state, tc, calendars, tmp_path, capsys):
+        state, tc, calendars, tmp_path, capfd):
     path = REPO_ROOT / "reference" / "trend_ma.py"
     source = path.read_text(encoding="utf-8")
     param_sets = [{"fast": 24, "slow": 96}, REFERENCES["trend_ma.py"]]
     forward = run_runner(job_for(state, tc, calendars, source=source,
-                                 param_sets=param_sets), tmp_path / "fwd", capsys)
+                                 param_sets=param_sets), tmp_path / "fwd", capfd)
     rng = np.random.default_rng(SAMPLE_SEED)
     samples = {}
     for inst in forward_job_instruments(state, tc, calendars):
@@ -352,7 +438,7 @@ def test_reverse_sample_gives_for_its_bars_the_targets_of_positions(
         samples[inst.symbol] = tuple(int(i) for i in rng.choice(n, size=12, replace=False))
     job = job_for(state, tc, calendars, source=source, param_sets=param_sets,
                   mode="reverse_sample", samples=samples)
-    back = run_runner(job, tmp_path / "rev", capsys)
+    back = run_runner(job, tmp_path / "rev", capfd)
     assert back.error is None
     seen = set()
     for p in range(len(param_sets)):
@@ -399,13 +485,14 @@ def test_the_in_process_backend_runs_a_function_object(state, tc, calendars, thr
                 assert same(result.targets[(p, symbol)], want), (fn.__name__, p, symbol)
 
 
-def test_the_in_process_backend_reports_a_bad_result_with_its_stage(state, tc, calendars):
+def test_the_in_process_backend_reports_a_bad_result_with_its_stage(state, tc, calendars,
+                                                                    words):
     job = job_for(state, tc, calendars, function=lambda bars, params: 2.0,
                   param_sets=[{}])
     result = InProcessSandbox().run(job)
     assert (result.error.stage, result.error.rule, result.error.bar) == (
         "dry_run", "out_of_range", 0)
-    ERROR_TEXTS.append(result.error.text)
+    assert_clean([result.error.text], words)
 
 
 def test_the_in_process_backend_refuses_source_text(state, tc, calendars):
@@ -425,9 +512,41 @@ def test_the_runner_without_a_job_directory_is_a_usage_error(capsys, tmp_path):
 
 
 def test_what_the_text_prints_does_not_reach_the_result(state, tc, calendars, tmp_path,
-                                                        capsys):
+                                                        capfd):
     source = ("PARAMS = {'a': 1}\n\ndef position(bars, params):\n"
               "    print('{\"ok\": false}')\n    return 0.0\n")
     job = _one_instrument_job(state, tc, calendars, source)
-    result = run_runner(job, tmp_path / "job", capsys)
+    result = run_runner(job, tmp_path / "job", capfd)
     assert result.error is None
+
+
+#: Decision 101 (b): writes a forged result document straight to descriptor 1,
+#: prints another, and returns 0.0.
+WRITES_TO_DESCRIPTOR_1 = (
+    "import os\nimport sys\nPARAMS = {'a': 1}\nFORGED = ('{\"ok\": true, \"results\": "
+    "[{\"param_set\": 0, \"instrument\": 0, \"bars\": [0], \"targets\": [0.75], "
+    "\"call_ms\": [0.0]}]}')\n\n"
+    "def position(bars, params):\n"
+    "    os.write(1, (FORGED + '\\n').encode())\n"
+    "    print(FORGED)\n"
+    "    sys.stdout.write(FORGED + '\\n')\n"
+    "    return 0.0\n")
+
+
+def test_what_the_text_writes_to_descriptor_1_does_not_reach_the_result(
+        state, tc, calendars, tmp_path, capfd):
+    job = _one_instrument_job(state, tc, calendars, WRITES_TO_DESCRIPTOR_1)
+    path = write_job(job, tmp_path / "job")
+    capfd.readouterr()
+    assert runner.main([str(path)]) == 0
+    captured = capfd.readouterr()
+    # The result is the one line on descriptor 1; what the text wrote went to 2.
+    assert captured.out.count("\n") == 1
+    result = result_from_doc(job, json.loads(captured.out))
+    assert result.error is None
+    targets = result.targets[(0, "SYNA")]
+    assert len(targets) > 1 and np.all(targets == 0.0)
+    assert "0.75" in captured.err
+    # Descriptor 1 is the test's again after the run.
+    print("after")
+    assert capfd.readouterr().out == "after\n"
