@@ -3,14 +3,15 @@
 Mission: 13 (`meta/BUILDER-13-PROMPT.md`), roadmap step S2.2. Closes milestone M2. Base 9db93b8.
 Container runtime: docker, server Engine 29.1.3 (API 1.52).
 Done: U0 2a216eb, U1 6372322 (error texts via fixed built-in/numpy tuples, private result fd + no_result,
-BaseException caught, static order by attr name position, determinism `called` check; check 3/3 ~675 s).
+BaseException caught, static order by attr name position, determinism `called` check; check 3/3 ~675 s),
+U2 c702fc4 (container.py, sandbox/Dockerfile, tag discotrade-sandbox:20fa1f2225a3 built; check 3/3 712-737 s).
 
-Unit in progress: U2 (next).
-Intent: the container backend (sandbox/container.py), its image under sandbox/ pinned by digest with numpy/pandas
-at uv.lock's versions, tag = 12 hex of sha256 over inputs, `discotrade sandbox build`, [sandbox] keys image/pids/
-cpus/tmpfs_bytes(/runtime) in both run.toml, the `container` marker and its skip rule (decision 102).
-Done means: the U2 gate of the brief holds with no container test skipped, the three seen-to-fail changes made and
-reverted, ./scripts/check green 3/3, one commit pushed; image built.
+Unit in progress: U3 (next).
+Intent: sandbox/probe.py (stdlib only, an input of the image tag, rebuild), run by container.py with a job's
+options on a real W job; `discotrade sandbox selftest` (PASS/FAIL per finding, exit 0 only when all pass; exit 1
+without runtime/image); `discotrade doctor --live sandbox` (L5) (decision 103).
+Done means: the U3 gate of the brief holds, two seen-to-fail changes made and reverted, ./scripts/check green 3/3
+with container tests run, one commit pushed; image of the new tag built.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-14-m13 (100-108) bind; the owner's
 decisions-2026-10-13-owner (O-N wins); decisions 1-99 still bind (48 replaced by 105 for the day loop, U5 only);
