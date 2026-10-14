@@ -1,7 +1,8 @@
 """Offline and live checks (DESIGN 19.3; decision 2026-10-12 15; I-13).
 
-In step S0.2 ``discotrade doctor`` runs only ``--live vendor`` (L1) and
-``--live spreads`` (L2); plain ``doctor`` and every other check name are
+``discotrade doctor`` runs ``--live vendor`` (L1) and ``--live spreads`` (L2),
+built in step S0.2, and ``--live sandbox`` (L5), built in step S2.2 (decision
+2026-10-14-m13 103 (d)); plain ``doctor`` and every other check name are
 usage errors (exit 2) that name step S5.1, which builds them.
 
 L1, ``--live vendor``, runs against the real vendor and prints, for every
@@ -21,6 +22,10 @@ sample of the vendor's quotes (``--days`` calendar days ending at the vendor's
 existing table), and reports every instrument with a main-session hour above
 one tick (SPEC decision 14). Without ``DATABENTO_API_KEY`` it refuses before
 any request, writes nothing and exits 1.
+
+L5, ``--live sandbox``, runs the container self-test of ``discotrade sandbox
+selftest`` (:func:`discotrade.sandbox.container.selftest`). Without a container
+runtime it refuses, naming that none was found, exits 1 and starts nothing.
 """
 
 from __future__ import annotations
@@ -35,7 +40,8 @@ from discotrade.config import ConfigError, load_calendar, load_track_config
 
 #: Where plain ``doctor`` and the checks not built in step S0.2 are built.
 LATER_STEP = "S5.1"
-#: The checks of DESIGN 19.3 built in step S0.2 (decision 2026-10-12 15), by name.
+#: The checks of DESIGN 19.3 built so far (decision 2026-10-12 15; decision
+#: 2026-10-14-m13 103 (d)), by name.
 LIVE: dict[str, Callable[..., int]] = {}
 
 
@@ -49,11 +55,13 @@ def run(ctx: Any, args: argparse.Namespace) -> int:
     name = args.live
     if name is None:
         return usage_error(f"plain 'doctor' (the offline checks) is built by step "
-                           f"{LATER_STEP}; in this step give --live vendor or --live spreads")
+                           f"{LATER_STEP}; in this step give --live vendor, --live spreads "
+                           f"or --live sandbox")
     check = LIVE.get(name)
     if check is None:
         return usage_error(f"no live check {name!r} in this step; the live checks other than "
-                           f"vendor and spreads are built by step {LATER_STEP} (DESIGN 19.3)")
+                           f"vendor, spreads and sandbox are built by step {LATER_STEP} "
+                           f"(DESIGN 19.3)")
     return check(ctx, out=sys.stdout, err=sys.stderr, args=args)
 
 
@@ -195,3 +203,13 @@ def live_spreads(ctx: Any, out: TextIO, err: TextIO, args: Any = None) -> int:
 
 
 LIVE["spreads"] = live_spreads
+
+
+def live_sandbox(ctx: Any, out: TextIO, err: TextIO, args: Any = None) -> int:
+    """Live check L5 (DESIGN 19.3): the container self-test on this machine."""
+    from discotrade.sandbox.container import selftest
+
+    return selftest(ctx, out=out, err=err, command="doctor --live sandbox")
+
+
+LIVE["sandbox"] = live_sandbox

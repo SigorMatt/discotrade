@@ -46,6 +46,19 @@ with, as its tag, the first 12 hex digits of a sha256 over those inputs
 :func:`build` (``discotrade sandbox build``) builds the image of the current
 tag, or nothing when it is present. Building fetches the base image and the
 packages; it is a setup step, never run by a test.
+
+The probe (decision 103): :meth:`ContainerSandbox.run_probe` starts
+``sandbox/probe.py``, copied into the image (an input of its tag), through
+:meth:`ContainerSandbox.run_program` and so with exactly a job's options, its
+mount the input directory of a real job. :func:`judge` is the harness's
+judgement of its report; a create outside ``/tmp`` passes only when it failed
+with ``EROFS``, since the container's user is not root and a create under a
+writable root would fail too, with ``EACCES`` (DESIGN 18.3 G2.3: "a read-only
+root"). The mount carries no timestamp (``write_job``), so "no bar after W" is
+judged by count against the job the harness built, whose last bar's open time it
+holds (:func:`expected_mount`), and by any open time the probe finds mounted.
+:func:`selftest` is ``discotrade sandbox selftest`` and ``doctor --live
+sandbox`` (L5).
 """
 
 from __future__ import annotations
@@ -63,9 +76,21 @@ import time
 import uuid
 from collections.abc import Sequence
 from dataclasses import dataclass
+from datetime import date, datetime
 from pathlib import Path
+from typing import Any, TextIO
 
-from discotrade.config import RUNTIMES, SandboxSettings, load_run
+from discotrade.config import (
+    RUNTIMES,
+    Calendar,
+    ConfigError,
+    DateRange,
+    Instrument,
+    SandboxSettings,
+    load_calendar,
+    load_run,
+    load_track_config,
+)
 from discotrade.journal import REPO_ROOT
 from discotrade.sandbox import runner
 from discotrade.sandbox.base import (
@@ -74,6 +99,7 @@ from discotrade.sandbox.base import (
     SandboxRefused,
     SandboxResult,
     SandboxUnavailable,
+    build_job,
     result_from_doc,
     write_job,
 )
@@ -86,6 +112,7 @@ IMAGE_INPUTS: dict[str, str] = {
     "package_init.py": "sandbox/package_init.py",
     "indicators.py": "src/discotrade/indicators.py",
     "runner.py": "src/discotrade/sandbox/runner.py",
+    "probe.py": "sandbox/probe.py",
 }
 #: The image's non-root user and group (``sandbox/Dockerfile``), also given on the
 #: command line.
@@ -94,6 +121,12 @@ CONTAINER_USER = "10001:10001"
 MOUNT = "/job"
 #: The runner's command in the container.
 RUNNER_ARGV = ("python", "-I", "-m", "discotrade.sandbox.runner", MOUNT)
+#: Where the probe of decision 103 lies in the image, and its command there.
+PROBE_PATH = "/opt/discotrade/probe.py"
+PROBE_ARGV = ("python", "-I", PROBE_PATH, MOUNT)
+#: The source text of the probe's job: the probe runs no submission, but its mount
+#: is the input directory of a real job, which carries a source text.
+PROBE_SOURCE = "# the probe's job (DESIGN 12.4, decision 103): no submission is run\n"
 #: The container's whole environment beyond the image's own: fixed values, none
 #: taken from the harness's environment (I-13). One thread per numeric library.
 CONTAINER_ENV: dict[str, str] = {
@@ -358,6 +391,32 @@ class ContainerSandbox:
                                      f"container (exit {_START_FAILED})")
         return Execution(proc.returncode, bytes(out), None)
 
+    def run_probe(self, job: SandboxJob) -> dict[str, Any]:
+        """Run the probe (decision 103 (a)) in one container started with exactly a
+        job's options (:func:`run_command`), its mount the input directory of
+        ``job``, written as for a run; return its report. A probe that gives no
+        report is :class:`ProbeFailed`."""
+        if job.source is None:
+            raise SandboxRefused("function", "the probe's job carries a source text")
+        self._ready()
+        self.scratch.mkdir(parents=True, exist_ok=True)
+        base = Path(tempfile.mkdtemp(prefix="probe-", dir=self.scratch))
+        try:
+            job_dir = write_job(job, base / "input")
+            run = self.run_program(PROBE_ARGV, job_dir, job.limits)
+        finally:
+            shutil.rmtree(base, ignore_errors=True)
+        if run.breach is not None or run.returncode != 0:
+            why = run.breach or f"exit {run.returncode}"
+            raise ProbeFailed(f"the probe gave no report ({why})")
+        try:
+            report = json.loads(run.out.decode("utf-8"))
+        except ValueError as exc:
+            raise ProbeFailed(f"the probe's output is not one JSON document: {exc}") from exc
+        if not isinstance(report, dict):
+            raise ProbeFailed("the probe's output is not a JSON object")
+        return report
+
     def _result(self, job: SandboxJob, run: Execution) -> SandboxResult:
         if run.breach == "wall_clock":
             return _limit(job, "wall_clock", "the job ran past its wall-clock limit")
@@ -427,3 +486,190 @@ def build(settings: SandboxSettings, root: Path = REPO_ROOT) -> tuple[str, bool]
     if proc.returncode != 0:
         raise BuildFailed(command, proc.stdout.decode("utf-8", errors="replace"))
     return ref, True
+
+
+# ------------------------------------------------------------------ the probe and its judgement
+
+
+class ProbeFailed(RuntimeError):
+    """The probe ran but gave no report the harness can read."""
+
+
+#: The directories outside ``/tmp`` under which the probe tries a create, in its
+#: report's order; then ``/tmp``.
+OUTSIDE_TMP = ("/", "/usr", "/home", MOUNT)
+#: The one error that says a create failed because the file system is read-only.
+READ_ONLY = "EROFS"
+
+
+@dataclass(frozen=True)
+class Finding:
+    """One finding of the self-test: its name, whether it passed, what was seen."""
+
+    name: str
+    ok: bool
+    detail: str
+
+
+@dataclass(frozen=True)
+class Expected:
+    """What the mount must hold for one instrument, from the job the harness built:
+    ``count`` bars, ``window`` of them W's, the last opening at ``last_open``, every
+    one before ``w_end``, the end of W's last trading day."""
+
+    symbol: str
+    count: int
+    window: int
+    last_open: datetime | None
+    w_end: datetime
+
+
+def expected_mount(job: SandboxJob, instruments: Sequence[Instrument],
+                   calendars: dict[str, Calendar], window: DateRange) -> list[Expected]:
+    """Per instrument of ``job`` (in ``instruments``' order), what its mount holds."""
+    from discotrade.bars.gaps import day_end
+
+    out = []
+    for inst, ji in zip(instruments, job.instruments, strict=True):
+        ts = ji.bars["ts"]
+        last = None if ts.empty else ts.iloc[-1].to_pydatetime()
+        out.append(Expected(ji.symbol, len(ji.bars), ji.window_bars, last,
+                            day_end(calendars[inst.calendar], window.last)))
+    return out
+
+
+def _get(doc: Any, *keys: Any) -> Any:
+    for key in keys:
+        if isinstance(doc, dict):
+            doc = doc.get(key)
+        elif isinstance(doc, list) and isinstance(key, int) and 0 <= key < len(doc):
+            doc = doc[key]
+        else:
+            return None
+    return doc
+
+
+def _instant(text: Any) -> datetime | None:
+    if not isinstance(text, str):
+        return None
+    try:
+        value = datetime.fromisoformat(text)
+    except ValueError:
+        return None
+    return value if value.tzinfo is not None else None
+
+
+def judge(report: Any, expected: Sequence[Expected]) -> list[Finding]:
+    """The harness's judgement of a probe report (decision 103 (b)), one finding per
+    rule, in a fixed order; a part missing or malformed fails its findings."""
+    found: list[Finding] = []
+
+    def add(name: str, ok: bool, detail: str) -> None:
+        found.append(Finding(name, bool(ok), detail))
+
+    routes = _get(report, "network", "routes")
+    add("network.routes", routes == [],
+        "no route in the routing table" if routes == [] else f"routes: {routes!r}")
+    ifaces = _get(report, "network", "interfaces")
+    add("network.interfaces", ifaces == ["lo"],
+        f"interfaces present: {ifaces!r}" + ("" if ifaces == ["lo"] else ", not loopback only"))
+    conn = _get(report, "network", "connect")
+    failed = isinstance(conn, dict) and conn.get("connected") is False
+    add("network.connect", failed,
+        f"connection to {_get(conn, 'target')} " + (f"failed ({conn.get('error')})" if failed
+                                                     else f"did not fail: {conn!r}"))
+    creates = _get(report, "creates")
+    by_dir = ({c.get("under"): c for c in creates if isinstance(c, dict)}
+              if isinstance(creates, list) else {})
+    for directory in OUTSIDE_TMP:
+        c = by_dir.get(directory)
+        ok = isinstance(c, dict) and c.get("created") is False and c.get("error") == READ_ONLY
+        add(f"create {directory}", ok,
+            "create failed: read-only file system" if ok else f"create was not refused as "
+            f"read-only: {c!r}")
+    tmp = by_dir.get("/tmp")
+    ok = isinstance(tmp, dict) and tmp.get("created") is True
+    add("create /tmp", ok, "create succeeded" if ok else f"create failed: {tmp!r}")
+    uid, euid = _get(report, "identity", "uid"), _get(report, "identity", "euid")
+    ok = all(isinstance(u, int) and not isinstance(u, bool) and u != 0 for u in (uid, euid))
+    add("user.uid", ok, f"user id {uid}, effective {euid}" + ("" if ok else ", not non-root"))
+    cap = _get(report, "identity", "cap_eff")
+    try:
+        caps = int(cap, 16) if isinstance(cap, str) else None
+    except ValueError:
+        caps = None
+    add("user.capabilities", caps == 0,
+        f"effective capability set {cap}" + (" (empty)" if caps == 0 else ", not empty"))
+    mounted = _get(report, "mount", "instruments")
+    mounted = mounted if isinstance(mounted, list) else None
+    n = None if mounted is None else len(mounted)
+    add("mount.instruments", n == len(expected),
+        f"{n} instruments mounted, the job has {len(expected)}")
+    for i, e in enumerate(expected):
+        m = _get(mounted, i)
+        count = _get(m, "count")
+        arrays = _get(m, "arrays")
+        latest = _get(m, "latest_open")
+        problems = []
+        if count != e.count or not isinstance(arrays, dict) or set(arrays.values()) != {e.count}:
+            problems.append(f"{count} bars mounted, the job's window and context are {e.count}")
+        if e.last_open is not None and e.last_open >= e.w_end:
+            problems.append(f"the job's last bar opens {e.last_open.isoformat()}, after W")
+        if latest is not None:
+            at = _instant(latest)
+            if at is None or at >= e.w_end:
+                problems.append(f"a mounted bar opens {latest}, after W")
+        detail = (f"{e.count} bars mounted ({e.window} of W, {e.count - e.window} of "
+                  f"context), none after W's last day" if not problems
+                  else "; ".join(problems))
+        add(f"mount.{e.symbol}", not problems, detail)
+    return found
+
+
+def selftest(ctx: Any, out: TextIO, err: TextIO, command: str = "sandbox selftest") -> int:
+    """``discotrade sandbox selftest`` (decision 103 (c)): build the job of W of
+    decision 19's ``D`` on ``ctx``'s track, run the probe on it, print one line per
+    finding with PASS or FAIL; exit 0 only when all pass. With no runtime or no image
+    of the current tag, exit 1 naming which, starting nothing."""
+    from discotrade.daily import closed_day
+
+    def fail(why: object) -> int:
+        print(f"{command}: FAIL: {why}", file=err)
+        return 1
+
+    try:
+        settings = load_run(Path(ctx.config)).sandbox
+        runtime = find_runtime(settings.runtime)
+    except (ConfigError, SandboxUnavailable, OSError) as exc:
+        return fail(exc)
+    ref = image_ref(settings.image)
+    if not image_present(runtime, ref):
+        return fail(_no_image(ref))
+    if ctx.state is None:
+        return fail("no state directory (--state or $DISCOTRADE_STATE)")
+    try:
+        tc = load_track_config(ctx.config, ctx.track)
+        calendars = {name: load_calendar(Path(ctx.config) / "calendars" / f"{name}.toml")
+                     for name in sorted({i.calendar for i in tc.instruments})}
+        day: date = closed_day(tc, calendars, ctx.clock.now())
+        window = tc.track.windows(day).w
+        job = build_job(ctx.state, tc.track, tc.instruments, calendars, window,
+                        source=PROBE_SOURCE, param_sets=[{}], config_dir=Path(ctx.config))
+        expected = expected_mount(job, tc.instruments, calendars, window)
+    except (ConfigError, OSError, ValueError) as exc:
+        return fail(exc)
+    print(f"{command}: track {tc.track.name}, day {day.isoformat()}, W "
+          f"{window.first.isoformat()} to {window.last.isoformat()}, image {ref}", file=out)
+    with tempfile.TemporaryDirectory(prefix="discotrade-selftest-") as scratch:
+        backend = ContainerSandbox(Path(scratch), Path(ctx.config))
+        try:
+            report = backend.run_probe(job)
+        except (SandboxUnavailable, ProbeFailed, OSError) as exc:
+            return fail(exc)
+    findings = judge(report, expected)
+    for f in findings:
+        print(f"{'PASS' if f.ok else 'FAIL'} {f.name}: {f.detail}", file=out)
+    bad = sum(1 for f in findings if not f.ok)
+    print(f"{command}: {'FAIL' if bad else 'ok'}, {bad} of {len(findings)} findings failed",
+          file=out)
+    return 1 if bad else 0

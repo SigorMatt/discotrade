@@ -232,18 +232,20 @@ def test_the_tag_changes_when_the_copied_runner_changes_and_no_build_is_made(tmp
                            encoding="utf-8")
     assert container.image_tag(root) != before
     for rel in ("src/discotrade/indicators.py", "sandbox/Dockerfile",
-                "sandbox/requirements.txt", "sandbox/package_init.py"):
+                "sandbox/requirements.txt", "sandbox/package_init.py", "sandbox/probe.py"):
         other = copy_inputs(tmp_path / rel.replace("/", "_"))
         (other / rel).write_bytes((other / rel).read_bytes() + b"\n")
         assert container.image_tag(other) != before, rel
 
 
 def test_the_image_inputs_are_the_definition_the_pins_the_runner_and_the_library():
+    # sandbox/probe.py joined the inputs: decision 2026-10-14-m13 103 (a).
     assert sorted(container.IMAGE_INPUTS.values()) == [
-        "sandbox/Dockerfile", "sandbox/package_init.py", "sandbox/requirements.txt",
-        "src/discotrade/indicators.py", "src/discotrade/sandbox/runner.py"]
+        "sandbox/Dockerfile", "sandbox/package_init.py", "sandbox/probe.py",
+        "sandbox/requirements.txt", "src/discotrade/indicators.py",
+        "src/discotrade/sandbox/runner.py"]
     assert sorted(p.name for p in (REPO_ROOT / "sandbox").iterdir()) == [
-        "Dockerfile", "package_init.py", "requirements.txt"]
+        "Dockerfile", "package_init.py", "probe.py", "requirements.txt"]
 
 
 def test_the_base_image_is_pinned_by_digest_at_the_projects_minor_version():

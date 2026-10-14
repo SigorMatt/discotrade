@@ -2,8 +2,9 @@
 # `discotrade sandbox build`, which assembles its context from the files named in
 # discotrade.sandbox.container.IMAGE_INPUTS and tags it with the first 12 hex digits
 # of a sha256 over them. It holds a pinned Python, the pinned numpy and pandas (with
-# the two packages pandas needs), the runner and the indicator library, and nothing
-# else: no pyarrow, no httpx, no other module of discotrade.
+# the two packages pandas needs), the runner, the indicator library and the probe of
+# decision 103 (sandbox/probe.py, standard library only), and nothing else: no
+# pyarrow, no httpx, no other module of discotrade.
 #
 # The base: python 3.14.6 (the minor version uv runs the project with), pinned by the
 # digest of its image index on Docker Hub.
@@ -26,6 +27,9 @@ COPY package_init.py ${SITE}/__init__.py
 COPY package_init.py ${SITE}/sandbox/__init__.py
 COPY indicators.py ${SITE}/indicators.py
 COPY runner.py ${SITE}/sandbox/runner.py
+# The probe of `discotrade sandbox selftest` (decision 103 (a)): outside the package,
+# run as `python -I /opt/discotrade/probe.py /job`.
+COPY probe.py /opt/discotrade/probe.py
 RUN python -m compileall -q ${SITE} \
     && groupadd --gid 10001 sandbox \
     && useradd --uid 10001 --gid 10001 --no-create-home --home-dir /nonexistent \

@@ -466,13 +466,14 @@ def _add_doctor(subparsers: argparse._SubParsersAction, common: argparse.Argumen
     doctor = subparsers.add_parser(
         "doctor", parents=[common],
         help="live checks against the real services (DESIGN 19.3); in this step only "
-        "--live vendor (L1) and --live spreads (L2)",
+        "--live vendor (L1), --live spreads (L2) and --live sandbox (L5)",
     )
     doctor.add_argument(
         "--live", metavar="NAME", default=None,
         help="the live check to run: vendor (L1) and spreads (L2) need DATABENTO_API_KEY "
-        "and refuse, exit 1, without it; plain doctor and the other checks are built by "
-        "step S5.1",
+        "and refuse, exit 1, without it; sandbox (L5) runs the container self-test and "
+        "refuses, exit 1, without a container runtime; plain doctor and the other checks "
+        "are built by step S5.1",
     )
     doctor.add_argument(
         "--days", type=int, default=None,
@@ -906,6 +907,12 @@ def _sandbox_build(ctx: Context, args: argparse.Namespace) -> int:
     return 0
 
 
+def _sandbox_selftest(ctx: Context, args: argparse.Namespace) -> int:
+    from discotrade.sandbox.container import selftest
+
+    return selftest(ctx, out=sys.stdout, err=sys.stderr)
+
+
 def _add_sandbox(subparsers: argparse._SubParsersAction, common: argparse.ArgumentParser) -> None:
     sandbox = subparsers.add_parser("sandbox", parents=[common],
                                     help="the container sandbox (DESIGN 12.4)")
@@ -917,6 +924,14 @@ def _add_sandbox(subparsers: argparse._SubParsersAction, common: argparse.Argume
         "image and packages: a setup step)",
     )
     builder.set_defaults(handler=_sandbox_build)
+    selftest = actions.add_parser(
+        "selftest", parents=[common],
+        help="run the probe in a container started with a job's options on the job of W "
+        "of the day D of --as-of, and print one PASS or FAIL line per finding; exit 0 only "
+        "when all pass, 1 with no runtime or no image of the current tag (decision "
+        "2026-10-14-m13 103)",
+    )
+    selftest.set_defaults(handler=_sandbox_selftest)
 
 
 SUBCOMMANDS.append(_add_sandbox)

@@ -56,7 +56,8 @@ def test_plain_doctor_is_a_usage_error_naming_s5_1(capsys):
     assert "S5.1" in capsys.readouterr().err
 
 
-@pytest.mark.parametrize("name", ["workers", "coordinator", "sandbox", "issues", "costs",
+# "sandbox" (L5) left this list: decision 2026-10-14-m13 103 (d) builds it in step S2.2.
+@pytest.mark.parametrize("name", ["workers", "coordinator", "issues", "costs",
                                   "planted", "nonsense"])
 def test_another_check_is_a_usage_error_naming_s5_1(monkeypatch, capsys, name):
     monkeypatch.delenv(KEY_ENV, raising=False)
@@ -87,3 +88,25 @@ def test_live_vendor_reports_a_failing_vendor_without_the_key(monkeypatch, capsy
     captured = capsys.readouterr()
     assert f"{SYMBOL}: FAIL" in captured.out and "<redacted>" in captured.out
     assert FAKE_KEY not in captured.out + captured.err
+
+
+def test_live_sandbox_with_an_empty_path_refuses_naming_no_runtime_and_starts_nothing(
+        monkeypatch, capsys, tmp_path):
+    """L5 offline (decision 2026-10-14-m13 103 (d)): no container runtime on PATH."""
+    import tempfile
+
+    from discotrade.sandbox import container
+
+    def refuse(*args, **kwargs):
+        raise AssertionError(f"a process was started: {args}")
+
+    # The two places container.py starts a process: the runtime's commands and a run.
+    monkeypatch.setattr(container, "_runtime", refuse)
+    monkeypatch.setattr(container.ContainerSandbox, "run_program", refuse)
+    monkeypatch.setattr(tempfile, "tempdir", str(tmp_path))
+    monkeypatch.setenv("PATH", "")
+    assert doctor("--live", "sandbox") == 1
+    captured = capsys.readouterr()
+    assert "no container runtime found" in captured.err
+    assert "doctor --live sandbox" in captured.err
+    assert "PASS" not in captured.out and list(tmp_path.iterdir()) == []
