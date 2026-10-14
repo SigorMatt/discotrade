@@ -54,29 +54,37 @@ every positive score (it counts as the lowest; the design is silent on
 ``above`` a value that is not a number, this is that rule's reading). Where a
 newcomer displaces the weakest, the newcomer's row comes first.
 
-A row of steps 2 and 3 (``dormant``, ``returned``, ``displaced``) carries
-``adjusted``, the adjusted Sharpe that decided it, and ``plain``, the
-``metrics.sharpe`` of the plain paper ``net_1x`` on the same paper days
-(decision 87): for ``dormant`` and ``returned`` the approach's own over its
-``W``, for ``displaced`` the displaced approach's over the returning one's
-``W``; ``None`` (JSON ``null``) for a figure that is not a number. Rows of
-steps 1 and 4 carry neither. Admission still reads the plain measure here
-(mission 11 U3 takes it).
+A row whose reason is ``admitted``, ``displaced``, ``dormant`` or
+``returned`` carries ``adjusted``, the adjusted Sharpe at 1x that decided it,
+and ``plain``, the Sharpe at 1x of the plain paper ``net_1x`` over the same
+window (decision 87): for ``dormant`` and ``returned`` the approach's own over
+its ``W``; for ``displaced`` the displaced approach's over the days compared
+(the returning one's ``W`` in step 3, T's days at admission); for
+``admitted`` the candidate's ``adjusted_t["sharpe"]`` and
+``metrics_t["sharpe"]``; ``None`` (JSON ``null``) for a figure that is not a
+number. Rows of other reasons carry neither.
 
 ``admit(state_dir, setup, candidate, day, into=None)`` applies DESIGN 10.3's
 admission rule after steps 1 to 4 of ``day`` (decision 63), from the states
-in force after ``day``: refused ``not_positive`` when the score (the net
-Sharpe at 1x on T, ``candidate.metrics_t["sharpe"]``) is not positive (a
-score that is not a number included), else ``too_few_trades`` below
-``admission.min_trades_t``, else admitted ``free_slot`` when the cell has
-fewer than ``cell_slots`` live approaches, else admitted ``displaced`` when
-the score beats the weakest live approach's Sharpe over T's days in its paper
-records (that approach goes dormant, reason ``displaced``), else refused
-``not_better_than_weakest``. It writes one trial row (``ledger.TRIALS``) and,
-when admitted, the approach (admission date ``day``, ``state.write_approach``)
-and its ``candidate`` to ``live`` row, reason ``admitted``; a trial not
-admitted is written under ``trials/<id>/`` (``state.write_trial``). The grid
-and the W metrics of a candidate that does not carry them are ``null``.
+in force after ``day``, on the adjusted measure (owner's O-11, O-12;
+decision 2026-10-14 86): refused ``not_positive`` when the score
+(``candidate.adjusted_t["sharpe"]``, the Sharpe at 1x of the candidate's
+exposure-adjusted net series on T with its average positions over T) is not
+positive (a score that is not a number or ``None`` included), else
+``too_few_trades`` below ``admission.min_trades_t`` (still
+``metrics_t["trades"]``), else admitted ``free_slot`` when the cell has fewer
+than ``cell_slots`` live approaches, else admitted ``displaced`` when the
+score beats the weakest live approach, each live approach scored over T's
+days on ``metrics.sharpe`` of ``paper.adjusted(..., T's days, "net_1x")``,
+its own adjusted series with its own average positions over its rows of
+those days (that approach goes dormant, reason ``displaced``), else refused
+``not_better_than_weakest``. It writes one trial row (``ledger.TRIALS``,
+with ``adjusted_t`` and ``adjusted_w`` beside ``metrics_t`` and
+``metrics_w``) and, when admitted, the approach (admission date ``day``,
+``state.write_approach``) and its ``candidate`` to ``live`` row, reason
+``admitted``; a trial not admitted is written under ``trials/<id>/``
+(``state.write_trial``). The grid, the W metrics and the W adjusted figures
+of a candidate that does not carry them are ``null``.
 
 Rows are appended through ``ledger.append``: a row already in the ledger is
 not appended again, so a re-run of a day appends nothing (I-6). No clock is
@@ -303,8 +311,11 @@ def run_steps(state_dir: Path, setup: Any, day: date, paper: pd.DataFrame | None
 class Candidate:
     """A candidate scored on T: its source and fixed parameters, provenance,
     the grid and W metrics when it has them, its DESIGN 8 metrics on T (a
-    ``metrics.Metrics`` or a mapping with at least ``sharpe`` and ``trades``)
-    and T's trading days."""
+    ``metrics.Metrics`` or a mapping with at least ``sharpe`` and ``trades``),
+    its exposure-adjusted figures on T (``adjusted_t``, a mapping holding
+    ``sharpe``, ``sharpe_2x``, ``total_return``, ``total_return_2x`` and
+    ``avg_position``, decision 2026-10-14 86 (a)), those on W when it has them
+    (``adjusted_w``) and T's trading days."""
 
     source: str
     params: Mapping[str, Any]
@@ -315,9 +326,11 @@ class Candidate:
     description: str
     profile_version: str
     metrics_t: Any
+    adjusted_t: Mapping[str, Any]
     t_days: Sequence[date]
     grid: Any = None
     metrics_w: Any = None
+    adjusted_w: Mapping[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -328,6 +341,11 @@ class Admission:
     displaced: str | None
     trial: Mapping[str, Any]
     lifecycle: tuple[Mapping[str, Any], ...]
+
+
+def _number(value: Any) -> float:
+    """A score as a float, ``None`` being not a number."""
+    return math.nan if value is None else float(value)
 
 
 def _as_dict(metrics: Any) -> dict[str, Any] | None:
@@ -348,7 +366,8 @@ def admit(state_dir: Path, setup: Any, candidate: Candidate, day: date,
     out = state_dir if into is None else Path(into)
     th = setup.thresholds
     metrics_t = _as_dict(candidate.metrics_t) or {}
-    score = float(metrics_t["sharpe"])
+    adjusted_t = _as_dict(candidate.adjusted_t) or {}
+    score = _number(adjusted_t["sharpe"])
     trades = int(metrics_t["trades"])
     aid = state.approach_id(candidate.source, candidate.params)
 
@@ -358,6 +377,7 @@ def admit(state_dir: Path, setup: Any, candidate: Candidate, day: date,
     cells = _cells(approaches)
     live = _live_in(candidate.cell, current, cells)
     displaced: str | None = None
+    scores: dict[str, tuple[float, float]] = {}
     if math.isnan(score) or not score > 0:
         reason, admitted = NOT_POSITIVE, False
     elif trades < int(th["admission.min_trades_t"]):
@@ -373,9 +393,10 @@ def admit(state_dir: Path, setup: Any, candidate: Candidate, day: date,
         if records is None:
             records = paper_module.build(pd.DataFrame(), 1, {})
         days = set(candidate.t_days)
-        scores = {other: _sharpe_on(records, other, days) for other in live}
-        weak = weakest(scores)
-        if beats(score, scores[weak]):
+        scores = {other: _figures(state_dir, setup, records, other, days, into)
+                  for other in live}
+        weak = weakest({other: f[0] for other, f in scores.items()})
+        if beats(score, scores[weak][0]):
             reason, admitted, displaced = DISPLACED, True, weak
         else:
             reason, admitted = NOT_BETTER, False
@@ -389,6 +410,7 @@ def admit(state_dir: Path, setup: Any, candidate: Candidate, day: date,
         "config_hash": costs.config_hash(setup.instruments, setup.spread_tables),
         "grid": candidate.grid, "params": dict(candidate.params),
         "metrics_w": _as_dict(candidate.metrics_w), "metrics_t": metrics_t,
+        "adjusted_w": _as_dict(candidate.adjusted_w), "adjusted_t": adjusted_t,
         "admitted": admitted, "reason": reason, "displaced": displaced,
     }
     ledger.append(state_dir, track, ledger.TRIALS, [trial], into=into)
@@ -400,9 +422,10 @@ def admit(state_dir: Path, setup: Any, candidate: Candidate, day: date,
     changes: list[dict[str, Any]] = []
     if admitted:
         state.write_approach(out, admitted=day, **common)
-        changes.append(_row(day, aid, CANDIDATE, LIVE, ADMITTED))
+        changes.append(_row(day, aid, CANDIDATE, LIVE, ADMITTED,
+                            (score, _number(metrics_t.get("sharpe")))))
         if displaced is not None:
-            changes.append(_row(day, displaced, LIVE, DORMANT, DISPLACED))
+            changes.append(_row(day, displaced, LIVE, DORMANT, DISPLACED, scores[displaced]))
         ledger.append(state_dir, track, ledger.LIFECYCLE, changes, into=into)
     else:
         state.write_trial(out, **common)

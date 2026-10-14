@@ -140,6 +140,23 @@ def test_a_lifecycle_row_of_another_reason_carries_neither_figure(tmp_path, reas
     assert not (tmp_path / "ledger").exists()
 
 
+def test_a_trial_row_may_carry_adjusted_t_and_adjusted_w_both_never_one(tmp_path):
+    # Decision 2026-10-14 86 (d): the trial row's adjusted figures, beside
+    # metrics_t and metrics_w; adjusted_w null for a candidate without W.
+    assert ledger.TRIAL_FIGURES == ("adjusted_t", "adjusted_w")
+    trial = {k: None for k in ledger.KEYS[TRIALS]}
+    figures = {"sharpe": 0.5, "sharpe_2x": None, "total_return": 0.01,
+               "total_return_2x": 0.005, "avg_position": {"SYNA": 0.25}}
+    row = {**trial, "date": "2019-06-10", "adjusted_t": figures, "adjusted_w": None}
+    assert ledger.append(tmp_path, TRACK, TRIALS, [row]) == [row]
+    assert ledger.read(tmp_path, TRACK, TRIALS) == [row]
+    for half in ({**trial, "date": "2019-06-11", "adjusted_t": figures},
+                 {**trial, "date": "2019-06-11", "adjusted_w": None}):
+        with pytest.raises(LedgerError, match="keys"):
+            ledger.append(tmp_path, TRACK, TRIALS, [half])
+    assert ledger.read(tmp_path, TRACK, TRIALS) == [row]
+
+
 def test_the_call_writer_takes_the_outcomes_of_10_2(tmp_path):
     rows = [call_row(0), call_row(1, "duplicate"), call_row(2, "invalid:static"),
             call_row(3, "provider_error"), call_row(4, "budget")]

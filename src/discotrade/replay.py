@@ -11,19 +11,25 @@ it staying committed. A day already journaled is a re-run and writes nothing
 (I-6); a day after a gap in the journal is refused as ``run-day`` refuses it.
 
 Scripted candidates (decision 73; DESIGN 10.3, 16.1 step 5; decisions 48, 63):
-``read_candidates(path)`` reads a JSON lines file whose lines each hold
-exactly the keys ``CANDIDATE_KEYS`` (``day``, ``source``, ``params``,
+``read_candidates(path, symbols)`` reads a JSON lines file whose lines each
+hold exactly the keys ``CANDIDATE_KEYS`` (``day``, ``source``, ``params``,
 ``cell``, ``model_id``, ``model_version``, ``cutoff``, ``description``,
-``profile_version``, ``metrics_t``), ``source`` being the path, relative to
-the repository, of a file under its ``reference/`` or ``tests/fixtures/``
-(decision 48). A file with two candidates for one day, a line missing a key
-(or holding another, or a value of the wrong kind: the design is silent, the
-simplest reading of "holds" is "holds exactly"), or a source outside those
-directories is refused (``CandidatesError``) before any day runs. On a day
-``D`` with a candidate, ``replay`` hands ``run_day`` a
-``lifecycle.Candidate`` whose T trading days are those DESIGN 4.1 gives for
-``D`` (the track's trading dates in ``Track.windows(D).t``), with no grid
-and no W metrics; ``run_day`` admits or refuses it after lifecycle steps 1
+``profile_version``, ``metrics_t`` and ``adjusted_t``), ``source`` being the
+path, relative to the repository, of a file under its ``reference/`` or
+``tests/fixtures/`` (decision 48). ``adjusted_t`` (decision 2026-10-14 86
+(a)) is a JSON object holding exactly ``ADJUSTED_KEYS``: ``sharpe``,
+``sharpe_2x``, ``total_return`` and ``total_return_2x``, each a finite number
+or ``null`` (not a number), and ``avg_position``, an object mapping exactly
+each of ``symbols`` (the track's instrument symbols) to a finite number (a
+JSON ``true`` or ``false`` is not a number). A file with two candidates for
+one day, a line missing a key (or holding another, or a value of the wrong
+kind: the design is silent, the simplest reading of "holds" is "holds
+exactly"), or a source outside those directories is refused
+(``CandidatesError``) before any day runs. On a day ``D`` with a candidate,
+``replay`` hands ``run_day`` a ``lifecycle.Candidate`` whose T trading days
+are those DESIGN 4.1 gives for ``D`` (the track's trading dates in
+``Track.windows(D).t``), with its ``adjusted_t``, no grid, no W metrics and
+no ``adjusted_w``; ``run_day`` admits or refuses it after lifecycle steps 1
 to 4 of ``D``. A candidate dated on a day the replay does not run is never
 used (the design is silent; nothing reads it).
 
@@ -34,7 +40,8 @@ from __future__ import annotations
 
 import dataclasses
 import json
-from collections.abc import Callable, Iterator, Mapping
+import math
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -49,8 +56,11 @@ from discotrade.stats import trading_dates
 from discotrade.tradingcal import expected_bars
 
 #: The keys of a line of a candidates file (decision 2026-10-12 73).
-CANDIDATE_KEYS = ("cell", "cutoff", "day", "description", "metrics_t", "model_id",
-                  "model_version", "params", "profile_version", "source")
+CANDIDATE_KEYS = ("adjusted_t", "cell", "cutoff", "day", "description", "metrics_t",
+                  "model_id", "model_version", "params", "profile_version", "source")
+#: The keys of a line's ``adjusted_t`` (decision 2026-10-14 86 (a)).
+ADJUSTED_FIGURES = ("sharpe", "sharpe_2x", "total_return", "total_return_2x")
+ADJUSTED_KEYS = (*ADJUSTED_FIGURES, "avg_position")
 _TEXT_KEYS = ("cell", "description", "model_id", "model_version", "profile_version")
 
 
@@ -71,7 +81,31 @@ def _source(where: str, value: Any, root: Path) -> str:
     return path.read_bytes().decode("utf-8")
 
 
-def _candidate(where: str, line: Any, root: Path) -> tuple[date, Candidate]:
+def _is_number(value: Any) -> bool:
+    return (isinstance(value, int | float) and not isinstance(value, bool)
+            and math.isfinite(value))
+
+
+def _adjusted(where: str, value: Any, symbols: Sequence[str]) -> dict[str, Any]:
+    if not isinstance(value, dict) or set(value) != set(ADJUSTED_KEYS):
+        raise CandidatesError(f"{where}: adjusted_t must be a JSON object holding exactly "
+                              f"{', '.join(ADJUSTED_KEYS)} (decision 2026-10-14 86)")
+    for key in ADJUSTED_FIGURES:
+        if value[key] is not None and not _is_number(value[key]):
+            raise CandidatesError(f"{where}: adjusted_t {key} must be a number or null")
+    held = value["avg_position"]
+    if not isinstance(held, dict) or set(held) != set(symbols):
+        raise CandidatesError(f"{where}: adjusted_t avg_position must be a JSON object "
+                              f"mapping exactly the track's symbols {', '.join(symbols)}")
+    for symbol in sorted(held):
+        if not _is_number(held[symbol]):
+            raise CandidatesError(f"{where}: adjusted_t avg_position {symbol} must be a "
+                                  f"number")
+    return value
+
+
+def _candidate(where: str, line: Any, root: Path,
+               symbols: Sequence[str]) -> tuple[date, Candidate]:
     if not isinstance(line, dict):
         raise CandidatesError(f"{where}: not a JSON object")
     missing = [k for k in CANDIDATE_KEYS if k not in line]
@@ -94,15 +128,19 @@ def _candidate(where: str, line: Any, root: Path) -> tuple[date, Candidate]:
     if not (isinstance(metrics, dict) and "sharpe" in metrics and "trades" in metrics):
         raise CandidatesError(f"{where}: metrics_t must be a JSON object holding sharpe "
                               f"and trades")
+    adjusted = _adjusted(where, line["adjusted_t"], symbols)
     source = _source(where, line["source"], root)
     return day, Candidate(
         source=source, params=line["params"], cell=line["cell"], model_id=line["model_id"],
         model_version=line["model_version"], cutoff=cutoff, description=line["description"],
-        profile_version=line["profile_version"], metrics_t=metrics, t_days=())
+        profile_version=line["profile_version"], metrics_t=metrics, adjusted_t=adjusted,
+        t_days=())
 
 
-def read_candidates(path: Path, root: Path = REPO_ROOT) -> dict[date, Candidate]:
-    """The candidates of a JSON lines file by day (decision 2026-10-12 73);
+def read_candidates(path: Path, symbols: Sequence[str],
+                    root: Path = REPO_ROOT) -> dict[date, Candidate]:
+    """The candidates of a JSON lines file by day (decisions 2026-10-12 73,
+    2026-10-14 86), ``symbols`` the track's instrument symbols;
     ``CandidatesError`` for a file that is refused."""
     try:
         text = Path(path).read_text(encoding="utf-8")
@@ -117,7 +155,7 @@ def read_candidates(path: Path, root: Path = REPO_ROOT) -> dict[date, Candidate]
             line = json.loads(raw)
         except ValueError as exc:
             raise CandidatesError(f"{where}: not JSON: {exc}") from None
-        day, candidate = _candidate(where, line, root)
+        day, candidate = _candidate(where, line, root, symbols)
         if day in out:
             raise CandidatesError(f"{where}: a second candidate for {day.isoformat()}")
         out[day] = candidate

@@ -585,12 +585,6 @@ def _replay(ctx: Context, args: argparse.Namespace) -> int:
                      "day's last expected bar (decision 2026-10-12 72)")
     if ctx.state is None:
         return usage(f"give --state <dir> or set {STATE_ENV}")
-    candidates = None
-    if args.candidates is not None:
-        try:
-            candidates = read_candidates(args.candidates)
-        except CandidatesError as exc:
-            return usage(str(exc))
     failures = (DailyError, StateError, JournalError, ConfigError, BarStoreError,
                 StrategyError, ResultError, EvaluationError, NotBuiltError, OSError, ValueError)
     try:
@@ -599,6 +593,13 @@ def _replay(ctx: Context, args: argparse.Namespace) -> int:
     except failures as exc:
         print(f"replay: FAIL: {exc}", file=sys.stderr)
         return 1
+    candidates = None
+    if args.candidates is not None:
+        try:
+            candidates = read_candidates(args.candidates,
+                                         sorted(inst.symbol for inst in tc.instruments))
+        except CandidatesError as exc:
+            return usage(str(exc))
 
     def line(run: Any, instant: datetime) -> None:
         if run.status == WRITTEN:
@@ -634,9 +635,12 @@ def _add_replay(subparsers: argparse._SubParsersAction, common: argparse.Argumen
         "--candidates", metavar="FILE", type=Path, default=None,
         help="a JSON lines file of scripted candidates, at most one per day, each line "
         "holding day, source (a file under the repository's reference/ or tests/fixtures/), "
-        "params, cell, model_id, model_version, cutoff, description, profile_version and "
-        "metrics_t; each is admitted or refused after lifecycle steps 1 to 4 of its day; "
-        "a file refused is a usage error before any day runs (decision 2026-10-12 73)",
+        "params, cell, model_id, model_version, cutoff, description, profile_version, "
+        "metrics_t and adjusted_t (sharpe, sharpe_2x, total_return, total_return_2x, each a "
+        "number or null, and avg_position, each of the track's symbols to a number); each is "
+        "admitted or refused on adjusted_t's sharpe after lifecycle steps 1 to 4 of its day; "
+        "a file refused is a usage error before any day runs (decisions 2026-10-12 73, "
+        "2026-10-14 86)",
     )
     replay.add_argument("--from", dest="first", metavar="YYYY-MM-DD", required=True,
                         type=date.fromisoformat, help="first day of the span")

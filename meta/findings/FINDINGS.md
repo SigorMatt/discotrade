@@ -325,6 +325,8 @@ is in is the architect's call.
 
 Status: open (for the architect: confirm, or name the file for U3).
 
+2026-10-14, mission 11 U3: U3 touched `ledger.py` for the trial keys, in U2's spirit: `TRIAL_FIGURES` (`adjusted_t`, `adjusted_w`), a trial row may hold both, never one alone, `KEYS` unchanged; it also touched `cli.py` (not in U3's files either): `replay` loads the track before reading `--candidates`, so that `avg_position` is checked against the track's symbols (decision 86 (a)), and its help names `adjusted_t`.
+
 ---
 
 ## hands findings

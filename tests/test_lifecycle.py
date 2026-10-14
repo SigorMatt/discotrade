@@ -23,9 +23,13 @@ R_i(D)`` over 3, ``hbar_i(W)`` the summed position over the row count of the
 approach's position records dated in ``W`` (decisions 81 (c), 84), computed
 from the frames the test writes without ``paper.adjusted``, ``paper.hbar`` or
 ``paper.average_positions``. The rows of ``dormant``, ``returned`` and
-``displaced`` carry ``adjusted`` and ``plain`` (decision 87).
+``displaced`` carry ``adjusted`` and ``plain`` (decision 87). Admission reads
+the candidate's ``adjusted_t["sharpe"]`` and scores a full cell's live
+approaches over T's days on their adjusted series (decision 86); its
+``admitted`` rows carry the two figures too.
 """
 
+import dataclasses
 import hashlib
 import math
 import shutil
@@ -38,7 +42,7 @@ from discotrade import costs, journal, ledger, lifecycle, paper
 from discotrade.cli import REPO_ROOT
 from discotrade.lifecycle import Candidate
 from discotrade.metrics import sharpe
-from discotrade.state import read_approaches, write_approach
+from discotrade.state import approach_id, read_approaches, write_approach
 from discotrade.stats import trading_dates
 
 TRACK = "test_mixed"
@@ -620,27 +624,55 @@ def test_retired_dormant_and_failure_rows_carry_neither_figure(tmp_path, setup):
 
 
 # ------------------------------------------------------------------ admission
+# Decisions 2026-10-14 86, 87 (owner's O-11 to O-13): the admission score is
+# the candidate's ``adjusted_t["sharpe"]``; a full cell's live approaches are
+# scored over T's days on their own adjusted series with their own average
+# positions; the trial row holds ``adjusted_t`` and ``adjusted_w`` beside
+# ``metrics_t`` and ``metrics_w``; the ``admitted`` and ``displaced`` rows carry
+# ``adjusted`` and ``plain``. Where a test writes no exposure (every ``R_i(D)``
+# 0) a live approach's adjusted series is its plain one.
 
 
 T_DAYS = tuple(START + timedelta(days=k) for k in range(33, 40))
 DAY = T_DAYS[-1]
+SAME = object()
+FLAT = {s: 0.0 for s in SYMBOLS}
 
 
-def candidate(sharpe_t, trades, k=99, grid=None, metrics_w=None):
+def adjusted_t(score, avg_position=None):
+    """A candidate's ``adjusted_t`` (decision 86 (a)): the score, the other
+    figures ``None``, its average positions (0 on each symbol unless given)."""
+    return {"sharpe": score, "sharpe_2x": None, "total_return": None,
+            "total_return_2x": None, "avg_position": dict(avg_position or FLAT)}
+
+
+def candidate(sharpe_t, trades, k=99, grid=None, metrics_w=None, adjusted=SAME,
+              t_days=T_DAYS, adjusted_w=None):
+    """A candidate whose ``metrics_t["sharpe"]`` is ``sharpe_t`` and whose
+    ``adjusted_t["sharpe"]`` is ``adjusted`` (``sharpe_t`` unless given)."""
     return Candidate(
         source=f"# candidate {k}\nPARAMS = {{}}\n", params={"k": k}, cell=CELL,
         model_id="test-model", model_version="v0", cutoff=date(2018, 6, 1),
         description="a candidate", profile_version="w-test",
-        metrics_t={"sharpe": sharpe_t, "trades": trades, "days": len(T_DAYS)},
-        t_days=T_DAYS, grid=grid, metrics_w=metrics_w)
+        metrics_t={"sharpe": sharpe_t, "trades": trades, "days": len(t_days)},
+        adjusted_t=adjusted_t(sharpe_t if adjusted is SAME else adjusted),
+        t_days=t_days, grid=grid, metrics_w=metrics_w, adjusted_w=adjusted_w)
+
+
+def scored(r, adjusted, plain):
+    """Lifecycle row ``r`` with decision 87's two figures, given as numbers."""
+    def one(v):
+        return None if v is None or math.isnan(v) else v
+    return {**r, "adjusted": one(adjusted), "plain": one(plain)}
 
 
 def trials(state):
     return ledger.read(state, TRACK, ledger.TRIALS)
 
 
-def write_paper(state, records):
+def write_paper(state, setup, records, units=None, positions=None):
     paper.write(state, TRACK, frame(records))
+    exposure(state, setup, records, units, positions)
 
 
 def test_admission_into_a_free_slot_writes_the_trial_the_approach_and_one_row(tmp_path,
@@ -649,7 +681,7 @@ def test_admission_into_a_free_slot_writes_the_trial_the_approach_and_one_row(tm
     done = lifecycle.admit(tmp_path, setup, c, DAY)
     assert (done.admitted, done.reason, done.displaced) == (True, "free_slot", None)
     [trial] = trials(tmp_path)
-    assert set(trial) == set(ledger.KEYS[ledger.TRIALS])
+    assert set(trial) == set(ledger.KEYS[ledger.TRIALS]) | set(ledger.TRIAL_FIGURES)
     assert trial == {
         "date": DAY.isoformat(), "id": done.id, "cell": CELL, "model_id": "test-model",
         "model_version": "v0", "cutoff": "2018-06-01",
@@ -658,19 +690,23 @@ def test_admission_into_a_free_slot_writes_the_trial_the_approach_and_one_row(tm
         "config_hash": costs.config_hash(setup.instruments, setup.spread_tables),
         "grid": None, "params": {"k": 99}, "metrics_w": None,
         "metrics_t": {"sharpe": 1.5, "trades": 30, "days": 7},
+        "adjusted_t": adjusted_t(1.5), "adjusted_w": None,
         "admitted": True, "reason": "free_slot", "displaced": None}
     [held] = read_approaches(tmp_path)
     assert held.id == done.id and held.admitted == DAY
-    assert lifecycle_rows(tmp_path) == [row(DAY, done.id, "candidate", "live", "admitted")]
+    assert lifecycle_rows(tmp_path) == [
+        scored(row(DAY, done.id, "candidate", "live", "admitted"), 1.5, 1.5)]
     assert not (tmp_path / "trials").exists()
 
 
 def test_a_trial_row_keeps_the_grid_and_w_metrics_it_carries(tmp_path, setup):
     grid = {"values": {"k": [1, 2]}, "results": [{"k": 1, "sharpe": 0.3}]}
     done = lifecycle.admit(tmp_path, setup, candidate(1.5, 30, grid=grid,
-                                                      metrics_w={"sharpe": 0.9}), DAY)
+                                                      metrics_w={"sharpe": 0.9},
+                                                      adjusted_w=adjusted_t(0.7)), DAY)
     [trial] = trials(tmp_path)
     assert trial["grid"] == grid and trial["metrics_w"] == {"sharpe": 0.9}
+    assert trial["adjusted_w"] == adjusted_t(0.7)
     assert done.admitted
 
 
@@ -682,10 +718,33 @@ def test_a_score_that_is_not_positive_is_refused_and_written_under_trials(tmp_pa
     [trial] = trials(tmp_path)
     assert trial["admitted"] is False and trial["reason"] == "not_positive"
     assert trial["metrics_t"]["sharpe"] == (None if math.isnan(score) else score)
+    assert trial["adjusted_t"]["sharpe"] == (None if math.isnan(score) else score)
     assert (tmp_path / "trials" / done.id / "strategy.py").read_text(encoding="utf-8") == \
         candidate(score, 300).source
     assert (tmp_path / "trials" / done.id / "meta.json").is_file()
     assert read_approaches(tmp_path) == [] and lifecycle_rows(tmp_path) == []
+
+
+@pytest.mark.parametrize("adjusted", [0.0, -0.4, math.nan, None])
+def test_the_score_is_the_adjusted_sharpe_not_the_plain_one(tmp_path, setup, adjusted):
+    # O-11, decision 86 (b): a positive plain score with an adjusted one that is
+    # not positive (or null, not a number) is refused not_positive.
+    done = lifecycle.admit(tmp_path, setup, candidate(1.5, 300, adjusted=adjusted), DAY)
+    assert (done.admitted, done.reason) == (False, "not_positive")
+    [trial] = trials(tmp_path)
+    assert trial["metrics_t"]["sharpe"] == 1.5
+    assert trial["adjusted_t"]["sharpe"] == (
+        None if adjusted is None or math.isnan(adjusted) else adjusted)
+    assert read_approaches(tmp_path) == [] and lifecycle_rows(tmp_path) == []
+
+
+@pytest.mark.parametrize("plain_score", [0.0, -0.4, math.nan, None])
+def test_a_positive_adjusted_score_is_admitted_whatever_the_plain_one(tmp_path, setup,
+                                                                       plain_score):
+    done = lifecycle.admit(tmp_path, setup, candidate(plain_score, 30, adjusted=0.6), DAY)
+    assert (done.admitted, done.reason) == (True, "free_slot")
+    assert lifecycle_rows(tmp_path) == [
+        scored(row(DAY, done.id, "candidate", "live", "admitted"), 0.6, plain_score)]
 
 
 def test_too_few_trades_at_min_trades_t_is_refused(tmp_path, setup):
@@ -701,20 +760,21 @@ def on_t_values(mean):
     return series(mean, len(T_DAYS), amp=0.001)
 
 
-def cell_on_t(state, setup, means):
+def cell_on_t(state, setup, means, units=None, positions=None):
     """Three live approaches of ``CELL`` with paper means ``means`` over T's
-    days (None: a Sharpe that is not a number), and other days around them."""
+    days (None: a Sharpe that is not a number), and other days around them;
+    their exposure records written (``R_i(D)`` 0 and no position unless given)."""
     live = [new(state, setup, 10 + k) for k in range(3)]
     records = {}
     for aid, m in zip(live, means, strict=True):
         on_t = [0.001] * len(T_DAYS) if m is None else on_t_values(m)
         records[aid] = dated(series(0.01, 33) + on_t)        # strong before T
-    write_paper(state, records)
-    return live
+    write_paper(state, setup, records, units, positions)
+    return live, records
 
 
 def test_admission_displacing_the_weakest_makes_it_dormant(tmp_path, setup):
-    live = cell_on_t(tmp_path, setup, [0.002, 0.0005, 0.003])
+    live, _ = cell_on_t(tmp_path, setup, [0.002, 0.0005, 0.003])
     weak = live[1]
     low, next_up = sharpe(pd.Series(on_t_values(0.0005))), sharpe(pd.Series(on_t_values(0.002)))
     assert 0 < low < next_up
@@ -723,8 +783,9 @@ def test_admission_displacing_the_weakest_makes_it_dormant(tmp_path, setup):
     assert (done.admitted, done.reason, done.displaced) == (True, "displaced", weak)
     [trial] = trials(tmp_path)
     assert trial["displaced"] == weak and trial["reason"] == "displaced"
-    assert lifecycle_rows(tmp_path) == [row(DAY, done.id, "candidate", "live", "admitted"),
-                                        row(DAY, weak, "live", "dormant", "displaced")]
+    assert lifecycle_rows(tmp_path) == [
+        scored(row(DAY, done.id, "candidate", "live", "admitted"), score, score),
+        scored(row(DAY, weak, "live", "dormant", "displaced"), low, low)]
     assert done.id in {a.id for a in read_approaches(tmp_path)}
 
 
@@ -742,18 +803,125 @@ def test_admission_refused_when_not_better_than_the_weakest(tmp_path, setup):
 
 def test_admission_displaces_a_sharpe_that_is_not_a_number_and_ties_to_the_lowest_id(
         tmp_path, setup):
-    live = cell_on_t(tmp_path, setup, [0.0001, None, 0.0001])
+    live, _ = cell_on_t(tmp_path, setup, [0.0001, None, 0.0001])
     done = lifecycle.admit(tmp_path, setup, candidate(0.01, 30), DAY)
     assert done.displaced == live[1]
     other = tmp_path / "ties"
-    live = cell_on_t(other, setup, [0.003, 0.0005, 0.0005])
+    live, _ = cell_on_t(other, setup, [0.003, 0.0005, 0.0005])
     done = lifecycle.admit(other, setup, candidate(1000.0, 30), DAY)
     assert done.displaced == min(live[1], live[2])
 
 
 def test_admission_counts_the_states_after_the_days_steps(tmp_path, setup):
     # A live approach made dormant on DAY frees its slot for the candidate of DAY.
-    live = cell_on_t(tmp_path, setup, [0.002, 0.0005, 0.003])
+    live, _ = cell_on_t(tmp_path, setup, [0.002, 0.0005, 0.003])
     put(tmp_path, row(DAY, live[0], "live", "dormant", "dormant"))
     done = lifecycle.admit(tmp_path, setup, candidate(0.01, 30), DAY)
     assert (done.reason, done.displaced) == ("free_slot", None)
+
+
+def test_the_weakest_of_a_full_cell_is_chosen_on_its_adjusted_sharpe_over_t(tmp_path, setup):
+    # O-12, decision 86 (c): each live approach is scored over T's days on its
+    # own adjusted net_1x with its own average positions over those days. The
+    # plain measure names live[0] (the lowest plain mean on T), whose plain
+    # Sharpe is above the score, so it would refuse; the adjusted one names
+    # live[1], which holds SYNX long on T (and short before T, so that an
+    # average over its whole record would not make it the weakest). The
+    # candidate's own average positions (short SYNX) are not the live ones'.
+    live, records = cell_on_t(tmp_path, setup, [0.0005, 0.002, 0.003])
+    units = priced("SYNX", T_DAYS, 0.0048)
+    before = [START + timedelta(days=k) for k in range(33)]
+    positions = {**held(live[1], "SYNX", before, -2.0), **held(live[1], "SYNX", T_DAYS, 1.0)}
+    exposure(tmp_path, setup, records, units, positions)
+    adjusted = {aid: fig(own(records, positions, units, aid, T_DAYS)) for aid in live}
+    plains = {aid: fig(plain(records, aid, T_DAYS)) for aid in live}
+    whole = {aid: fig(own(records, positions, units, aid, dates_of(records, aid)))
+             for aid in live}
+    assert min(plains, key=plains.get) == live[0]
+    assert min(adjusted, key=adjusted.get) == live[1]
+    assert min(whole, key=whole.get) == live[0]
+    score = (adjusted[live[1]] + plains[live[0]]) / 2
+    assert 0 < adjusted[live[1]] < score < plains[live[0]] == adjusted[live[0]]
+    c = dataclasses.replace(candidate(-1.0, 30),
+                            adjusted_t=adjusted_t(score, {**FLAT, "SYNX": -1.0}))
+    done = lifecycle.admit(tmp_path, setup, c, DAY)
+    assert (done.admitted, done.reason, done.displaced) == (True, "displaced", live[1])
+    assert lifecycle_rows(tmp_path) == [
+        scored(row(DAY, done.id, "candidate", "live", "admitted"), score, -1.0),
+        scored(row(DAY, live[1], "live", "dormant", "displaced"), adjusted[live[1]],
+               plains[live[1]])]
+    [trial] = trials(tmp_path)
+    assert trial["adjusted_t"]["avg_position"] == {**FLAT, "SYNX": -1.0}
+    assert trial["metrics_t"]["sharpe"] == -1.0 and trial["adjusted_w"] is None
+
+
+def test_returned_on_d_and_displaced_by_d_s_admission_both_rows_stand(tmp_path, setup):
+    # Decision 68 (b) with the day's admission doing the displacing (decision
+    # 86 (f), the REVIEW-9 note): ``first`` returns into the free slot in step 3
+    # of D, then D's candidate fills the full cell by displacing it (the lowest
+    # Sharpe over T's days). The rows dated D stand in the order taken
+    # (returned, admitted, displaced) and a later count of its dormancy starts
+    # from the displaced row.
+    held_ = [new(tmp_path, setup, 10 + k) for k in range(2)]      # two live: a free slot
+    first = new(tmp_path, setup, 1)
+    since = START + timedelta(days=20)
+    put(tmp_path, row(since, first, "live", "dormant", "dormant"))
+    records = {held_[0]: dated(series(0.003, 50)), held_[1]: dated(series(0.003, 50)),
+               first: dated(series(0.0005, 50))}
+    exposure(tmp_path, setup, records)
+    paper.write(tmp_path, TRACK, frame(records))
+    d = START + timedelta(days=35)
+    t_days = tuple(d - timedelta(days=k) for k in range(6, -1, -1))
+    returned = row(d, first, "dormant", "live", "returned", **same(series(0.0005, 50)[6:36]))
+    assert lifecycle.run_steps(tmp_path, setup, d, frame(records), {}) == [returned]
+    done = lifecycle.admit(tmp_path, setup, candidate(1000.0, 30, t_days=t_days), d)
+    on_t = series(0.0005, 50)[29:36]
+    assert (done.admitted, done.reason, done.displaced) == (True, "displaced", first)
+    taken = [returned,
+             scored(row(d, done.id, "candidate", "live", "admitted"), 1000.0, 1000.0),
+             row(d, first, "live", "dormant", "displaced", **same(on_t))]
+    assert lifecycle_rows(tmp_path)[-3:] == taken
+    apps = read_approaches(tmp_path)
+    assert lifecycle.states(lifecycle_rows(tmp_path), apps, d + timedelta(days=1))[first] == \
+        lifecycle.Status("dormant", d)
+    # A failure frees a slot; ``first`` has waited 19 trading days since its
+    # first row to dormant but 4 since D, so it stays; on the fifth it returns.
+    four = d + timedelta(days=4)
+    assert steps(tmp_path, setup, four, records, {held_[0]: "boom"}) == \
+        [row(four, held_[0], "live", "retired", "failure: boom")]
+    five = d + timedelta(days=5)
+    assert steps(tmp_path, setup, five, records) == \
+        [row(five, first, "dormant", "live", "returned", **same(series(0.0005, 50)[11:41]))]
+
+
+#: The lines the parent's code (e80ccb0, before decisions 86 and 87 reached
+#: admission) wrote for one admission: a trial row without ``adjusted_t`` and
+#: ``adjusted_w`` and an ``admitted`` row without ``adjusted`` and ``plain``.
+OLD_TRIAL = ('{"admitted":true,"cell":"trend/short","code_sha256":"%s","config_hash":"%s",'
+             '"cost_model":"%s","cutoff":"2018-06-01","date":"2019-02-01","displaced":null,'
+             '"grid":null,"id":"%s","metrics_t":{"days":7,"sharpe":1.5,"trades":30},'
+             '"metrics_w":null,"model_id":"test-model","model_version":"v0",'
+             '"params":{"k":97},"profile_version":"w-test","reason":"free_slot"}')
+OLD_ROW = ('{"date":"2019-02-01","from":"candidate","id":"%s","reason":"admitted",'
+           '"to":"live"}')
+
+
+def test_rows_written_before_are_not_rewritten_after_a_new_day(tmp_path, setup):
+    old = candidate(1.5, 30, k=97)
+    aid = approach_id(old.source, old.params)
+    trial_line = OLD_TRIAL % (hashlib.sha256(old.source.encode("utf-8")).hexdigest(),
+                              costs.config_hash(setup.instruments, setup.spread_tables),
+                              costs.VERSION, aid)
+    for name, text in ((ledger.TRIALS, trial_line), (ledger.LIFECYCLE, OLD_ROW % aid)):
+        path = ledger.ledger_path(tmp_path, TRACK, name)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text + "\n", encoding="utf-8")
+    records = {new(tmp_path, setup, 1): dated(series(0.002, 40))}
+    write_paper(tmp_path, setup, records)
+    lifecycle.run_steps(tmp_path, setup, DAY, frame(records), {})
+    done = lifecycle.admit(tmp_path, setup, candidate(1.5, 30), DAY)
+    assert done.admitted
+    trials_text = ledger.ledger_path(tmp_path, TRACK, ledger.TRIALS).read_text().splitlines()
+    rows_text = ledger.ledger_path(tmp_path, TRACK, ledger.LIFECYCLE).read_text().splitlines()
+    assert trials_text[0] == trial_line and rows_text[0] == OLD_ROW % aid
+    assert "adjusted_t" in trials_text[-1] and '"adjusted":1.5' in rows_text[-1]

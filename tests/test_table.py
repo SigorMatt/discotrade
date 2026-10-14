@@ -200,7 +200,11 @@ def candidate(setup, spec, t_days=()):
         source=path.read_text(encoding="utf-8"), params=params or strat.params, cell=cell,
         model_id="test-model", model_version="test-model-v0", cutoff=CUTOFF,
         description=f"{path.stem} | {cell}", profile_version="w-test",
-        metrics_t={"sharpe": score, "trades": 40}, t_days=list(t_days))
+        metrics_t={"sharpe": score, "trades": 40},
+        adjusted_t={"sharpe": score, "sharpe_2x": None, "total_return": None,
+                    "total_return_2x": None,
+                    "avg_position": {i.symbol: 0.0 for i in setup.instruments}},
+        t_days=list(t_days))
 
 
 @pytest.fixture(scope="module")

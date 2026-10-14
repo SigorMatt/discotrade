@@ -36,6 +36,10 @@ AS_OF = "2019-06-26T00:00:00+00:00"
 SEEDS = {"SYNA": 101, "SYNL": 105, "SYNX": 106}
 ADMITTED = date(2019, 6, 7)
 DAYS = tuple(date(2019, 6, 8) + timedelta(days=k) for k in range(5))   # 06-08 .. 06-12
+#: A candidate's adjusted figures on T (decision 2026-10-14 86 (a)): its score
+#: equal to its plain one, the other figures null, no average position.
+ADJUSTED_T = {"sharpe": 1.0, "sharpe_2x": None, "total_return": None, "total_return_2x": None,
+              "avg_position": {"SYNA": 0.0, "SYNL": 0.0, "SYNX": 0.0}}
 NEXT = date(2019, 6, 13)
 
 
@@ -482,7 +486,8 @@ def test_a_day_failing_in_step_2_leaves_every_ledger_untouched(
         source=source + "# not a repository file\n", params={"k": 1},
         cell="mean_reversion/short", model_id="test-model", model_version="v0",
         cutoff=date(2019, 1, 1), description="untrusted", profile_version="w-test",
-        metrics_t={"sharpe": 1.0, "trades": 30}, t_days=DAYS), DAYS[-1])
+        metrics_t={"sharpe": 1.0, "trades": 30},
+        adjusted_t=ADJUSTED_T, t_days=DAYS), DAYS[-1])
     assert done.admitted
     held = ledgers(state)
     assert set(held) == {f"ledger/{TRACK}/trials.jsonl", f"ledger/{TRACK}/lifecycle.jsonl"}
@@ -507,7 +512,8 @@ def test_an_approach_admitted_on_d_is_first_journaled_on_the_next_trading_day(
         source=path.read_text(encoding="utf-8"), params=strat.params,
         cell="mean_reversion/short", model_id="test-model", model_version="v0",
         cutoff=date(2019, 1, 1), description="zscore", profile_version="w-test",
-        metrics_t={"sharpe": 1.0, "trades": 30}, t_days=DAYS), d)
+        metrics_t={"sharpe": 1.0, "trades": 30},
+        adjusted_t=ADJUSTED_T, t_days=DAYS), d)
     assert (done.admitted, done.reason) == (True, "free_slot")
     # A re-run of D does not journal it: the journal of D is unchanged.
     before = {k: v for k, v in files(state).items() if k.startswith(("journal/", "paper/"))}

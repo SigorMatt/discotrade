@@ -36,6 +36,16 @@ Thursday 2019-06-13 to Friday 2019-06-21 with the new fixture
 cell, on 06-21) and pins the T days ``replay`` passes to the admission
 function and a verdict that depends on them.
 
+Each line of a scenario file holds ``adjusted_t`` (decision 2026-10-14 86
+(a)): its ``sharpe`` is the score (86 (b)), equal to ``metrics_t["sharpe"]``
+in ``u6_candidates.jsonl`` so that each verdict is what it was, 0.2 beside a
+plain 0.3 in ``u4_t_days.jsonl``; its other figures are ``null`` and its
+``avg_position`` 0 on each instrument. A trial row holds ``adjusted_t`` and
+``adjusted_w`` (``null``), an ``admitted`` row ``adjusted`` and ``plain``
+(decision 87). Adjusted figures the test compares are its own, from the
+journal parquet files and the stored bars (``own_adjusted``), as
+``tests/test_exposure.py`` computes them.
+
 The synthetic instruments' seeds are those of their fixture records
 (``SEEDS``, asserted); no other random draw is made. Time comes only from
 ``--as-of`` and the replay's clock. Every git run is on local paths with
@@ -51,6 +61,8 @@ import shutil
 import subprocess
 from datetime import date
 
+import pandas as pd
+import pyarrow.parquet as pq
 import pytest
 
 from discotrade import costs, journal, ledger, lifecycle, state, table
@@ -220,8 +232,8 @@ def test_one_trial_row_per_candidate_with_grid_and_w_metrics_null(ran, setup):
             "profile_version": line["profile_version"], "cost_model": costs.VERSION,
             "config_hash": costs.config_hash(setup.instruments, setup.spread_tables),
             "grid": None, "params": line["params"], "metrics_w": None,
-            "metrics_t": line["metrics_t"], "admitted": admitted, "reason": reason,
-            "displaced": None})
+            "metrics_t": line["metrics_t"], "adjusted_t": line["adjusted_t"],
+            "adjusted_w": None, "admitted": admitted, "reason": reason, "displaced": None})
     assert ledger.read(path, TRACK, ledger.TRIALS) == want
 
 
@@ -239,6 +251,12 @@ def test_lifecycle_rows_admission_after_steps_1_to_4(ran, early_ids):
     assert rows[0]["reason"] == "admitted"
     assert rows[1]["reason"].startswith("failure: ")
     assert rows[2]["reason"] == "admitted"
+    # Decision 2026-10-14 87: an admitted row carries the candidate's adjusted
+    # score and its plain one; a failure row neither.
+    for r, line in ((rows[0], lines[1]), (rows[2], lines[3])):
+        assert (r["adjusted"], r["plain"]) == (line["adjusted_t"]["sharpe"],
+                                               line["metrics_t"]["sharpe"])
+    assert "adjusted" not in rows[1] and "plain" not in rows[1]
 
 
 def test_admitted_under_approaches_refused_under_trials(ran):
@@ -337,18 +355,57 @@ def _lines(**change):
     return out
 
 
-@pytest.mark.parametrize("case", [
-    "two_for_one_day", "missing_key", "outside_source", "escaping_source", "absent_source",
-    "src_source"])
+def _adjusted(**change):
+    """The scenario with line 2's ``adjusted_t`` changed (a value None: the key
+    removed); ``avg_position`` changes are given as ``avg_position=...``."""
+    figures = dict(scenario()[1]["adjusted_t"])
+    for k, v in change.items():
+        if v is None:
+            del figures[k]
+        else:
+            figures[k] = v
+    return _lines(adjusted_t=figures)
+
+
+def _positions(**change):
+    held = dict(scenario()[1]["adjusted_t"]["avg_position"])
+    for k, v in change.items():
+        if v is None:
+            del held[k]
+        else:
+            held[k] = v
+    return _adjusted(avg_position=held)
+
+
+REFUSED = {
+    "two_for_one_day": lambda: _lines(day="2019-06-10"),
+    "missing_key": lambda: _lines(metrics_t=None),
+    "outside_source": lambda: _lines(source="pyproject.toml"),
+    "escaping_source": lambda: _lines(source="reference/../src/discotrade/indicators.py"),
+    "absent_source": lambda: _lines(source="reference/absent.py"),
+    "src_source": lambda: _lines(source="src/discotrade/indicators.py"),
+    # Decision 2026-10-14 86 (a): adjusted_t holds exactly sharpe, sharpe_2x,
+    # total_return, total_return_2x (each a number or null) and avg_position
+    # (each instrument symbol of the track to a number).
+    "no_adjusted_t": lambda: _lines(adjusted_t=None),
+    "adjusted_t_not_an_object": lambda: _lines(adjusted_t=[0.5]),
+    "adjusted_t_extra_key": lambda: _adjusted(trades=30),
+    "adjusted_t_missing_key": lambda: _adjusted(sharpe_2x=None),
+    "adjusted_t_sharpe_a_string": lambda: _adjusted(sharpe="0.5"),
+    "adjusted_t_sharpe_a_bool": lambda: _adjusted(sharpe=True),
+    "adjusted_t_total_return_an_object": lambda: _adjusted(total_return={"x": 1}),
+    "avg_position_missing_symbol": lambda: _positions(SYND=None),
+    "avg_position_unknown_symbol": lambda: _positions(SYNX=0.5),
+    "avg_position_null": lambda: _adjusted(avg_position={
+        **scenario()[1]["adjusted_t"]["avg_position"], "SYNA": None}),
+    "avg_position_a_string": lambda: _positions(SYNB="0.5"),
+    "avg_position_not_an_object": lambda: _adjusted(avg_position=[0.0, 0.0, 0.0, 0.0]),
+}
+
+
+@pytest.mark.parametrize("case", sorted(REFUSED))
 def test_a_refused_file_runs_no_day(first_day, config, tmp_path, case):
-    lines = {
-        "two_for_one_day": _lines(day="2019-06-10"),
-        "missing_key": _lines(metrics_t=None),
-        "outside_source": _lines(source="pyproject.toml"),
-        "escaping_source": _lines(source="reference/../src/discotrade/indicators.py"),
-        "absent_source": _lines(source="reference/absent.py"),
-        "src_source": _lines(source="src/discotrade/indicators.py"),
-    }[case]
+    lines = REFUSED[case]()
     bad = tmp_path / "candidates.jsonl"
     bad.write_text("".join(json.dumps(x, sort_keys=True) + "\n" for x in lines),
                    encoding="utf-8")
@@ -382,8 +439,68 @@ T_FIRST, T_DAY = date(2019, 6, 13), date(2019, 6, 21)
 T_RIGHT = tuple(date(2019, 6, d) for d in (17, 18, 19, 20, 21))
 #: The wrong window: the last seven trading days ending with D.
 T_WRONG = tuple(date(2019, 6, d) for d in (13, 14, 17, 18, 19, 20, 21))
-#: The full cell: three parameter sets of reference/trend_ma.py in trend/short.
-T_CELL = [{"fast": 12, "slow": 48}, {"fast": 4, "slow": 48}, {"fast": 16, "slow": 64}]
+#: The full cell: three parameter sets of reference/trend_ma.py in trend/short,
+#: chosen (decision 2026-10-14 86 (e)) so that the weakest's adjusted Sharpe is
+#: positive over T and negative over the wrong window (the earlier three were
+#: negative over both on the adjusted measure, so no positive score depended
+#: on the window).
+T_CELL = [{"fast": 16, "slow": 48}, {"fast": 24, "slow": 64}, {"fast": 12, "slow": 64}]
+
+
+def own_journal(path) -> pd.DataFrame:
+    files_ = sorted((path / "journal" / TRACK).rglob("*.parquet"))
+    return pd.concat([pq.read_table(f).to_pandas() for f in files_], ignore_index=True)
+
+
+def own_unit(path, symbol) -> dict:
+    """Per bar ts: the unit return of ``symbol`` from its stored bars and roll
+    records, as tests/test_exposure.py computes it (decision 81 (a))."""
+    bars = pd.concat([pq.read_table(f).to_pandas()
+                      for f in sorted((path / "bars" / TRACK / symbol).glob("*.parquet"))],
+                     ignore_index=True).sort_values("ts").reset_index(drop=True)
+    gaps = {}
+    rolls = path / "rolls" / TRACK / f"{symbol}.jsonl"
+    if rolls.exists():
+        for raw in rolls.read_text(encoding="utf-8").splitlines():
+            r = json.loads(raw)
+            gaps[(pd.Timestamp(r["ts"]), r["old"], r["new"])] = float(r["gap"])
+    out = {}
+    for k in range(len(bars)):
+        o, c = float(bars["open"][k]), float(bars["close"][k])
+        if k == 0:
+            out[bars["ts"][k]] = (c - o) / o
+            continue
+        gap = 0.0
+        if bars["contract"][k] != bars["contract"][k - 1]:
+            gap = gaps[(bars["ts"][k], bars["contract"][k - 1], bars["contract"][k])]
+        out[bars["ts"][k]] = ((o - (float(bars["close"][k - 1]) + gap)) + (c - o)) / o
+    return out
+
+
+def own_adjusted(path, subject, window, symbols) -> list[float]:
+    """``subject``'s adjusted ``net_1x`` on its journaled days in ``window``,
+    the test's own computation from the journal parquet files and the stored
+    bars (no function of ``paper.py``): per day, its summed ``net_1x`` over the
+    ``N`` instruments less the sum of ``hbar_i(W) * R_i(D)``, over ``N``."""
+    rows = own_journal(path)
+    rows = rows[rows["date"].isin(set(window))]
+    units = {}
+    for sym in symbols:
+        unit = own_unit(path, sym)
+        mine = rows[rows["instrument"] == sym]
+        for d, ts in sorted(set(zip(mine["date"], mine["ts"], strict=True))):
+            units[(sym, d)] = units.get((sym, d), 0.0) + unit[ts]
+    mine = rows[rows["subject"] == subject]
+    hbar = {}
+    for sym in symbols:
+        leg = mine[mine["instrument"] == sym]
+        hbar[sym] = float(leg["position"].mean()) if len(leg) else 0.0
+    n = len(symbols)
+    out = []
+    for d in sorted(set(mine["date"])):
+        plain = float(mine[mine["date"] == d]["net_1x"].sum()) / n
+        out.append(plain - sum(hbar[s] * units.get((s, d), 0.0) for s in symbols) / n)
+    return out
 
 
 def test_admission_reads_t_s_trading_days_for_a_weekend_window(tmp_path, config, setup,
@@ -392,15 +509,17 @@ def test_admission_reads_t_s_trading_days_for_a_weekend_window(tmp_path, config,
     admitted Wednesday 2019-06-12 into ``trend/short`` (full, ``cell_slots``
     3); the replay runs Thursday 2019-06-13 to Friday 2019-06-21 (seven
     trading days) with ``u4_t_days.jsonl``: one candidate dated 06-21 into
-    that cell, score 0.3 with 40 trades. ``replay`` passes the admission
-    function exactly the five weekdays 06-17 to 06-21 (DESIGN 4.1 over
-    06-15 to 06-21). Over those days the weakest live approach's net Sharpe
-    at 1x is above 0.3, so the candidate is refused
+    that cell, adjusted score 0.2 (plain 0.3) with 40 trades. ``replay``
+    passes the admission function exactly the five weekdays 06-17 to 06-21
+    (DESIGN 4.1 over 06-15 to 06-21). Over those days the weakest live approach's adjusted
+    net Sharpe at 1x (decision 2026-10-14 86 (c): each scored on its own
+    adjusted series with its own average positions over those days, computed
+    here from the journal parquet files and the stored bars) is above the
+    candidate's ``adjusted_t["sharpe"]``, so the candidate is refused
     ``not_better_than_weakest``; over the last seven trading days (06-13 to
-    06-21) it is below 0.3, which would have displaced it."""
+    06-21) it is below it, which would have displaced it."""
     import math
 
-    from discotrade import paper
     from discotrade.metrics import sharpe
 
     path = tmp_path / "state"
@@ -428,24 +547,42 @@ def test_admission_reads_t_s_trading_days_for_a_weekend_window(tmp_path, config,
     assert seen == [(T_DAY, T_RIGHT)]
 
     line = json.loads(T_SCENARIO.read_text(encoding="utf-8"))
-    score = line["metrics_t"]["sharpe"]
-    records = paper.read(path, TRACK)
-    journaled = sorted(set(records["date"]))
+    score = line["adjusted_t"]["sharpe"]
+    journaled = sorted(set(own_journal(path)["date"]))
     assert tuple(journaled[-7:]) == T_WRONG
+    symbols = sorted(SEEDS)
 
     def weakest_on(days):
         values = []
         for aid in ids:
-            mine = records[(records["subject"] == aid) & records["date"].isin(days)]
-            assert sorted(mine["date"]) == sorted(days)
-            values.append(sharpe(mine.sort_values("date")["net_1x"]))
+            series = own_adjusted(path, aid, days, symbols)
+            assert len(series) == len(days)
+            values.append(sharpe(pd.Series(series, dtype="float64")))
         assert not any(math.isnan(v) for v in values)
         return min(values)
 
-    assert weakest_on(T_RIGHT) > score > weakest_on(T_WRONG)
+    assert weakest_on(T_RIGHT) > score > 0 > weakest_on(T_WRONG)
     aid = cid(line)
     assert out.splitlines()[-1].endswith(f"; candidate {aid} refused (not_better_than_weakest)")
     trial = ledger.read(path, TRACK, ledger.TRIALS)
     assert [(r["id"], r["admitted"], r["reason"], r["displaced"]) for r in trial] == \
         [(aid, False, "not_better_than_weakest", None)]
     assert ledger.read(path, TRACK, ledger.LIFECYCLE) == []
+
+
+def test_a_line_s_adjusted_t_is_carried_and_null_means_not_a_number(tmp_path):
+    # Decision 2026-10-14 86 (a): the candidate carries adjusted_t as the line
+    # holds it and adjusted_w None; a null figure is accepted (not a number;
+    # lifecycle.admit refuses a null score not_positive).
+    from discotrade.replay import read_candidates
+
+    lines = scenario()
+    lines[1]["adjusted_t"]["sharpe"] = None
+    path = tmp_path / "candidates.jsonl"
+    path.write_text("".join(json.dumps(x, sort_keys=True) + "\n" for x in lines),
+                    encoding="utf-8")
+    held = read_candidates(path, sorted(SEEDS))
+    assert [d.isoformat() for d in held] == [x["day"] for x in lines]
+    for line, c in zip(lines, held.values(), strict=True):
+        assert c.adjusted_t == line["adjusted_t"] and c.adjusted_w is None
+        assert c.metrics_t == line["metrics_t"]
