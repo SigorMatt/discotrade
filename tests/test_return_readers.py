@@ -35,7 +35,9 @@ registered, when a registered function does not exist, or when an
 a call of ``adjusted`` on a name bound to ``discotrade.paper``, a call of
 the name ``adjusted`` imported from it (or, in ``paper.py``, its own), or a
 call of a module function of the same module that the register marks
-``adjusted`` and whose body calls ``paper.adjusted`` so.
+``adjusted`` and whose body calls ``paper.adjusted`` so. A call of
+``paper.adjusted_rows`` in any of these forms counts as one of
+``paper.adjusted`` (decision 2026-10-14-m12 97 (c)).
 """
 
 import ast
@@ -52,6 +54,10 @@ REGISTER = REPO_ROOT / "tests" / "fixtures" / "return_readers.toml"
 
 CLASSES = ("producer", "display", "stage3_money", "adjusted", "timing_gross")
 CALLERS = frozenset(("adjusted", "timing_gross"))
+#: The functions of ``discotrade.paper`` an ``adjusted`` entry may call: O-4's
+#: series from the stored records, or from evaluation rows (decision
+#: 2026-10-14-m12 97 (c)).
+PAPER_ADJUSTED = frozenset(("adjusted", "adjusted_rows"))
 REFERENCE_STRINGS = frozenset(("gross", "net_1x", "net_2x", "sharpe", "total_return",
                                "max_drawdown"))
 METRIC_NAMES = frozenset(("sharpe", "total_return", "max_drawdown"))
@@ -81,7 +87,8 @@ class Module:
         self.metrics_modules: set[str] = set()
         self.metric_names: set[str] = set(METRIC_NAMES) if name == "discotrade.metrics" else set()
         self.paper_modules: set[str] = set()
-        self.adjusted_names: set[str] = {"adjusted"} if name == "discotrade.paper" else set()
+        self.adjusted_names: set[str] = (set(PAPER_ADJUSTED) if name == "discotrade.paper"
+                                         else set())
         for node in ast.walk(tree):
             if isinstance(node, ast.ImportFrom) and node.level == 0:
                 for alias in node.names:
@@ -92,7 +99,7 @@ class Module:
                         self.paper_modules.add(bound)
                     if node.module == "discotrade.metrics" and alias.name in METRIC_NAMES:
                         self.metric_names.add(bound)
-                    if node.module == "discotrade.paper" and alias.name == "adjusted":
+                    if node.module == "discotrade.paper" and alias.name in PAPER_ADJUSTED:
                         self.adjusted_names.add(bound)
             if isinstance(node, ast.Import):
                 for alias in node.names:
@@ -157,12 +164,12 @@ class Module:
 
     def calls_adjusted(self, qual: str) -> bool:
         """``qual``'s body, nested functions included, calls ``paper.adjusted``
-        by name."""
+        or ``paper.adjusted_rows`` by name."""
         for node in ast.walk(self.functions[qual]):
             if not isinstance(node, ast.Call):
                 continue
             f = node.func
-            if (isinstance(f, ast.Attribute) and f.attr == "adjusted"
+            if (isinstance(f, ast.Attribute) and f.attr in PAPER_ADJUSTED
                     and isinstance(f.value, ast.Name) and f.value.id in self.paper_modules):
                 return True
             if isinstance(f, ast.Name) and f.id in self.adjusted_names:
@@ -424,3 +431,27 @@ def test_a_register_of_bad_form_is_seen():
                _entry("discotrade.a", "h", "display", extra="x"),
                _entry("discotrade.a", "h", "display")]
     assert len(register_errors(entries)) == 4
+
+
+def test_a_call_of_paper_adjusted_rows_is_the_call_o18_asks_for(tmp_path):
+    # Decision 2026-10-14-m12 97 (c): ``paper.adjusted_rows`` builds O-4's
+    # series from evaluation rows, so a call of it counts as a call of
+    # ``paper.adjusted``; an ``adjusted`` entry that calls neither fails.
+    files = {
+        "paper.py": "def adjusted(*a):\n    return a\n"
+                    "def adjusted_rows(*a):\n    return a\n"
+                    "def window_units(*a):\n    return a\n"
+                    "def own(r):\n    return adjusted_rows(r)\n",
+        "a.py": "from discotrade import paper\n"
+                "from discotrade.paper import adjusted_rows as rows\n"
+                "def by_module(r):\n    return paper.adjusted_rows(r)\n"
+                "def by_name(r):\n    return rows(r)\n"
+                "def through(r):\n    return by_module(r)\n"
+                "def neither(r):\n    return paper.window_units(r)\n",
+    }
+    src = _plant(tmp_path, files)
+    ok = [_entry("discotrade.a", f, "adjusted") for f in ("by_module", "by_name", "through")]
+    ok.append(_entry("discotrade.paper", "own", "adjusted"))
+    assert audit(src, ok) == []
+    assert audit(src, ok + [_entry("discotrade.a", "neither", "adjusted")]) == [
+        "does not call paper.adjusted: discotrade.a.neither (adjusted)"]

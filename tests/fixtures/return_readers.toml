@@ -121,6 +121,18 @@ class = "producer"
 note = "computes the exposure-adjusted series (O-4, decision 81) that adjusted readers call; decides nothing"
 
 [[reader]]
+module = "discotrade.paper"
+function = "_window_units"
+class = "producer"
+note = "computes the unit-position gross of a window's bars (decision 81 (b)) for unit_bars and window_units; decides nothing"
+
+[[reader]]
+module = "discotrade.paper"
+function = "adjusted_rows"
+class = "producer"
+note = "computes the exposure-adjusted series (O-4) on a window from evaluation rows, for the grid on W; decides nothing (decision 97 (c), (f))"
+
+[[reader]]
 module = "discotrade.replay"
 function = "_candidate"
 class = "producer"
@@ -164,3 +176,15 @@ function = "build.approach_row"
 class = "adjusted"
 pending = "S4.1"
 note = "computes S, E_N, excess on plain paper net_1x (O-7 in S4.1); also the display record, admission scores, adjusted columns"
+
+[[reader]]
+module = "discotrade.validation.sequence"
+function = "fix_combination"
+class = "adjusted"
+note = "the grid on W: fixes the combination with the greatest exposure-adjusted Sharpe at 1x, through paper.adjusted_rows (O-17, O-18, decision 97 (d), (f))"
+
+[[reader]]
+module = "discotrade.validation.sequence"
+function = "_grid_result"
+class = "producer"
+note = "records each combination's plain and adjusted Sharpe and the fixed one's W figures as decision 97 (e)'s result; selects nothing"

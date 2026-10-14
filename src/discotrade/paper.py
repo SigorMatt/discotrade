@@ -128,6 +128,16 @@ The derived exposure records (decision 2026-10-14 84; REVIEW-10 note 3).
   is refused with ``ValueError``, as are absent records.
 
 No rule reads ``adjusted`` in this unit (decision 81 (e)).
+
+The same series on a window ``W`` from evaluation rows (decision 2026-10-14-m12
+97 (b), (c); O-17): ``adjusted_rows(evaluations, units, column)`` takes a
+subject's per-instrument evaluations on ``W`` (``backtest.score``'s) in place of
+its stored records, with ``hbar_i(W)`` the mean of their ``h`` over the
+window bars (``window_positions``), and ``units`` from ``window_units(win)``,
+``R_i(D)`` of each trading date of ``win``'s window bars, computed by the code
+``unit_bars`` uses. ``adjusted``
+and ``adjusted_rows`` compute the subtraction through one private function,
+``_less_exposure``, so that O-4 has one implementation.
 """
 
 from __future__ import annotations
@@ -347,6 +357,27 @@ def read(state_dir: Path, track: str) -> pd.DataFrame | None:
 _UNIT = "unit"
 
 
+def _window_units(win: backtest.Window) -> np.ndarray:
+    """The unit return ``r_i(u)`` of each window bar of ``win``, in bar order
+    (decision 81 (b)): the journal's ``gross`` from ``backtest.score`` with the
+    previous and the current position 1."""
+    head: list[float] = []
+    if win.first == 0:
+        # The instrument's first stored bar: no previous bar, so only the
+        # second term of DESIGN 7.2 with h(u) = 1; the later bars are scored
+        # with that bar as the one before them.
+        o, c = float(win.inside["open"].iloc[0]), float(win.inside["close"].iloc[0])
+        head = [(1.0 * (c - o)) / o]
+        win = dataclasses.replace(win, inside=win.inside.iloc[1:], dates=list(win.dates)[1:],
+                                  first=1)
+    unit = np.array(head, dtype=np.float64)
+    if not win.empty:
+        ones = np.ones(len(win.inside), dtype=np.float64)
+        ev = backtest.score(win, [(_UNIT, ones, (1.0, 1.0))])[0]
+        unit = np.concatenate([unit, ev.rows["gross"].to_numpy(dtype=np.float64)])
+    return unit
+
+
 def unit_bars(state_dir: Path, setup: journal.Setup, instrument: Instrument,
               days: Iterable[date]) -> pd.DataFrame:
     """The unit return ``r_i(u)`` (column ``unit``) of each stored bar ``u`` of
@@ -365,23 +396,22 @@ def unit_bars(state_dir: Path, setup: journal.Setup, instrument: Instrument,
     if win.empty:
         return empty
     stamps, dates = win.inside["ts"].to_numpy(), list(win.dates)
-    head: list[float] = []
-    if win.first == 0:
-        # The instrument's first stored bar: no previous bar, so only the
-        # second term of DESIGN 7.2 with h(u) = 1; the later bars are scored
-        # with that bar as the one before them.
-        o, c = float(win.inside["open"].iloc[0]), float(win.inside["close"].iloc[0])
-        head = [(1.0 * (c - o)) / o]
-        win = dataclasses.replace(win, inside=win.inside.iloc[1:], dates=dates[1:], first=1)
-    unit = np.array(head, dtype=np.float64)
-    if not win.empty:
-        ones = np.ones(len(win.inside), dtype=np.float64)
-        ev = backtest.score(win, [(_UNIT, ones, (1.0, 1.0))])[0]
-        unit = np.concatenate([unit, ev.rows["gross"].to_numpy(dtype=np.float64)])
+    unit = _window_units(win)
     keep = np.array([d in wanted for d in dates], dtype=bool)
     return pd.DataFrame({"ts": stamps[keep],
                          "date": [d for d, k in zip(dates, keep, strict=True) if k],
                          "unit": unit[keep]})
+
+
+def window_units(win: backtest.Window) -> dict[date, float]:
+    """``R_i(D)`` of the instrument of ``win`` for each trading date ``D`` of its
+    window bars: their unit returns (decision 81 (b)) summed per date in bar
+    order, as ``unit_returns`` sums them (decision 2026-10-14-m12 97 (b))."""
+    if win.empty:
+        return {}
+    frame = pd.DataFrame({"date": list(win.dates), "unit": _window_units(win)})
+    return {d: float(leg.to_numpy(dtype=np.float64).sum())
+            for d, leg in frame.groupby("date", sort=True)["unit"]}
 
 
 def unit_returns(state_dir: Path, setup: journal.Setup, instrument: Instrument,
@@ -586,10 +616,77 @@ def adjusted(state_dir: Path, setup: journal.Setup, subject: str, days: Iterable
     if missing:
         raise ValueError(f"the exposure records of {track} hold no {missing[0].isoformat()}; "
                          f"a caller passing staged paper records passes overlay too")
-    values = []
-    for day, value in zip(mine["date"], mine[column], strict=True):
+    values = _less_exposure(zip(mine["date"], mine[column], strict=True), symbols, average,
+                            unit, n)
+    return pd.Series(values, index=list(mine["date"]), dtype="float64", name=column)
+
+
+def _less_exposure(values: Iterable[tuple[date, Any]], symbols: Sequence[str],
+                   average: Mapping[str, float], unit: Mapping[tuple[str, date], float],
+                   n: int) -> list[float]:
+    """O-4's one subtraction: each ``(D, value)`` of ``values`` less the static
+    exposure on ``D``, the sum over ``symbols``, in their order, of
+    ``average[i] * unit[(i, D)]`` (0 where ``unit`` holds no ``(i, D)``) divided
+    by ``n``. ``adjusted`` and ``adjusted_rows`` both compute through it
+    (decision 2026-10-14-m12 97 (c))."""
+    out = []
+    for day, value in values:
         total = 0.0
         for s in symbols:
             total = total + average[s] * unit.get((s, day), 0.0)
-        values.append(float(value) - total / n)
-    return pd.Series(values, index=list(mine["date"]), dtype="float64", name=column)
+        out.append(float(value) - total / n)
+    return out
+
+
+def window_positions(evaluations: Sequence[backtest.Evaluation]) -> dict[str, float]:
+    """``hbar_i(W)`` of each evaluation's instrument: the mean of its rows' ``h``
+    over its window bars, 0 with none (decision 2026-10-14-m12 97 (b))."""
+    out = {}
+    for ev in evaluations:
+        held = ev.rows["h"].to_numpy(dtype=np.float64)
+        out[ev.symbol] = float(held.mean()) if len(held) else 0.0
+    return out
+
+
+def adjusted_rows(evaluations: Sequence[backtest.Evaluation],
+                  units: Sequence[Mapping[date, float]], column: str) -> pd.Series:
+    """O-4's series over a window ``W`` from per-instrument evaluation rows, in
+    place of a subject's stored records (decision 2026-10-14-m12 97 (b), (c)).
+
+    ``evaluations`` are the subject's, one per instrument (an instrument with no
+    window bar included), and ``units[k]`` the ``R_i(D)`` of the instrument of
+    ``evaluations[k]`` on its window's trading dates (``window_units``). On
+    each of the subject's days (the sorted union of the trading dates of its
+    rows, decision 23), the value is the decision-23 daily ``column``
+    (``gross``, ``net_1x`` or ``net_2x``: the sum over the ``N`` instruments, in
+    symbol order, of the instrument's summed ``column`` that day, over ``N``)
+    less the static exposure, ``hbar_i(W)`` being the mean of the rows' ``h``
+    over the window bars (0 with none). Indexed by date in order."""
+    if column not in _VALUES:
+        raise ValueError(f"{column!r} is not one of {', '.join(_VALUES)}")
+    if len(evaluations) != len(units):
+        raise ValueError(f"{len(evaluations)} evaluations for {len(units)} unit records")
+    n = len(evaluations)
+    if n < 1:
+        raise ValueError("a subject has at least one instrument")
+    legs = sorted(zip(evaluations, units, strict=True), key=lambda leg: leg[0].symbol)
+    symbols = [ev.symbol for ev, _ in legs]
+    if len(set(symbols)) != n:
+        raise ValueError("each instrument gives one evaluation")
+    average = window_positions([ev for ev, _ in legs])
+    unit: dict[tuple[str, date], float] = {}
+    per_day: list[dict[date, float]] = []
+    for ev, mine in legs:
+        unit.update({(ev.symbol, d): float(v) for d, v in mine.items()})
+        per_day.append({d: float(leg.to_numpy(dtype=np.float64).sum())
+                        for d, leg in ev.rows.groupby("date", sort=True)[column]}
+                       if len(ev.rows) else {})
+    days = sorted({d for sums in per_day for d in sums})
+    daily = []
+    for day in days:
+        total = 0.0
+        for sums in per_day:
+            total = total + sums.get(day, 0.0)
+        daily.append((day, total / n))
+    values = _less_exposure(daily, symbols, average, unit, n)
+    return pd.Series(values, index=days, dtype="float64", name=column)
