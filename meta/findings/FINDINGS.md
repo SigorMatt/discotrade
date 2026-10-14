@@ -327,6 +327,69 @@ Status: open (for the architect: confirm, or name the file for U3).
 
 2026-10-14, mission 11 U3: U3 touched `ledger.py` for the trial keys, in U2's spirit: `TRIAL_FIGURES` (`adjusted_t`, `adjusted_w`), a trial row may hold both, never one alone, `KEYS` unchanged; it also touched `cli.py` (not in U3's files either): `replay` loads the track before reading `--candidates`, so that `avg_position` is checked against the track's symbols (decision 86 (a)), and its help names `adjusted_t`.
 
+### D-011 — gate G1.3 expects the retire reason of decision 48's in-process loader, which decision 105 (c) replaces
+
+Severity: high (gate M1 item G1.3 goes red at mission 13's tip) · Component:
+`tests/gates/test_g1_3_lifecycle.py` (its `LIFECYCLE` reasons, built at line
+118) with decision 2026-10-14-m13 105 (c) and 101 (a) · Found: 2026-10-15,
+mission 13 U5.
+
+Symptom. G1.3 asserts the two `failure` retirements of 2019-06-13 with the
+text the decision-21 loader wrote, `failure: position on SYNA at bar ts
+2019-06-13 16:00:00+00:00 returned 2.0, outside [-1, 1]`. Decision 105 (c)
+retires the approach with `failure: <the error text>`, item 101 (a)'s text,
+which by 101 (a) and (f) holds no returned value and no date. At U5's commit
+the G1.3 scenario's first 30 calendar days write the reasons `failure:
+dry_run [out_of_range]: position returned a number outside [-1, 1] at window
+bar 18 (parameter set 0)` (and bar 19 for the second approach). Every other
+file of the state, the journal included, is byte-identical to the parent's
+(`diff -r -x .git -x lifecycle.jsonl`), and only those two lines of
+`ledger/test_synth/lifecycle.jsonl` differ. The mission's brief forbids a
+change to an existing file under `tests/gates/`, so U5 left G1.3 as it is,
+and gate M1 G1.3 is expected to fail at U6 on the `reason` comparison
+(inferred from line 118 and the diff; G1.3 was not run by U5).
+
+What U5 did. It follows decision 105 (c): the reason is the sandbox's text.
+`tests/test_daily.py`'s contract-failure test changed its two reason
+assertions accordingly (named in U5's commit body).
+
+Direction (for the architect). Either a decision lets G1.3's expected
+reasons become the sandbox's text, or one says another reason form.
+
+Status: open
+
+### D-012 — G1.3 projected at about 812 s with approaches behind the sandbox, above O-3's 10 minutes
+
+Severity: medium · Component: `src/discotrade/journal.py` and
+`src/discotrade/sandbox/process.py` (decision 2026-10-14-m13 105 (a), (e))
+with O-3 and decision 80 (e) · Found: 2026-10-15, mission 13 U5.
+
+Symptom. Decision 80 (d)'s method on the G1.3 scenario's first 30 calendar
+days (22 replay days, `test_synth`, gate configuration) measured: parent
+10142a7 34.34 s (1.561 s a day); U5 without a fork server 55.85 s (2.539 s a
+day); U5 with the fork server of 105 (e) 48.48 s (2.204 s a day). Scaled from
+mission 12's G1.3 (575 s) by the ratio, G1.3 projects to about 812 s. The
+rest of the cost is the fork server's start once a day (about 0.4 s:
+an interpreter that imports `numpy` and `pandas`) and the jobs themselves
+(about 0.1 s each, against the in-process evaluation they replace). Decision
+105 (e) allows nothing else for speed.
+
+The same cost reaches `./scripts/check`: its three runs at U5's tree took
+1134 s, 1422 s and 970 s (all green; each above HF-006's 15 minutes, the
+second above the 20-minute foreground cap, so the harness moved it to the
+background; mission 13 U3's runs took 697 to 738 s) on the builder's four-core
+machine while other projects' pytest runs held its load average near 2.5 to
+3. The fourteen test files that run days took 476 s at the parent and 843 s
+at U5's tree, back to back, the load rising from 2.2 to 3.9 during the
+second run. A profile of the 30-day replay puts about 0.64 s a day under
+that load in the fork server's start and about 0.12 s in each job.
+
+Direction (for the architect). Whether the fork server may live for a
+whole `replay` or test process (one process per replay, not per day), or the
+10-minute target of G1.3 and the check time move.
+
+Status: open
+
 ---
 
 ## hands findings

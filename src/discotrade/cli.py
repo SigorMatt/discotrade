@@ -518,6 +518,37 @@ def _add_init_state(subparsers: argparse._SubParsersAction,
 SUBCOMMANDS.append(_add_init_state)
 
 
+_SANDBOX_HELP = (
+    "the sandbox backend approaches run on: container or process (default: process when "
+    "every instrument of the track has a synthetic source, container otherwise); process "
+    "on a track with any other source is refused, exit 2 (DESIGN 12.4; decision "
+    "2026-10-14-m13 105 (b))")
+
+
+def _add_sandbox_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--sandbox", choices=("container", "process"), default=None,
+                        help=_SANDBOX_HELP)
+
+
+def _sandbox_refused(ctx: Context, args: argparse.Namespace, command: str) -> int | None:
+    """Exit 2 (returned) when ``--sandbox`` names a backend the track does not
+    allow (decision 105 (b)); None when it is allowed, or when the track cannot be
+    loaded (the command's own failure then names it)."""
+    from discotrade.config import ConfigError, load_track_config
+    from discotrade.sandbox.base import SandboxChoiceError, choose_backend
+
+    if args.sandbox is None:
+        return None
+    try:
+        choose_backend(load_track_config(ctx.config, ctx.track).instruments, args.sandbox)
+    except SandboxChoiceError as exc:
+        print(f"discotrade {command}: error: {exc}", file=sys.stderr)
+        return 2
+    except (ConfigError, OSError, ValueError):
+        return None
+    return None
+
+
 def _run_day(ctx: Context, args: argparse.Namespace) -> int:
     from discotrade.backtest import EvaluationError
     from discotrade.bars.store import BarStoreError
@@ -531,8 +562,12 @@ def _run_day(ctx: Context, args: argparse.Namespace) -> int:
     if ctx.state is None:
         print(f"discotrade run-day: give --state <dir> or set {STATE_ENV}", file=sys.stderr)
         return 2
+    refused = _sandbox_refused(ctx, args, "run-day")
+    if refused is not None:
+        return refused
     try:
-        done = run_day(ctx.state, ctx.config, ctx.track, ctx.clock, args.day)
+        done = run_day(ctx.state, ctx.config, ctx.track, ctx.clock, args.day,
+                       sandbox=args.sandbox)
     except (DailyError, StateError, JournalError, ConfigError, BarStoreError, StrategyError,
             ResultError, EvaluationError, NotBuiltError, OSError, ValueError) as exc:
         print(f"run-day: FAIL: {exc}", file=sys.stderr)
@@ -558,6 +593,7 @@ def _add_run_day(subparsers: argparse._SubParsersAction,
         "by each source's available_until at --as-of, the earliest across the track, "
         "DESIGN 16.1)",
     )
+    _add_sandbox_option(run)
     run.set_defaults(handler=_run_day)
 
 
@@ -586,6 +622,9 @@ def _replay(ctx: Context, args: argparse.Namespace) -> int:
                      "day's last expected bar (decision 2026-10-12 72)")
     if ctx.state is None:
         return usage(f"give --state <dir> or set {STATE_ENV}")
+    refused = _sandbox_refused(ctx, args, "replay")
+    if refused is not None:
+        return refused
     failures = (DailyError, StateError, JournalError, ConfigError, BarStoreError,
                 StrategyError, ResultError, EvaluationError, NotBuiltError, OSError, ValueError)
     try:
@@ -617,7 +656,7 @@ def _replay(ctx: Context, args: argparse.Namespace) -> int:
 
     try:
         replay(ctx.state, ctx.config, ctx.track, tc, calendars, args.first, args.last, line,
-               failures, candidates)
+               failures, candidates, sandbox=args.sandbox)
     except DayFailed as exc:
         print(f"replay: FAIL: {ctx.track} {exc}", file=sys.stderr)
         return 1
@@ -647,6 +686,7 @@ def _add_replay(subparsers: argparse._SubParsersAction, common: argparse.Argumen
                         type=date.fromisoformat, help="first day of the span")
     replay.add_argument("--to", dest="last", metavar="YYYY-MM-DD", required=True,
                         type=date.fromisoformat, help="last day of the span, included")
+    _add_sandbox_option(replay)
     replay.set_defaults(handler=_replay)
 
 
@@ -667,6 +707,9 @@ def _journal_recompute(ctx: Context, args: argparse.Namespace) -> int:
         print(f"discotrade journal recompute: give --state <dir> or set {STATE_ENV}",
               file=sys.stderr)
         return 2
+    refused = _sandbox_refused(ctx, args, "journal recompute")
+    if refused is not None:
+        return refused
     try:
         require_state_directory(ctx.state)
         with lock(ctx.state):
@@ -677,7 +720,7 @@ def _journal_recompute(ctx: Context, args: argparse.Namespace) -> int:
                 d = closed_day(tc, dict(setup.calendars), ctx.clock.now())
                 n = int(setup.thresholds["journal.recompute_sample"])
                 pairs = journal.sample_pairs(pairs, n, d)
-            result = journal.recompute(ctx.state, setup, pairs)
+            result = journal.recompute(ctx.state, setup, pairs, sandbox=args.sandbox)
             appended = append_health(ctx.state, ctx.track, result.events)
     except (StateError, journal.JournalError, ConfigError, BarStoreError, StrategyError,
             ResultError, EvaluationError, NotBuiltError, OSError, ValueError) as exc:
@@ -709,6 +752,7 @@ def _add_journal(subparsers: argparse._SubParsersAction,
     )
     recompute.add_argument("--all", action="store_true",
                            help="recompute every journaled pair")
+    _add_sandbox_option(recompute)
     recompute.set_defaults(handler=_journal_recompute)
 
 

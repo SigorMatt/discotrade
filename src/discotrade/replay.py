@@ -52,6 +52,7 @@ from discotrade.config import Calendar, TrackConfig
 from discotrade.daily import DayRun, is_trading_day, run_day
 from discotrade.journal import REPO_ROOT, TRUSTED_DIRS
 from discotrade.lifecycle import Candidate
+from discotrade.sandbox.base import Sandbox
 from discotrade.stats import trading_dates
 from discotrade.tradingcal import expected_bars
 
@@ -209,11 +210,12 @@ def replay(state_dir: Path, config_dir: Path, track: str, tc: TrackConfig,
            calendars: Mapping[str, Calendar], first: date, last: date,
            on_day: Callable[[DayRun, datetime], None],
            failures: tuple[type[Exception], ...],
-           candidates: Mapping[date, Candidate] | None = None) -> int:
-    """Run every day of ``replay_days``, with its scripted candidate if any;
-    call ``on_day`` after each success. An exception of a type in
-    ``failures`` stops the replay as ``DayFailed``. Return the number of days
-    run."""
+           candidates: Mapping[date, Candidate] | None = None,
+           sandbox: Sandbox | str | None = None) -> int:
+    """Run every day of ``replay_days``, with its scripted candidate if any,
+    approaches on ``sandbox`` (as ``run_day`` takes it); call ``on_day`` after
+    each success. An exception of a type in ``failures`` stops the replay as
+    ``DayFailed``. Return the number of days run."""
     count = 0
     for d, instant in replay_days(tc, calendars, first, last):
         candidate = None if candidates is None else candidates.get(d)
@@ -221,7 +223,7 @@ def replay(state_dir: Path, config_dir: Path, track: str, tc: TrackConfig,
             candidate = dataclasses.replace(candidate, t_days=t_days(tc, calendars, d))
         try:
             done = run_day(state_dir, config_dir, track, FixedClock(instant), d,
-                           candidate=candidate)
+                           candidate=candidate, sandbox=sandbox)
         except failures as exc:
             raise DayFailed(d, instant, exc) from exc
         on_day(done, instant)

@@ -36,15 +36,16 @@ from typing import Any, Protocol
 import numpy as np
 import pandas as pd
 
-from discotrade.backtest import _local_clock, read_window
+from discotrade.backtest import Window, _local_clock, read_window
 from discotrade.config import Calendar, DateRange, Instrument, Track, load_run
 from discotrade.sandbox.runner import ARRAYS, FORMAT, JOB_FILE, MODES, STAGES
 
 __all__ = ["ARRAYS", "FORMAT", "JOB_FILE", "MODES", "STAGES", "JobInstrument", "Sandbox",
            "SandboxError", "SandboxJob", "SandboxLimits", "SandboxRefused", "SandboxResult",
            "SandboxUnavailable",
-           "build_job", "job_arrays", "job_doc", "limits_from_config", "result_from_doc",
-           "write_job"]
+           "BACKENDS", "SandboxChoiceError", "build_job", "choose_backend", "job_arrays",
+           "job_doc", "job_instrument", "limits_from_config", "open_backend",
+           "result_from_doc", "write_job"]
 
 
 class SandboxRefused(ValueError):
@@ -132,6 +133,55 @@ class Sandbox(Protocol):
     def run(self, job: SandboxJob) -> SandboxResult: ...
 
 
+#: The backends the day loop, the replay and ``journal recompute`` run approaches on
+#: (decision 105 (b) of 2026-10-14-m13).
+BACKENDS = ("container", "process")
+#: The adapter of a synthetic source (DESIGN 17).
+SYNTHETIC = "synth"
+
+
+class SandboxChoiceError(ValueError):
+    """A backend asked for that the track does not allow (decision 105 (b)); the
+    command exits 2."""
+
+
+def choose_backend(instruments: Sequence[Instrument], asked: str | None = None) -> str:
+    """The backend that runs approaches on a track of ``instruments`` (decision 105
+    (b)): ``asked`` when given, else ``process`` when every instrument's source is
+    synthetic (``adapter = "synth"``) and ``container`` otherwise. ``process`` asked
+    for on a track holding any other source is refused (:class:`SandboxChoiceError`,
+    naming DESIGN 12.4): the child-process backend is not a boundary and is allowed
+    only for a run on synthetic sources."""
+    synthetic = all(inst.source.adapter == SYNTHETIC for inst in instruments)
+    if asked is None:
+        return "process" if synthetic else "container"
+    if asked not in BACKENDS:
+        raise SandboxChoiceError(f"unknown sandbox backend {asked!r}; one of "
+                                 f"{', '.join(BACKENDS)}")
+    if asked == "process" and not synthetic:
+        others = sorted(inst.symbol for inst in instruments
+                        if inst.source.adapter != SYNTHETIC)
+        raise SandboxChoiceError(
+            f"--sandbox process is refused: the track holds {', '.join(others)}, whose "
+            f"source is not synthetic; the child-process backend is allowed only for a run "
+            f"on synthetic sources (DESIGN 12.4); use --sandbox container")
+    return asked
+
+
+def open_backend(name: str, scratch: Path, config_dir: Path) -> Sandbox:
+    """The backend ``name`` of :data:`BACKENDS` for the day loop, the replay and
+    ``journal recompute``, its job directories under ``scratch``, its settings from
+    ``<config_dir>/run.toml``; ``process`` forks its children from a fork server
+    (decision 105 (e)), which the caller ends with the backend's ``close``."""
+    if name == "process":
+        from discotrade.sandbox.process import ProcessSandbox
+        return ProcessSandbox(Path(scratch), fork_server=True)
+    if name == "container":
+        from discotrade.sandbox.container import ContainerSandbox
+        return ContainerSandbox(Path(scratch), Path(config_dir))
+    raise SandboxChoiceError(f"unknown sandbox backend {name!r}; one of {', '.join(BACKENDS)}")
+
+
 def limits_from_config(config_dir: Path) -> SandboxLimits:
     """The limits of ``[sandbox]`` in ``<config_dir>/run.toml``; a configuration
     without the file is refused naming it (``ConfigError``, decision 96)."""
@@ -163,39 +213,49 @@ def build_job(state_dir: Path, track: Track, instruments: Sequence[Instrument],
     cap = track.history_cap_bars
     out = []
     for inst in instruments:
-        calendar = calendars[inst.calendar]
-        win = read_window(Path(state_dir), track, inst, calendar, window)
-        if win.empty:
-            bars = win.bars.iloc[0:0]
-            first = 0
-            hour = weekday = np.zeros(0, dtype=np.int64)
-            gaps, rolled = np.zeros(0), np.zeros(0, dtype=bool)
-        else:
-            start = max(0, win.first - cap + 1)
-            bars = win.bars.iloc[start:].reset_index(drop=True)
-            first = win.first - start
-            hour, weekday = _local_clock(bars["ts"], calendar)
-            gaps, rolled = win.gaps[start:], win.rolled[start:]
-        frame = pd.DataFrame({
-            "ts": bars["ts"].to_numpy(),
-            **{col: bars[col].to_numpy(dtype=np.float64)
-               for col in ("open", "high", "low", "close", "volume")},
-            "hour": np.asarray(hour, dtype=np.int64),
-            "weekday": np.asarray(weekday, dtype=np.int64),
-            "rolled": np.asarray(rolled, dtype=bool),
-            "gap": np.asarray(gaps, dtype=np.float64),
-        })
+        win = read_window(Path(state_dir), track, inst, calendars[inst.calendar], window)
         sample = None
         if mode == "reverse_sample":
             sample = tuple(int(i) for i in samples[inst.symbol])
-            n = len(frame) - first
-            if any(not 0 <= i < n for i in sample) or len(set(sample)) != len(sample):
-                raise ValueError(f"{inst.symbol}: the sample must be distinct window-bar "
-                                 f"indices in [0, {n})")
-        out.append(JobInstrument(inst.symbol, frame, first, bool(inst.shorting), sample))
+        out.append(job_instrument(win, cap, sample))
     return SandboxJob(instruments=tuple(out),
                       param_sets=tuple(dict(p) for p in param_sets), mode=mode,
                       history_cap_bars=cap, limits=limits, source=source, function=function)
+
+
+def job_instrument(win: Window, cap: int, sample: tuple[int, ...] | None = None
+                   ) -> JobInstrument:
+    """One instrument's part of a job from its window ``win`` (read by
+    :func:`discotrade.backtest.read_window`): the window bars and, before them,
+    at most ``cap - 1`` context bars (decision 23), with their clock, roll flags
+    and gaps; ``sample`` the window-bar indices of mode ``reverse_sample``."""
+    inst = win.instrument
+    if win.empty:
+        bars = win.bars.iloc[0:0]
+        first = 0
+        hour = weekday = np.zeros(0, dtype=np.int64)
+        gaps, rolled = np.zeros(0), np.zeros(0, dtype=bool)
+    else:
+        start = max(0, win.first - cap + 1)
+        bars = win.bars.iloc[start:].reset_index(drop=True)
+        first = win.first - start
+        hour, weekday = _local_clock(bars["ts"], win.calendar)
+        gaps, rolled = win.gaps[start:], win.rolled[start:]
+    frame = pd.DataFrame({
+        "ts": bars["ts"].to_numpy(),
+        **{col: bars[col].to_numpy(dtype=np.float64)
+           for col in ("open", "high", "low", "close", "volume")},
+        "hour": np.asarray(hour, dtype=np.int64),
+        "weekday": np.asarray(weekday, dtype=np.int64),
+        "rolled": np.asarray(rolled, dtype=bool),
+        "gap": np.asarray(gaps, dtype=np.float64),
+    })
+    if sample is not None:
+        n = len(frame) - first
+        if any(not 0 <= i < n for i in sample) or len(set(sample)) != len(sample):
+            raise ValueError(f"{inst.symbol}: the sample must be distinct window-bar "
+                             f"indices in [0, {n})")
+    return JobInstrument(inst.symbol, frame, first, bool(inst.shorting), sample)
 
 
 def job_arrays(inst: JobInstrument) -> dict[str, np.ndarray]:

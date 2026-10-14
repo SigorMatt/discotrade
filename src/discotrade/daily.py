@@ -113,6 +113,7 @@ from discotrade.bars.store import BarStore, BarStoreError, day_run, finite_rows
 from discotrade.clock import Clock
 from discotrade.config import Calendar, TrackConfig, load_track_config
 from discotrade.rolls import update_rolls
+from discotrade.sandbox.base import Sandbox, choose_backend
 from discotrade.sources.base import BarSource
 from discotrade.state import HealthEvent
 from discotrade.tradingcal import expected_bars
@@ -280,17 +281,24 @@ def _rank_persistence(state_dir: Path, setup: journal.Setup, day: date, first: d
 
 
 def run_day(state_dir: Path, config_dir: Path, track: str, clock: Clock,
-            day: date | None = None, candidate: lifecycle.Candidate | None = None) -> DayRun:
+            day: date | None = None, candidate: lifecycle.Candidate | None = None,
+            sandbox: Sandbox | str | None = None) -> DayRun:
     """Run steps 1 and 2 of ``day`` (or decision 19's ``D``), with the
-    admission of ``candidate`` when given, and commit it."""
+    admission of ``candidate`` when given, and commit it. Approaches run on
+    ``sandbox``: a backend, or the name of one (None: the track's default,
+    decision 2026-10-14-m13 105 (b)); a name the track does not allow is
+    refused (``SandboxChoiceError``) before anything is read or written."""
     state_dir = Path(state_dir)
+    if sandbox is None or isinstance(sandbox, str):
+        choose_backend(load_track_config(Path(config_dir), track).instruments, sandbox)
     state.require_state_directory(state_dir)
     with state.lock(state_dir), day_run():
-        return _locked(state_dir, Path(config_dir), track, clock, day, candidate)
+        return _locked(state_dir, Path(config_dir), track, clock, day, candidate, sandbox)
 
 
 def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
-            day: date | None, candidate: lifecycle.Candidate | None) -> DayRun:
+            day: date | None, candidate: lifecycle.Candidate | None,
+            sandbox: Sandbox | str | None) -> DayRun:
     setup = journal.Setup.load(config_dir, track)
     tc = load_track_config(config_dir, track)
     calendars = dict(setup.calendars)
@@ -323,7 +331,7 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
         appended += state.append_health(state_dir, track, events)
         shutil.rmtree(staging, ignore_errors=True)
         staging.mkdir()
-        result = journal.journal_day(state_dir, setup, d, into=staging)
+        result = journal.journal_day(state_dir, setup, d, into=staging, sandbox=sandbox)
         if result.status == journal.MISMATCH:
             appended += state.append_health(state_dir, track, result.events)
             raise DailyError(f"{d.isoformat()}: the recomputed rows differ from the journal "

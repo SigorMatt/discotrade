@@ -32,6 +32,26 @@ them (DESIGN 12.2), and no measured time enters a result (I-12).
 The child's environment is :data:`CHILD_ENV` exactly, built from no variable
 of the harness's environment, so that no key reaches it (I-13). The child is a
 Python program of this repository that opens no connection (decision 47).
+
+The fork server (decision 105 (e) of 2026-10-14-m13), for the day loop only
+(``ProcessSandbox(scratch, fork_server=True)``): instead of starting the
+interpreter afresh for each job, the backend starts, at its first job, one
+server process (:data:`SERVER_CODE`, run as ``python -I -c``, with
+:data:`CHILD_ENV` and its standard input, output and error closed or
+discarded) that imports only the runner's modules (:mod:`discotrade.sandbox.runner`
+and what it imports) and never runs a text. For each job the backend hands it,
+over a Unix-domain socket pair (no address, nothing leaves the host), the job's
+input and scratch directories, its limits and the write end of a fresh pipe;
+the server forks one fresh child, which starts a session of its own, sets the
+CPU-time, address-space and core-file limits, points its standard input and
+error at ``/dev/null`` and its standard output at the pipe, closes every other
+descriptor, enters the scratch directory and runs :func:`runner.main` on the
+job, then exits; a child is never reused for a second job. The backend reads
+the pipe with the same wall-clock limit and output cap, kills the child's
+session on a breach, and only then lets the server reap it and report its exit
+status, which is judged as a plain child's is. The server ends when the
+backend is closed (:meth:`ProcessSandbox.close`) or the backend's process
+ends (its end of the socket pair closes).
 """
 
 from __future__ import annotations
@@ -44,11 +64,13 @@ import resource
 import selectors
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 from discotrade.journal import REPO_ROOT, TRUSTED_DIRS, trusted_hashes
 from discotrade.sandbox import runner
@@ -57,6 +79,7 @@ from discotrade.sandbox.base import (
     SandboxLimits,
     SandboxRefused,
     SandboxResult,
+    SandboxUnavailable,
     result_from_doc,
     write_job,
 )
@@ -93,15 +116,197 @@ def _set_limits(limits: SandboxLimits) -> None:
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
 
+#: The fork server's program (decision 105 (e)): it imports only the runner's
+#: modules and never runs a text. Its one argument is the descriptor of its end of
+#: the socket pair. Per job: a request (one JSON line carrying the write end of the
+#: job's output pipe), to which it forks one child and answers its pid; ``wait``,
+#: to which it answers the child's exit status once the child has ended (a negative
+#: signal number when a signal ended it, as ``subprocess`` reports it) without
+#: reaping it, so that its pid names it until the backend is done with it; and
+#: ``reap``, to which it reaps the child and answers. When the backend's end of the
+#: socket closes, it kills any child it holds and ends.
+SERVER_CODE = r'''
+import json, os, resource, signal, socket, sys
+from discotrade.sandbox import runner
+
+def child(req, out_fd, sock):
+    code = 1
+    try:
+        os.setsid()
+        sock.close()
+        null = os.open(os.devnull, os.O_RDWR)
+        os.dup2(null, 0)
+        os.dup2(out_fd, 1)
+        os.dup2(null, 2)
+        for name in os.listdir("/proc/self/fd"):
+            if int(name) > 2:
+                try:
+                    os.close(int(name))
+                except OSError:
+                    pass
+        os.chdir(req["work"])
+        cpu = int(req["cpu"])
+        resource.setrlimit(resource.RLIMIT_CPU, (cpu, cpu + 1))
+        memory = int(req["memory"])
+        resource.setrlimit(resource.RLIMIT_AS, (memory, memory))
+        resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
+        code = runner.main([req["job"]])
+        sys.stdout.flush()
+    except BaseException:
+        code = 1
+    finally:
+        os._exit(code)
+
+def line(sock):
+    data = b""
+    while not data.endswith(b"\n"):
+        chunk = sock.recv(4096)
+        if not chunk:
+            return None
+        data += chunk
+    return data.strip()
+
+def send(sock, doc):
+    sock.sendall(json.dumps(doc).encode("utf-8") + b"\n")
+
+def end(pid):
+    for kill in (os.killpg, os.kill):
+        try:
+            kill(pid, signal.SIGKILL)
+        except OSError:
+            pass
+    os.waitpid(pid, 0)
+
+def serve(sock):
+    while True:
+        msg, fds, _, _ = socket.recv_fds(sock, 65536, 1)
+        if not msg or len(fds) != 1:
+            return
+        req = json.loads(msg)
+        pid = os.fork()
+        if pid == 0:
+            child(req, fds[0], sock)
+        os.close(fds[0])
+        send(sock, {"pid": pid})
+        if line(sock) != b"wait":
+            end(pid)
+            return
+        info = os.waitid(os.P_PID, pid, os.WEXITED | os.WNOWAIT)
+        exited = info.si_code == os.CLD_EXITED
+        send(sock, {"status": info.si_status if exited else -info.si_status})
+        if line(sock) != b"reap":
+            end(pid)
+            return
+        os.waitpid(pid, 0)
+        send(sock, {"reaped": pid})
+
+serve(socket.socket(fileno=int(sys.argv[1])))
+'''
+
+
+def server_command(fd: int) -> list[str]:
+    """The fork server's command line: this interpreter, isolated, running
+    :data:`SERVER_CODE` with its end of the socket pair at descriptor ``fd``."""
+    return [sys.executable, "-I", "-c", SERVER_CODE, str(fd)]
+
+
+class _ForkServer:
+    """The backend's handle on its fork server (decision 105 (e))."""
+
+    def __init__(self) -> None:
+        mine, theirs = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+        try:
+            self.proc = subprocess.Popen(
+                server_command(theirs.fileno()), cwd="/", env=child_env(),
+                stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, pass_fds=(theirs.fileno(),), close_fds=True)
+        except BaseException:
+            mine.close()
+            raise
+        finally:
+            theirs.close()
+        self.sock = mine
+        self._buf = b""
+
+    def _line(self, timeout: float | None = None) -> dict[str, Any]:
+        """The server's next answer; ``TimeoutError`` when none came in ``timeout`` s."""
+        self.sock.settimeout(timeout)
+        try:
+            while b"\n" not in self._buf:
+                chunk = self.sock.recv(4096)
+                if not chunk:
+                    raise OSError("the fork server ended")
+                self._buf += chunk
+        finally:
+            self.sock.settimeout(None)
+        line, self._buf = self._buf.split(b"\n", 1)
+        doc = json.loads(line)
+        if not isinstance(doc, dict):
+            raise OSError("the fork server's answer is not a JSON object")
+        return doc
+
+    def start(self, job_dir: Path, work: Path, limits: SandboxLimits, out_fd: int) -> int:
+        """One fresh child running the job of ``job_dir``, its standard output
+        ``out_fd``; its pid."""
+        cpu = limits.wall_seconds if limits.cpu_seconds is None else limits.cpu_seconds
+        req = {"job": str(job_dir), "work": str(work), "cpu": math.ceil(cpu),
+               "memory": int(limits.memory_bytes)}
+        socket.send_fds(self.sock, [json.dumps(req).encode("utf-8") + b"\n"], [out_fd])
+        return int(self._line()["pid"])
+
+    def wait(self, timeout: float | None) -> int:
+        """The child's exit status as ``Popen.returncode`` once it has ended, the
+        child left unreaped; ``TimeoutError`` when it has not ended in ``timeout`` s
+        (the question stays asked: call :meth:`answer` after ending the child)."""
+        self.sock.sendall(b"wait\n")
+        return int(self._line(timeout)["status"])
+
+    def answer(self) -> int:
+        """The answer to a :meth:`wait` that timed out."""
+        return int(self._line()["status"])
+
+    def reap(self) -> None:
+        """Let the server reap the ended child."""
+        self.sock.sendall(b"reap\n")
+        self._line()
+
+    def close(self) -> None:
+        self.sock.close()
+        try:
+            self.proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            self.proc.kill()
+            self.proc.wait()
+
+
+def _end(pid: int) -> None:
+    """Kill the unreaped child ``pid`` and its session."""
+    for kill in (os.killpg, os.kill):
+        try:
+            kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            pass
+
+
 def _limit(job: SandboxJob, rule: str, what: str) -> SandboxResult:
     return result_from_doc(job, runner.error_doc("limit", rule, what))
 
 
 class ProcessSandbox:
-    """The child-process backend; job directories go under ``scratch``."""
+    """The child-process backend; job directories go under ``scratch``. With
+    ``fork_server`` (the day loop's, decision 105 (e)) its children are forked by
+    one fork server started at its first job and ended by :meth:`close`."""
 
-    def __init__(self, scratch: Path) -> None:
+    def __init__(self, scratch: Path, fork_server: bool = False) -> None:
         self.scratch = Path(scratch)
+        self.fork_server = fork_server
+        self._server: _ForkServer | None = None
+
+    def close(self) -> None:
+        """End the fork server, if one was started."""
+        if self._server is not None:
+            server, self._server = self._server, None
+            server.close()
 
     def run(self, job: SandboxJob) -> SandboxResult:
         if job.source is None:
@@ -119,6 +324,8 @@ class ProcessSandbox:
             job_dir = write_job(job, base / "input")
             work = base / "work"
             work.mkdir()
+            if self.fork_server:
+                return self._run_forked(job, job_dir, work)
             return self._run_child(job, job_dir, work)
         finally:
             shutil.rmtree(base, ignore_errors=True)
@@ -131,27 +338,9 @@ class ProcessSandbox:
             preexec_fn=lambda: _set_limits(limits), close_fds=True)
         # The deadline is the one measured time; it decides a kill, never a value (I-12).
         deadline = time.monotonic() + limits.wall_seconds
-        out = bytearray()
-        breach = None
         try:
-            with selectors.DefaultSelector() as sel:
-                assert proc.stdout is not None
-                fd = proc.stdout.fileno()
-                sel.register(fd, selectors.EVENT_READ)
-                while True:
-                    remaining = deadline - time.monotonic()
-                    if remaining <= 0:
-                        breach = "wall_clock"
-                        break
-                    if not sel.select(remaining):
-                        continue
-                    chunk = os.read(fd, _READ)
-                    if not chunk:
-                        break
-                    out += chunk
-                    if len(out) > limits.output_bytes:
-                        breach = "output"
-                        break
+            assert proc.stdout is not None
+            out, breach = _read(proc.stdout.fileno(), deadline, limits.output_bytes)
             if breach is None:
                 try:
                     proc.wait(timeout=max(0.0, deadline - time.monotonic()))
@@ -161,13 +350,51 @@ class ProcessSandbox:
             if proc.returncode is None:
                 _kill(proc)
             proc.stdout.close()
+        return self._judge(job, out, breach, proc.returncode)
+
+    def _run_forked(self, job: SandboxJob, job_dir: Path, work: Path) -> SandboxResult:
+        """The job run by a child of the fork server (decision 105 (e))."""
+        limits = job.limits
+        if self._server is None:
+            self._server = _ForkServer()
+        server = self._server
+        read_end, write_end = os.pipe()
+        try:
+            try:
+                pid = server.start(job_dir, work, limits, write_end)
+            finally:
+                os.close(write_end)
+            # The deadline is the one measured time; it decides a kill, never a value (I-12).
+            deadline = time.monotonic() + limits.wall_seconds
+            out, breach = _read(read_end, deadline, limits.output_bytes)
+            if breach is not None:
+                _end(pid)
+                returncode = server.wait(None)
+            else:
+                try:
+                    returncode = server.wait(max(0.0, deadline - time.monotonic()))
+                except TimeoutError:
+                    breach = "wall_clock"
+                    _end(pid)
+                    returncode = server.answer()
+            server.reap()
+        except OSError as exc:
+            self.close()
+            raise SandboxUnavailable(f"the fork server of the child-process backend "
+                                     f"failed: {exc}") from exc
+        finally:
+            os.close(read_end)
+        return self._judge(job, out, breach, returncode)
+
+    def _judge(self, job: SandboxJob, out: bytes, breach: str | None,
+               returncode: int | None) -> SandboxResult:
         if breach == "wall_clock":
             return _limit(job, "wall_clock", "the job ran past its wall-clock limit")
         if breach == "output":
             return _limit(job, "output", "the result is longer than the output cap")
-        if proc.returncode == -signal.SIGXCPU:
+        if returncode == -signal.SIGXCPU:
             return _limit(job, "cpu_time", "the job ran past its CPU-time limit")
-        if proc.returncode != 0:
+        if returncode != 0:
             return _limit(job, "abnormal_exit", "the runner ended without a result "
                           "(a resource limit, such as memory, may have stopped it)")
         if not out:
@@ -177,6 +404,26 @@ class ProcessSandbox:
             return result_from_doc(job, doc)
         except (ValueError, KeyError, TypeError, IndexError):
             return _limit(job, "unreadable_output", "the output is not one result document")
+
+
+def _read(fd: int, deadline: float, cap: int) -> tuple[bytes, str | None]:
+    """Read ``fd`` to its end, until ``deadline`` (``time.monotonic``) or past
+    ``cap`` bytes; the bytes read and the breach (``wall_clock``, ``output``) or None."""
+    out = bytearray()
+    with selectors.DefaultSelector() as sel:
+        sel.register(fd, selectors.EVENT_READ)
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return bytes(out), "wall_clock"
+            if not sel.select(remaining):
+                continue
+            chunk = os.read(fd, _READ)
+            if not chunk:
+                return bytes(out), None
+            out += chunk
+            if len(out) > cap:
+                return bytes(out), "output"
 
 
 def _kill(proc: subprocess.Popen) -> None:

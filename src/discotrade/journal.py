@@ -13,31 +13,38 @@ of the day's rows on ``KEY``.
 The API, for the units that build on it:
 
 - ``Setup.load(config_dir, track_name)``: the track, its instruments, their
-  calendars and spread tables, and the thresholds (for the loader).
-- ``day_rows(state_dir, setup, day, failures=None)``: the rows of trading day
-  ``day`` for every approach the state holds whose admission date is before
-  ``day`` and whose lifecycle state in force on ``day`` is live or dormant
-  (decisions 48, 63; ``journaled_approaches``), sorted by ``KEY``. With a
-  ``failures`` dict, an approach whose evaluation breaks decision 22's
-  contract (``ResultError``) has all its rows of ``day`` dropped and its
-  error text recorded there (decision 63 step 1: the day goes on). Each
-  approach's frozen source runs in-process through the decision-21 loader,
-  loaded afresh for each instrument, with its fixed parameters, and only
-  when its sha256 is that of a file under the repository's ``reference/`` or
-  ``tests/fixtures/`` (``trusted_hashes``); any other source raises
-  ``JournalError`` naming the approach before anything is written. The rows
-  of an instrument are its bars whose trading date by its own calendar is
-  ``day`` and whose ``ts`` is not before ``trusted_from``, evaluated by
-  :func:`discotrade.backtest.evaluate` (the one implementation of DESIGN 7,
-  its executor and cost model) on the one-day window. Its first row starts
+  calendars and spread tables, the thresholds, and the configuration directory
+  (whose ``run.toml`` gives the sandbox's limits).
+- ``day_rows(state_dir, setup, day, failures=None, sandbox=None)``: the rows of
+  trading day ``day`` for every approach the state holds whose admission date
+  is before ``day`` and whose lifecycle state in force on ``day`` is live or
+  dormant (decisions 48, 63; ``journaled_approaches``), sorted by ``KEY``.
+  Each approach's targets come from one sandbox job per approach and day
+  (decision 2026-10-14-m13 105 (a); ``approach_targets``), in mode
+  ``positions``, carrying its frozen source, its fixed parameters and, per
+  instrument, the bars of ``day`` with their context up to
+  ``history_cap_bars`` (decision 23), on the backend ``sandbox`` names or the
+  track's default (``backend``; 105 (b)): the child-process backend accepts only
+  a source whose sha256 is that of a file under the repository's
+  ``reference/`` or ``tests/fixtures/``. With a ``failures`` dict, an approach
+  whose job ends with an error of stage ``load``, ``dry_run`` or ``limit``
+  (``ApproachFailure``) has all its rows of ``day`` dropped and the sandbox's
+  error text recorded there (decision 63 step 1; 105 (c): the day goes on). A
+  harness error (a backend that cannot run or refuses the job, a result that
+  does not give one target per window bar) raises ``JournalError`` naming the
+  approach before anything is written. The rows of an instrument are its bars
+  whose trading date by its own calendar is ``day`` and whose ``ts`` is not
+  before ``trusted_from``, scored by :func:`discotrade.backtest.score` (the one
+  implementation of DESIGN 7, its executor and cost model) on the one-day
+  window. Its first row starts
   flat (``prev_position`` and ``position`` 0) when the journal holds no
   earlier row of that approach and instrument; otherwise from that last
   row's ``position`` and ``target_next`` (the state as it stood before
   ``day``, decision 51), whatever day it belongs to. A carried row that is
   not the previous stored bar, or a flat start with an earlier stored bar
   after the admission date, means a day was skipped: ``JournalError``.
-  Errors of the loader and the evaluation (``StrategyError``,
-  ``ResultError``, ``EvaluationError``, ``BarStoreError``) pass through.
+  Errors of the evaluation (``EvaluationError``, ``BarStoreError``) pass
+  through.
 - The controls (DESIGN 10.1; decision 64; :mod:`discotrade.controls`) are in
   ``day_rows`` too, every day from the first day the journal holds
   (``first_day``): ``bh:<symbol>`` on its instrument and ``rc:<slot>`` on every
@@ -74,7 +81,8 @@ The API, for the units that build on it:
   when fewer exist) with ``numpy.random.default_rng(YYYYMMDD of day)``,
   choosing indices into the sorted pool without replacement (the design
   names the seed, not the draw; this is the simplest); ``recompute(state_dir,
-  setup, pairs)`` evaluates each subject once from its first journaled day to
+  setup, pairs, sandbox=None)`` evaluates each subject once (an approach by one
+  sandbox job over the span, as ``day_rows`` runs it) from its first journaled day to
   the last asked for (``span_rows``; the controls from the journal's first
   day with the recorded draws, ``control_span_rows``; no stored row read),
   compares each
@@ -88,10 +96,12 @@ is read (I-12).
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import hashlib
 import json
-from collections.abc import Mapping, Sequence
+import tempfile
+from collections.abc import Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
@@ -103,7 +113,7 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from discotrade import controls, ledger, lifecycle
-from discotrade.backtest import Evaluation, evaluate, read_window, score
+from discotrade.backtest import Evaluation, Window, read_window, score
 from discotrade.bars.store import write_atomic
 from discotrade.config import (
     Calendar,
@@ -116,10 +126,19 @@ from discotrade.config import (
     load_thresholds,
     load_track_config,
 )
+from discotrade.sandbox.base import (
+    Sandbox,
+    SandboxJob,
+    SandboxRefused,
+    SandboxUnavailable,
+    choose_backend,
+    job_instrument,
+    limits_from_config,
+    open_backend,
+)
 from discotrade.spreads import spread_table
 from discotrade.state import Approach, HealthEvent, canonical_json, content_hash, read_approaches
 from discotrade.stats import trading_dates
-from discotrade.strategy import ResultError, load_strategy
 from discotrade.tradingcal import trading_date
 
 #: The repository whose files an approach's source must equal (decision 48).
@@ -163,6 +182,8 @@ class Setup:
     calendars: Mapping[str, Calendar]
     spread_tables: Mapping[str, SpreadTable | None]
     thresholds: Thresholds
+    #: The configuration directory it was loaded from: the sandbox's ``run.toml``.
+    config_dir: Path | None = None
 
     @classmethod
     def load(cls, config_dir: Path, track_name: str) -> Setup:
@@ -176,6 +197,7 @@ class Setup:
             spread_tables={i.symbol: spread_table(config_dir, i.symbol)
                            for i in tc.instruments},
             thresholds=load_thresholds(config_dir / "thresholds.toml"),
+            config_dir=config_dir,
         )
 
 
@@ -327,23 +349,106 @@ def _joined(parts: Sequence[dict[str, Any]]) -> pd.DataFrame:
                          for name in COLUMNS})
 
 
+class ApproachFailure(Exception):
+    """An approach's sandbox job ended with an error of stage ``load``, ``dry_run``
+    or ``limit`` (decision 105 (c) of 2026-10-14-m13): decision 63 (1)'s failure.
+    ``text`` is the sandbox's error text (decision 101 (a))."""
+
+    def __init__(self, subject: str, text: str) -> None:
+        self.subject = subject
+        self.text = text
+        super().__init__(f"approach {subject}: {text}")
+
+
+@contextlib.contextmanager
+def backend(setup: Setup, sandbox: Sandbox | str | None = None) -> Iterator[Sandbox]:
+    """The sandbox approaches run on (decision 105): ``sandbox`` itself when it is
+    a backend, else the one :func:`~discotrade.sandbox.base.choose_backend` gives
+    for the track's instruments and the name ``sandbox`` (None: the default), its
+    job directories under a temporary directory removed on exit."""
+    if sandbox is not None and not isinstance(sandbox, str):
+        yield sandbox
+        return
+    name = choose_backend(setup.instruments, sandbox)
+    if setup.config_dir is None:
+        raise JournalError("the setup names no configuration directory, whose run.toml "
+                           "the sandbox's limits come from")
+    with tempfile.TemporaryDirectory(prefix="discotrade-jobs-") as scratch:
+        box = open_backend(name, Path(scratch), setup.config_dir)
+        try:
+            yield box
+        finally:
+            close = getattr(box, "close", None)
+            if close is not None:
+                close()
+
+
+def approach_targets(box: Sandbox, setup: Setup, subject: str, source: str,
+                     params: Mapping[str, Any], windows: Sequence[Window]
+                     ) -> list[np.ndarray]:
+    """The targets ``p(t)`` of an approach at every window bar of each of
+    ``windows`` (one per instrument, in the setup's order), from one sandbox job in
+    mode ``positions`` carrying its frozen source and fixed parameters and, per
+    instrument, the window bars with their context up to ``history_cap_bars``
+    (decisions 23, 105 (a)). A job error (stage ``load``, ``dry_run`` or ``limit``)
+    is :class:`ApproachFailure`; a harness error (no runtime, no image, a source the
+    backend refuses, a result that does not answer the job) is
+    :class:`JournalError` naming the approach (decision 105 (c))."""
+    cap = setup.track.history_cap_bars
+    if setup.config_dir is None:
+        raise JournalError(f"approach {subject}: the setup names no configuration "
+                           f"directory, whose run.toml the sandbox's limits come from")
+    job = SandboxJob(instruments=tuple(job_instrument(w, cap) for w in windows),
+                     param_sets=(dict(params),), mode="positions", history_cap_bars=cap,
+                     limits=limits_from_config(setup.config_dir), source=source)
+    try:
+        result = box.run(job)
+    except (SandboxRefused, SandboxUnavailable) as exc:
+        raise JournalError(f"approach {subject}: the sandbox could not run it: {exc}; "
+                           f"the day fails") from exc
+    if result.error is not None:
+        raise ApproachFailure(subject, result.error.text)
+    out = []
+    for inst in job.instruments:
+        n = inst.window_bars
+        targets = result.targets.get((0, inst.symbol))
+        called = result.bars.get((0, inst.symbol))
+        if targets is None or called is None or len(targets) != n \
+                or not np.array_equal(called, np.arange(n)):
+            raise JournalError(f"approach {subject}: the sandbox's result does not give "
+                               f"one target per window bar of {inst.symbol}; the day fails")
+        out.append(np.asarray(targets, dtype=np.float64))
+    return out
+
+
 def subject_rows(state_dir: Path, setup: Setup, day: date, subject: str, kind: str,
                  source: str, params: Mapping[str, Any], admitted: date,
-                 carries: Mapping[tuple[str, str], _Last]) -> list[pd.DataFrame]:
-    """The rows of ``day`` of one subject, one frame per instrument with a bar
-    that day; the function every subject's rows go through (decision 48)."""
-    frames = []
+                 carries: Mapping[tuple[str, str], _Last], box: Sandbox
+                 ) -> list[pd.DataFrame]:
+    """The rows of ``day`` of one approach, one frame per instrument with a bar
+    that day, its targets from one sandbox job on ``box`` (decision 105 (a)), each
+    instrument's carry checked before the job runs. :class:`ApproachFailure` when
+    the job ends with an error."""
+    windows = []
     for inst in setup.instruments:
         calendar = setup.calendars[inst.calendar]
-        strat = load_strategy(source, setup.thresholds, name=f"{kind} {subject}")
-        last = carries.get((subject, inst.symbol))
-        ev = evaluate(state_dir, setup.track, inst, calendar, strat, DateRange(day, day),
-                      params=params, spread_table=setup.spread_tables[inst.symbol],
-                      start=None if last is None else (last.position, last.target_next))
-        if ev.rows.empty:
+        win = read_window(state_dir, setup.track, inst, calendar, DateRange(day, day),
+                          setup.spread_tables[inst.symbol])
+        if not win.empty:
+            before = win.bars["ts"].iloc[win.first - 1] if win.first > 0 else None
+            _check_carry(kind, subject, inst.symbol, calendar, day, admitted,
+                         carries.get((subject, inst.symbol)), before)
+        windows.append(win)
+    if all(w.empty for w in windows):
+        return []
+    targets = approach_targets(box, setup, subject, source, params, windows)
+    frames = []
+    for win, p in zip(windows, targets, strict=True):
+        if win.empty:
             continue
-        before = ev.bars["ts"].iloc[ev.first - 1] if ev.first > 0 else None
-        _check_carry(kind, subject, inst.symbol, calendar, day, admitted, last, before)
+        last = carries.get((subject, win.instrument.symbol))
+        [ev] = score(win, [(f"{kind} {subject}", p,
+                            None if last is None else (last.position, last.target_next))])
         frames.append(_rows(subject, kind, day, ev, 0.0 if last is None else last.position))
     return frames
 
@@ -488,20 +593,6 @@ def draws_for(state_dir: Path, setup: Setup, day: date, into: Path | None = None
     return recorded + [draw], draw
 
 
-def _require_trusted(approaches: Sequence[Approach]) -> None:
-    """Refuse an approach whose source is not a trusted file (decision 48)."""
-    if not approaches:
-        return
-    trusted = trusted_hashes()
-    for a in approaches:
-        digest = hashlib.sha256(a.source.encode("utf-8")).hexdigest()
-        if digest not in trusted:
-            raise JournalError(
-                f"approach {a.id}: its source (sha256 {digest}) is not that of a file "
-                f"under the repository's {' or '.join(d + '/' for d in TRUSTED_DIRS)}; "
-                f"until the sandbox, only those run (decision 48); the day fails")
-
-
 def journaled_approaches(state_dir: Path, track: str, day: date) -> list[Approach]:
     """The approaches journaled on ``day``: admitted before it and, by the
     lifecycle rows dated before it, live or dormant (decision 63), by id."""
@@ -512,22 +603,24 @@ def journaled_approaches(state_dir: Path, track: str, day: date) -> list[Approac
 
 
 def day_rows(state_dir: Path, setup: Setup, day: date,
-             failures: dict[str, str] | None = None) -> pd.DataFrame:
+             failures: dict[str, str] | None = None,
+             sandbox: Sandbox | str | None = None) -> pd.DataFrame:
     """The rows of ``day`` of every approach journaled on it and of every
-    control (decision 64), sorted by ``KEY``.
+    control (decision 64), sorted by ``KEY``; approaches run on ``sandbox``
+    (:func:`backend`).
 
-    With ``failures`` given, an approach whose evaluation breaks decision 22's
-    contract (``ResultError``) has none of its rows of ``day`` returned and its
-    error text recorded there under its id (decision 63, step 1); without it,
-    the error passes through."""
-    return _day_rows(state_dir, setup, day, failures)[0]
+    With ``failures`` given, an approach whose sandbox job ends with an error
+    (:class:`ApproachFailure`) has none of its rows of ``day`` returned and the
+    error text recorded there under its id (decision 63, step 1; decision 105
+    (c)); without it, the error passes through."""
+    return _day_rows(state_dir, setup, day, failures, sandbox=sandbox)[0]
 
 
 def _day_rows(state_dir: Path, setup: Setup, day: date, failures: dict[str, str] | None,
-              into: Path | None = None) -> tuple[pd.DataFrame, controls.Draw | None]:
+              into: Path | None = None, sandbox: Sandbox | str | None = None
+              ) -> tuple[pd.DataFrame, controls.Draw | None]:
     track = setup.track.name
     approaches = journaled_approaches(state_dir, track, day)
-    _require_trusted(approaches)
     draws, drawn = draws_for(state_dir, setup, day, into)
     first = first_day(state_dir, track, day)
     admitted = {a.id: a.admitted for a in approaches}
@@ -536,14 +629,16 @@ def _day_rows(state_dir: Path, setup: Setup, day: date, failures: dict[str, str]
     wanted |= _control_wanted(setup)
     carries = _carries(state_dir, track, day, admitted, wanted)
     frames = []
-    for a in approaches:
-        try:
-            frames += subject_rows(state_dir, setup, day, a.id, KIND_APPROACH, a.source,
-                                   a.params, a.admitted, carries)
-        except ResultError as exc:
-            if failures is None:
-                raise
-            failures[a.id] = str(exc)
+    if approaches:
+        with backend(setup, sandbox) as box:
+            for a in approaches:
+                try:
+                    frames += subject_rows(state_dir, setup, day, a.id, KIND_APPROACH,
+                                           a.source, a.params, a.admitted, carries, box)
+                except ApproachFailure as exc:
+                    if failures is None:
+                        raise
+                    failures[a.id] = exc.text
     parts = [_columns(name, kind, day, ev, previous)
              for name, kind, ev, previous in control_evaluations(
                  state_dir, setup, DateRange(day, day), draws, carries,
@@ -603,13 +698,13 @@ def write_day(state_dir: Path, track: str, day: date, rows: pd.DataFrame,
 
 
 def journal_day(state_dir: Path, setup: Setup, day: date,
-                into: Path | None = None) -> DayResult:
+                into: Path | None = None, sandbox: Sandbox | str | None = None) -> DayResult:
     """Compute ``day``'s rows and write or compare them; an approach that breaks
     decision 22's contract has its rows dropped and is named in ``failures``.
     A new day made on a draw day appends its draw to ``pools.jsonl`` (into
     ``into`` when given); a re-run appends none (decision 64; I-6)."""
     failures: dict[str, str] = {}
-    rows, drawn = _day_rows(state_dir, setup, day, failures, into)
+    rows, drawn = _day_rows(state_dir, setup, day, failures, into, sandbox)
     result = write_day(state_dir, setup.track.name, day, rows, into=into)
     if drawn is not None and result.status == WRITTEN:
         controls.append_draw(state_dir, setup.track.name, drawn, into=into)
@@ -663,20 +758,33 @@ def sample_pairs(pairs: Sequence[Pair], n: int, day: date) -> list[Pair]:
     return [pool[k] for k in sorted(int(k) for k in picks)]
 
 
-def span_rows(state_dir: Path, setup: Setup, approach: Approach, first: date, last: date
-              ) -> pd.DataFrame:
+def span_rows(state_dir: Path, setup: Setup, approach: Approach, first: date, last: date,
+              sandbox: Sandbox | str | None = None) -> pd.DataFrame:
     """The rows of ``approach`` from ``first`` to ``last``, evaluated once over
-    that window per instrument (its first bar flat, DESIGN 7.1), sorted by
-    ``KEY``; each row dated by its instrument's trading date."""
+    that window per instrument (its first bar flat, DESIGN 7.1), its targets from
+    one sandbox job over the window (decision 105 (a): ``journal recompute``
+    evaluates approaches the same way), sorted by ``KEY``; each row dated by its
+    instrument's trading date. A job error is :class:`JournalError` naming the
+    approach: its journaled days ran, so a recomputation cannot fail."""
+    windows = [read_window(state_dir, setup.track, inst, setup.calendars[inst.calendar],
+                           DateRange(first, last), setup.spread_tables[inst.symbol])
+               for inst in setup.instruments]
+    if all(w.empty for w in windows):
+        return _empty()
+    with backend(setup, sandbox) as box:
+        try:
+            targets = approach_targets(box, setup, approach.id, approach.source,
+                                       approach.params, windows)
+        except ApproachFailure as exc:
+            raise JournalError(f"{exc}; it ran on each day the journal holds, so its "
+                               f"recomputation from {first.isoformat()} to "
+                               f"{last.isoformat()} cannot fail") from exc
     frames = []
-    for inst in setup.instruments:
-        strat = load_strategy(approach.source, setup.thresholds,
-                              name=f"{KIND_APPROACH} {approach.id}")
-        ev = evaluate(state_dir, setup.track, inst, setup.calendars[inst.calendar], strat,
-                      DateRange(first, last), params=approach.params,
-                      spread_table=setup.spread_tables[inst.symbol])
-        if not ev.rows.empty:
-            frames.append(_rows(approach.id, KIND_APPROACH, None, ev, 0.0))
+    for win, p in zip(windows, targets, strict=True):
+        if win.empty:
+            continue
+        [ev] = score(win, [(f"{KIND_APPROACH} {approach.id}", p, None)])
+        frames.append(_rows(approach.id, KIND_APPROACH, None, ev, 0.0))
     return _frame(pd.concat(frames, ignore_index=True)) if frames else _empty()
 
 
@@ -697,7 +805,8 @@ def control_span_rows(state_dir: Path, setup: Setup, first: date, last: date,
             for name, f in frames.items()}
 
 
-def recompute(state_dir: Path, setup: Setup, pairs: Sequence[Pair]) -> Recompute:
+def recompute(state_dir: Path, setup: Setup, pairs: Sequence[Pair],
+              sandbox: Sandbox | str | None = None) -> Recompute:
     """Recompute ``pairs`` from the stored bars and the frozen sources and
     compare each with the journal (DESIGN 9.4; decision 54). Each subject is
     evaluated once, from its first journaled day (the first day of the index
@@ -715,13 +824,14 @@ def recompute(state_dir: Path, setup: Setup, pairs: Sequence[Pair]) -> Recompute
         if subject not in known and subject not in names:
             raise JournalError(f"{subject} is not an approach of the state or a control")
         wanted.setdefault(subject, []).append(d)
-    _require_trusted([known[s] for s in sorted(wanted) if s in known])
     computed = {}
-    for subject, asked in sorted(wanted.items()):
-        if subject in known:
-            a = known[subject]
-            first = min(d for d in days if d > a.admitted)
-            computed[subject] = span_rows(state_dir, setup, a, first, max(asked))
+    if any(s in known for s in wanted):
+        with backend(setup, sandbox) as box:
+            for subject, asked in sorted(wanted.items()):
+                if subject in known:
+                    a = known[subject]
+                    first = min(d for d in days if d > a.admitted)
+                    computed[subject] = span_rows(state_dir, setup, a, first, max(asked), box)
     asked_controls = sorted(s for s in wanted if s in names)
     if asked_controls:
         computed.update(control_span_rows(

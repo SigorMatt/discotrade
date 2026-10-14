@@ -452,8 +452,9 @@ def test_a_contract_failure_retires_the_approach_and_the_day_goes_on(
     [row] = ledger.read(state, TRACK, ledger.LIFECYCLE)
     assert {k: row[k] for k in ("date", "id", "from", "to")} == \
         {"date": NEXT.isoformat(), "id": bad, "from": "live", "to": "retired"}
-    assert row["reason"].startswith("failure: position on ")
-    assert "returned 2.0, outside [-1, 1]" in row["reason"]
+    # The sandbox's error text (decision 2026-10-14-m13 105 (c), 101 (a)).
+    assert row["reason"].startswith("failure: dry_run [out_of_range]: position returned ")
+    assert "outside [-1, 1]" in row["reason"]
     assert f"lifecycle {ledger.line(row)}" in out
     changed = git(state, "show", "--name-only", "--format=", "HEAD").split()
     assert f"ledger/{TRACK}/lifecycle.jsonl" in changed
