@@ -70,10 +70,39 @@ The API:
 - ``write(root, track, frame)`` writes the file under ``root`` atomically;
   ``read(state_dir, track)`` reads it back (None when there is none);
   ``paper_path(root, track)``.
+
+Static exposure and the adjusted series (owner's decision O-4; decision
+2026-10-14 81; decisions 2026-10-12 23, 24, 25). ``adjusted(state_dir, setup,
+subject, days, column)`` gives, for each date of ``subject``'s paper record in
+the set of trading dates ``days`` (its ``W``), that ``column`` (``gross``,
+``net_1x`` or ``net_2x``) of the paper record minus the static exposure on
+that date: the gross timing return for ``gross``, the exposure-adjusted net
+return otherwise (costs are not adjusted). The pieces:
+
+- ``unit_returns``: ``R_i(D)``, the sum over the bars of instrument ``i``
+  whose trading date is ``D`` of the unit return ``r_i(u)``, the journal's
+  ``gross(u)`` from ``backtest.score`` (the same code) with the previous and
+  the current position 1 (``u-1`` the previous stored bar, prices adjusted as
+  of ``u``, so a roll gap is not a return). At an instrument's first stored
+  bar read (none trusted before it) there is no previous bar and only the
+  second term counts. The bars' sum per day is taken as ``build`` sums an
+  instrument's rows of a day.
+- ``average_positions``: ``hbar_i(W)``, the mean of the journal ``position``
+  of ``subject`` on ``i`` over its rows whose date is in ``W``; 0 with no row.
+- The static exposure on ``D``: the sum over the subject's ``N`` instruments,
+  in symbol order, of ``hbar_i(W) * R_i(D)``, divided by ``N`` (decision 23:
+  an instrument with no bar on ``D`` contributes 0, ``N`` and the
+  instruments are those of the paper ``gross``: the track's basket, or the
+  one instrument of a ``control_bh``).
+
+Nothing is stored for it (decision 81 (d)'s simplest reading): it is computed
+on call from the journal (``overlay`` read first) and the stored bars, so the
+day writes nothing new for it. No rule reads it in this step (decision 81 (e)).
 """
 
 from __future__ import annotations
 
+import dataclasses
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import date
@@ -85,8 +114,9 @@ import pandas as pd
 import pyarrow as pa
 import pyarrow.parquet as pq
 
-from discotrade import journal, ledger, lifecycle
+from discotrade import backtest, journal, ledger, lifecycle
 from discotrade.bars.store import write_atomic
+from discotrade.config import DateRange, Instrument
 from discotrade.metrics import TRADE_FLOOR
 from discotrade.state import Approach, read_approaches
 
@@ -269,3 +299,121 @@ def write(root: Path, track: str, frame: pd.DataFrame) -> Path:
 def read(state_dir: Path, track: str) -> pd.DataFrame | None:
     path = paper_path(state_dir, track)
     return pq.read_table(path).to_pandas() if path.is_file() else None
+
+
+# --- static exposure and the adjusted series (O-4; decision 2026-10-14 81) ------------------
+
+#: The ``gross`` of a position of 1 held into and through a bar (decision 81 (b)).
+_UNIT = "unit"
+
+
+def unit_bars(state_dir: Path, setup: journal.Setup, instrument: Instrument,
+              days: Iterable[date]) -> pd.DataFrame:
+    """The unit return ``r_i(u)`` (column ``unit``) of each stored bar ``u`` of
+    ``instrument`` whose trading date (column ``date``) is in ``days``, with
+    its ``ts``, in bar order (decision 81 (b))."""
+    wanted = set(days)
+    empty = pd.DataFrame({"ts": pd.Series([], dtype="datetime64[ns, UTC]"),
+                          "date": pd.Series([], dtype=object),
+                          "unit": pd.Series([], dtype="float64")})
+    if not wanted:
+        return empty
+    win = backtest.read_window(state_dir, setup.track, instrument,
+                               setup.calendars[instrument.calendar],
+                               DateRange(min(wanted), max(wanted)),
+                               setup.spread_tables.get(instrument.symbol))
+    if win.empty:
+        return empty
+    stamps, dates = win.inside["ts"].to_numpy(), list(win.dates)
+    head: list[float] = []
+    if win.first == 0:
+        # The instrument's first stored bar: no previous bar, so only the
+        # second term of DESIGN 7.2 with h(u) = 1; the later bars are scored
+        # with that bar as the one before them.
+        o, c = float(win.inside["open"].iloc[0]), float(win.inside["close"].iloc[0])
+        head = [(1.0 * (c - o)) / o]
+        win = dataclasses.replace(win, inside=win.inside.iloc[1:], dates=dates[1:], first=1)
+    unit = np.array(head, dtype=np.float64)
+    if not win.empty:
+        ones = np.ones(len(win.inside), dtype=np.float64)
+        ev = backtest.score(win, [(_UNIT, ones, (1.0, 1.0))])[0]
+        unit = np.concatenate([unit, ev.rows["gross"].to_numpy(dtype=np.float64)])
+    keep = np.array([d in wanted for d in dates], dtype=bool)
+    return pd.DataFrame({"ts": stamps[keep],
+                         "date": [d for d, k in zip(dates, keep, strict=True) if k],
+                         "unit": unit[keep]})
+
+
+def unit_returns(state_dir: Path, setup: journal.Setup, instrument: Instrument,
+                 days: Iterable[date]) -> dict[date, float]:
+    """``R_i(D)`` of ``instrument`` for each date ``D`` of ``days`` on which it
+    has a stored bar: its bars' unit returns summed as ``build`` sums an
+    instrument's rows of a day (decision 81 (b))."""
+    bars = unit_bars(state_dir, setup, instrument, days)
+    return {d: float(leg.to_numpy(dtype=np.float64).sum())
+            for d, leg in bars.groupby("date", sort=True)["unit"]}
+
+
+def _subject_rows(state_dir: Path, track: str, subject: str, days: Iterable[date],
+                  overlay: Path | None) -> pd.DataFrame:
+    """The journal rows of ``subject`` whose date is in ``days``, ``overlay`` first."""
+    frames = []
+    for day in sorted(set(days)):
+        rows = None if overlay is None else journal.read_day(overlay, track, day)
+        if rows is None:
+            rows = journal.read_day(state_dir, track, day)
+        if rows is not None and len(rows):
+            frames.append(rows[rows["subject"] == subject])
+    held = [f for f in frames if len(f)]
+    return pd.concat(held, ignore_index=True) if held else journal._empty()
+
+
+def average_positions(rows: pd.DataFrame, symbols: Sequence[str]) -> dict[str, float]:
+    """``hbar_i(W)`` for each of ``symbols`` from one subject's journal ``rows``
+    of ``W`` (decision 81 (c)): the mean of ``position``, 0 with no row."""
+    out = {}
+    for symbol in symbols:
+        mine = rows["position"][rows["instrument"] == symbol].to_numpy(dtype=np.float64)
+        out[symbol] = float(mine.mean()) if len(mine) else 0.0
+    return out
+
+
+def adjusted(state_dir: Path, setup: journal.Setup, subject: str, days: Iterable[date],
+             column: str, records: pd.DataFrame | None = None,
+             overlay: Path | None = None) -> pd.Series:
+    """``column`` of ``subject``'s paper record minus its static exposure, on
+    each of its paper days in ``days`` (decision 81 (a)), indexed by date in
+    order. ``records`` are the paper records (the stored ones when None)."""
+    if column not in _VALUES:
+        raise ValueError(f"{column!r} is not one of {', '.join(_VALUES)}")
+    state_dir = Path(state_dir)
+    track = setup.track.name
+    wanted = set(days)
+    if records is None:
+        records = read(state_dir, track)
+    if records is None or not wanted:
+        return pd.Series([], dtype="float64", name=column)
+    mine = records[(records["subject"] == subject) & records["date"].isin(wanted)]
+    mine = mine.sort_values("date", kind="stable")
+    if mine.empty:
+        return pd.Series([], dtype="float64", name=column)
+    kinds = sorted(set(mine["kind"]))
+    if kinds == [PORTFOLIO_KIND] or len(kinds) != 1:
+        raise ValueError(f"{subject} is not a subject of the journal")
+    rows = _subject_rows(state_dir, track, subject, wanted, overlay)
+    if kinds[0] == BH:
+        symbols = sorted(set(rows["instrument"]))
+        n = 1
+    else:
+        symbols = sorted(inst.symbol for inst in setup.instruments)
+        n = len(setup.instruments)
+    hbar = average_positions(rows, symbols)
+    by_symbol = {inst.symbol: inst for inst in setup.instruments}
+    unit = {s: unit_returns(state_dir, setup, by_symbol[s], wanted) for s in symbols}
+    values = []
+    for day, value in zip(mine["date"], mine[column], strict=True):
+        total = 0.0
+        for s in symbols:
+            total = total + hbar[s] * unit[s].get(day, 0.0)
+        values.append(float(value) - total / n)
+    return pd.Series(values, index=list(mine["date"]), dtype="float64", name=column)
