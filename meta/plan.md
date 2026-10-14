@@ -14,7 +14,7 @@ Carried items:
 - [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, D-010 and D-006 status lines in `meta/findings/FINDINGS.md`. — d250987
 - [x] U1 The widened audit, REVIEW-11 should-fix 1 and finding D-010 (decisions 92, 93; decisions 62, 87, 89; O-13, O-18). — 52d7fec (2 entries added: cli._backtest_result display, replay._adjusted producer; 17 test_lifecycle seeds carry null figures under decision 93)
 - [x] U2 The static check (decision 94; DESIGN §12.1; R-24; I-10). — 92703c9 (365 tests; from-import-star refused under the "further trick" clause)
-- [ ] U3 The sandbox interface, the job, the runner and the in-process backend (decision 95; decisions 22, 23, 24, 36, 37, 44; DESIGN §12.4, §6.2, §5.6; I-2, I-7; D-006).
+- [x] U3 The sandbox interface, the job, the runner and the in-process backend (decision 95; decisions 22, 23, 24, 36, 37, 44; DESIGN §12.4, §6.2, §5.6; I-2, I-7; D-006). — fa4b53b (check ~506 s, +13 s)
 - [ ] U4 The subprocess backend and `config/run.toml` (decision 96; DESIGN §12.4, §3; I-7, I-11, I-13; decision 47).
 - [ ] U5 The dry run and the grid on W, on the exposure-adjusted measure (O-17, O-4, O-18; decisions 97, 81, 86 (a), 89, 23, 25, 30; DESIGN §12.2 stage 2, §4.1, §8; R-23).
 - [ ] U6 Determinism, activity, the correlation gate and the sequence (decision 98; decisions 25, 63, 95 (e); DESIGN §12.2 stages 1, 3, 4, 5, §12.3; R-1).
