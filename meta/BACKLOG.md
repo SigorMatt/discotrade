@@ -48,7 +48,24 @@ displacing by mission 11 (unit U3; item 86). REVIEW-11 has no blocker;
 its should-fix 1 (`cli._backtest_result` unregistered) is taken by
 mission 12 (step S2.1, unit U1; decisions-2026-10-14-m12 item 92), with
 its note 7's list subscript and `replay._adjusted`, and finding D-010
-(its note 3) by mission 12 U1 (item 93).
+(its note 3) by mission 12 U1 (item 93). REVIEW-12 has no blocker; its
+should-fix 1 to 4 (error texts naming a type the text chose, the result
+channel the text can write, the static check naming the last offender of
+a chain, determinism not checking the bars called) and its notes 2 and 3
+are taken by mission 13 (step S2.2, unit U1; decisions-2026-10-14-m13
+item 101), its notes 5 and 6 by mission 13 U2 (item 102), and its
+`hands:` note 10 is appended to HF-008 by mission 13 U0 (item 108).
+
+- REVIEW-12 notes, not carried as work unless named: note 4 (the
+  subprocess backend leaves a forked grandchild after a clean exit; its
+  CPU-time and memory-limit branches are not shown firing; `build_job`
+  still accepts an explicit `limits=`; `trusted_hashes` re-hashes every
+  trusted file on every run) is not carried (decision 107: that backend
+  runs only repository sources and is not a boundary; the step that next
+  touches `process.py` for speed may cache the hashes); note 9's readings
+  (the approaches compared are those live or dormant after `D`; `|r| ==
+  corr_max` passes; a function-object submission skips the static stage)
+  stand as built.
 
 - REVIEW-11 notes, not carried as work unless named: decision 84 said
   the existing tests of `tests/test_exposure.py` stay unchanged while it
@@ -113,8 +130,9 @@ its note 7's list subscript and `replay._adjusted`, and finding D-010
   leaves a directory every later run refuses, `state.py`); the git
   protocol test checks only the environment dict, not that `_git` passes
   it; `journal.py`'s `REPO_ROOT = parents[2]` finds `reference/` and
-  `tests/fixtures/` only from a source checkout (step S2.2 or S5.1 decides
-  where trusted sources live in an installed package); `revised_data` is
+  `tests/fixtures/` only from a source checkout (step S5.1 decides
+  where trusted sources live in an installed package, decisions-2026-10-14-m13
+  item 107); `revised_data` is
   detected by matching the bar store's error text, and `daily.py` calls
   the private `store._indexed_last_ts` (a typed error is sturdier; step
   S4.2, which stages step 1, may take it); `journal recompute` leaves its
@@ -145,6 +163,7 @@ its note 7's list subscript and `replay._adjusted`, and finding D-010
 - REVIEW-1 note: DESIGN §18.1's rule that tests marked `container` skip,
   with the reason printed, when no runtime is found is not built. The
   mission that adds the first `container` test builds it: step S2.2.
+  Taken by mission 13 (unit U2; decisions-2026-10-14-m13 item 102 (g)).
 - REVIEW-1 note: every seed a gate test uses is written in the test file,
   not only in a fixture TOML (DESIGN §18.2). Step S0.4 (the first gate
   tests, mission 5, item 40) and every closing step.
@@ -169,7 +188,8 @@ its note 7's list subscript and `replay._adjusted`, and finding D-010
   from a clean staging directory, `run_failed`, the push to a remote, the
   catch-up of missed days with `day_caught_up`, and the weekly journal
   recomputation as step 6 of §16.1. Left to step S2.2 (item 48): running
-  approaches through the sandbox instead of the in-process loader.
+  approaches through the sandbox instead of the in-process loader; taken
+  by mission 13 (unit U5; decisions-2026-10-14-m13 item 105).
 - REVIEW-2 note (U4): when `update_rolls` fails after `bars fetch` wrote
   the bars, the command exits 1 and the next fetch records the roll,
   measuring its gap from a later source state. The daily run's staging and
