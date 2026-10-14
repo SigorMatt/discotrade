@@ -38,7 +38,27 @@ answered by item 68 (a test of the second in U1). REVIEW-9 should-fix 1
 mission 10 (step S2.0a, unit U3; decisions-2026-10-14 item 78), and its
 should-fix 2 (the untested branch of the not-closed refusal) and 3 (the T
 days passed to admission), with finding D-007, by mission 10 (unit U4;
-items 77 and 79).
+items 77 and 79). REVIEW-10 has no blocker and no should-fix; its note 3
+(`paper.adjusted` calls the private `journal._empty()`, and a caller
+passing staged records must pass `overlay` too) is taken by mission 11
+(step S2.0b, unit U1; decisions-2026-10-14-m11 item 84), its `hands:`
+note 7 is recorded as a hands finding by mission 11 U0 (item 90), and the
+REVIEW-9 note on decision 68 (b) with the day's admission doing the
+displacing by mission 11 (unit U3; item 86).
+
+- REVIEW-10 notes, not carried as work unless named: a month file changed
+  on disk during a day run after its first verified read is served from
+  the run's cache and refused only by the next day run (decision 80 (b)
+  permits it), and no test drives a partial append that fails mid-day
+  while the day continues; `state._column_fields` reads the private pandas
+  attribute `column._values` (pinned by `tests/test_speed_pins.py`; the
+  step that next touches `state.py` may use `column.array`); the paper
+  heal compares dates only, and a death between the `journal/` and
+  `ledger/` moves of `_move` still loses that day's lifecycle and rank
+  rows (step S4.2, which builds staging and retry, takes it); the
+  Saturday test of decision 79 (a) does not assert SYNX's bars had
+  closed, and the mission 8 equivalence test shares `latest_closed_day`
+  with the code under test.
 
 - REVIEW-9 notes, not carried as work unless named: the net-return
   rank-persistence statistic G1.1 reports goes to a pytest warning that
@@ -48,7 +68,7 @@ items 77 and 79).
   literals (a deterministic rule, decision 64); no test drives a block row
   due on a weekend day, the candidates file's refusal of a symlink or a
   `..` path, or decision 68 (b) with the day's admission doing the
-  displacing (step S2.0b, which changes admission, may take the last).
+  displacing (taken by mission 11, unit U3).
 
 - REVIEW-8 notes, not carried as work: a state journaled before the
   controls existed would fail `journal.py`'s carry check (no state of this
