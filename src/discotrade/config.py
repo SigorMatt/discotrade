@@ -812,7 +812,13 @@ def threshold_drift(current: Thresholds, frozen: Thresholds) -> list[str]:
 #: The run-settings file of a configuration directory. Not frozen (DESIGN 4.3):
 #: it holds how the harness runs, not a value that moves a result.
 RUN_FILE = "run.toml"
-_SANDBOX_KEYS = ("wall_seconds", "cpu_seconds", "memory_bytes", "output_bytes")
+_SANDBOX_KEYS = ("wall_seconds", "cpu_seconds", "memory_bytes", "output_bytes", "image",
+                 "pids", "cpus", "tmpfs_bytes", "runtime")
+#: The container runtimes ``sandbox.runtime`` may name (DESIGN 12.4; decision 102 (a)).
+RUNTIMES = ("docker", "podman")
+#: An image repository name without a tag or digest (decision 102 (d), (e): the tag
+#: is the hash of the image's inputs, added by the harness).
+_IMAGE_NAME = re.compile(r"[a-z0-9]+(?:[._-][a-z0-9]+)*(?:/[a-z0-9]+(?:[._-][a-z0-9]+)*)*")
 
 
 @dataclass(frozen=True)
@@ -820,12 +826,22 @@ class SandboxSettings:
     """``[sandbox]`` of ``run.toml``: the limits a sandbox job carries (DESIGN 12.4).
     ``wall_seconds`` is enforced by the harness, which kills the child;
     ``cpu_seconds`` and ``memory_bytes`` (address space) are set in the child;
-    ``output_bytes`` caps the result read from its standard output."""
+    ``output_bytes`` caps the result read from its standard output. The container
+    backend's keys (decision 102 (d)): ``image``, the image's repository name
+    (its tag is the hash of its inputs); ``pids``, the process limit; ``cpus``,
+    the CPU limit; ``tmpfs_bytes``, the size of the ``tmpfs`` at ``/tmp``; and
+    ``runtime``, ``docker`` or ``podman``, None when absent (the first found on
+    ``PATH``)."""
 
     wall_seconds: float
     cpu_seconds: float
     memory_bytes: int
     output_bytes: int
+    image: str
+    pids: int
+    cpus: float
+    tmpfs_bytes: int
+    runtime: str | None = None
 
 
 @dataclass(frozen=True)
@@ -847,7 +863,20 @@ def load_run(config_dir: Path) -> RunConfig:
         cpu_seconds=s.number("cpu_seconds", positive=True),
         memory_bytes=s.integer("memory_bytes", low=1),
         output_bytes=s.integer("output_bytes", low=1),
+        image=_image_name(s),
+        pids=s.integer("pids", low=1),
+        cpus=s.number("cpus", positive=True),
+        tmpfs_bytes=s.integer("tmpfs_bytes", low=1),
+        runtime=s.choice("runtime", RUNTIMES, default=None),
     ))
+
+
+def _image_name(table: _Table) -> str:
+    value = table.text("image")
+    if not _IMAGE_NAME.fullmatch(value):
+        table.fail("image", "must be an image repository name, lower case, with no tag "
+                   f"or digest (the harness adds the tag), not {value!r}")
+    return value
 
 
 # --- frozen config and config/HISTORY.toml (DESIGN 4.3) ------------------------
@@ -1109,6 +1138,10 @@ def check(config_dir: Path, track_name: str) -> CheckReport:
         lines.append(
             f"run: sandbox wall {s.wall_seconds:g} s, cpu {s.cpu_seconds:g} s, "
             f"memory {s.memory_bytes} bytes, output {s.output_bytes} bytes"
+        )
+        lines.append(
+            f"run: container image {s.image}, pids {s.pids}, cpus {s.cpus:g}, "
+            f"tmpfs {s.tmpfs_bytes} bytes, runtime {s.runtime or 'docker or podman on PATH'}"
         )
     history = config_dir / "HISTORY.toml"
     changes = load_changes(history) if history.is_file() else ()

@@ -380,6 +380,9 @@ def test_a_test_marked_network_is_left_alone(tmp_path):
 #: paths with GIT_ALLOW_PROTOCOL=file, or a Python program of this repository
 #: that opens no connection.
 SUBPROCESS_FILES = {
+    "src/discotrade/sandbox/container.py":
+        "the container runtime's command (docker or podman); every run carries "
+        "--network none (decision 102 (f))",
     "src/discotrade/sandbox/process.py":
         "python -I -m discotrade.sandbox.runner, a program of this repository that opens "
         "no connection (decision 96)",
@@ -394,6 +397,7 @@ SUBPROCESS_FILES = {
     "tests/test_rank_daily.py": "git on local state directories, GIT_ALLOW_PROTOCOL=file",
     "tests/test_replay.py": "git on local state directories, GIT_ALLOW_PROTOCOL=file",
     "tests/test_replay_candidates.py": "git on local state directories, GIT_ALLOW_PROTOCOL=file",
+    "tests/test_sandbox_container.py": "a scratch pytest run of tests/conftest.py",
     "tests/test_state.py": "git on a local state directory, GIT_ALLOW_PROTOCOL=file",
     "tests/test_table.py": "git on local state directories, GIT_ALLOW_PROTOCOL=file",
     "tests/test_vendor.py": "python -c snippets the test writes",

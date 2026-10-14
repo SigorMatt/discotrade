@@ -891,6 +891,37 @@ def _add_backtest(subparsers: argparse._SubParsersAction,
 SUBCOMMANDS.append(_add_backtest)
 
 
+def _sandbox_build(ctx: Context, args: argparse.Namespace) -> int:
+    from discotrade.config import ConfigError, load_run
+    from discotrade.sandbox.base import SandboxUnavailable
+    from discotrade.sandbox.container import BuildFailed, build
+
+    try:
+        ref, built = build(load_run(ctx.config).sandbox)
+    except (ConfigError, SandboxUnavailable, BuildFailed, OSError) as exc:
+        print(f"sandbox build: FAIL: {exc}", file=sys.stderr)
+        return 1
+    print(f"sandbox build: {'built' if built else 'present, nothing built'}", file=sys.stderr)
+    print(ref)
+    return 0
+
+
+def _add_sandbox(subparsers: argparse._SubParsersAction, common: argparse.ArgumentParser) -> None:
+    sandbox = subparsers.add_parser("sandbox", parents=[common],
+                                    help="the container sandbox (DESIGN 12.4)")
+    actions = sandbox.add_subparsers(dest="action", metavar="action", required=True)
+    builder = actions.add_parser(
+        "build", parents=[common],
+        help="build the sandbox image of the current tag from sandbox/ and print its tag; "
+        "when that tag is present, build nothing and print it (fetches the pinned base "
+        "image and packages: a setup step)",
+    )
+    builder.set_defaults(handler=_sandbox_build)
+
+
+SUBCOMMANDS.append(_add_sandbox)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)

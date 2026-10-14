@@ -42,6 +42,7 @@ from discotrade.sandbox.runner import ARRAYS, FORMAT, JOB_FILE, MODES, STAGES
 
 __all__ = ["ARRAYS", "FORMAT", "JOB_FILE", "MODES", "STAGES", "JobInstrument", "Sandbox",
            "SandboxError", "SandboxJob", "SandboxLimits", "SandboxRefused", "SandboxResult",
+           "SandboxUnavailable",
            "build_job", "job_arrays", "job_doc", "limits_from_config", "result_from_doc",
            "write_job"]
 
@@ -52,6 +53,12 @@ class SandboxRefused(ValueError):
     def __init__(self, rule: str, message: str) -> None:
         self.rule = rule
         super().__init__(f"sandbox refused [{rule}]: {message}")
+
+
+class SandboxUnavailable(RuntimeError):
+    """A harness error: the sandbox cannot run a job at all (no container runtime,
+    no image of the current tag, a runtime that could not start the container).
+    Never a rejection of a submission (decision 102 (a) of 2026-10-14-m13)."""
 
 
 @dataclass(frozen=True)

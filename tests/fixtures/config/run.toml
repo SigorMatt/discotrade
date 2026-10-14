@@ -7,3 +7,10 @@ wall_seconds = 1200.0        # a job's wall-clock limit; the harness kills the c
 cpu_seconds = 1200.0         # CPU-time limit set in the child (RLIMIT_CPU)
 memory_bytes = 2147483648    # address-space limit set in the child (RLIMIT_AS), 2 GiB
 output_bytes = 67108864      # cap on the result read from standard output, 64 MiB
+# The container backend (DESIGN 12.4; decision 2026-10-14-m13 102 (d)). The project's
+# own choice, not a fact from outside it; the same values in both run.toml files.
+# runtime is absent: the first of docker and podman found on PATH (102 (a)).
+image = "discotrade-sandbox"  # the image's repository name; its tag is the hash of its inputs
+pids = 64                    # process limit of the container
+cpus = 1.0                   # CPU limit of the container
+tmpfs_bytes = 67108864       # size of the tmpfs at /tmp, 64 MiB

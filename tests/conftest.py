@@ -26,6 +26,13 @@ never leaves the host. A test marked ``network`` or ``live`` is left alone while
 it runs (its setup, call and teardown); then the lookups of ``socket`` and
 ``_socket`` are the original functions, and the guarded ones are put back after
 it (decision 67).
+
+A test marked ``container`` skips, printing its reason, when no container
+runtime is found or the sandbox image of the current tag is not present (the
+reason then names ``discotrade sandbox build``), as
+:func:`discotrade.sandbox.container.unavailable` finds for the repository's
+``config/run.toml`` (DESIGN 18.1; decision 102 (g) of 2026-10-14-m13). Under
+``DISCOTRADE_GATE=1`` that skip is a failure, like every other.
 """
 
 import _socket
@@ -167,6 +174,21 @@ def pytest_runtest_protocol(item, nextitem):
         _BACKSTOP.update(nodeid="outside any test", allowed=False)
         if lifted:
             _put_lookups(original=False)
+
+
+#: The marker of a test that starts a container (DESIGN 18.1).
+CONTAINER_MARKER = "container"
+
+
+def pytest_runtest_setup(item):
+    """Skip a ``container`` test, with its reason, when no container can run."""
+    if item.get_closest_marker(CONTAINER_MARKER) is None:
+        return
+    from discotrade.sandbox.container import unavailable
+
+    reason = unavailable()
+    if reason is not None:
+        pytest.skip(f"container test: {reason}")
 
 
 def gate_marker_problem(item) -> str | None:

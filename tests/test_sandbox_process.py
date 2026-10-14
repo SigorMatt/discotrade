@@ -154,6 +154,35 @@ def test_run_toml_refuses_an_unknown_key_naming_it(tmp_path, text, name):
         load_run(tmp_path)
 
 
+def test_run_toml_loads_the_container_keys_of_decision_102_d():
+    for where in (REPO_ROOT / "config", FIXTURE_CONFIG):
+        s = load_run(where).sandbox
+        assert s.image == "discotrade-sandbox"
+        assert s.pids >= 1 and s.cpus > 0 and s.tmpfs_bytes >= 1
+        assert s.runtime is None  # absent: the first of docker and podman found on PATH
+    with open(FIXTURE_CONFIG / "run.toml", "rb") as f:
+        keys = set(tomllib.load(f)["sandbox"])
+    assert {"image", "pids", "cpus", "tmpfs_bytes"} <= keys
+
+
+@pytest.mark.parametrize("values, name, why", [
+    ({"runtime": "lxc"}, "sandbox.runtime", "must be one of docker, podman"),
+    ({"image": "discotrade-sandbox:latest"}, "sandbox.image", "must be an image repository"),
+    ({"pids": 0}, "sandbox.pids", "must be at least 1"),
+    ({"cpus": 0.0}, "sandbox.cpus", "must be positive"),
+    ({"tmpfs_bytes": 0}, "sandbox.tmpfs_bytes", "must be at least 1"),
+])
+def test_run_toml_refuses_a_bad_container_value_naming_it(tmp_path, values, name, why):
+    (tmp_path / "run.toml").write_text(short_run(**values), encoding="utf-8")
+    with pytest.raises(ConfigError, match=f"'{name}' {why}"):
+        load_run(tmp_path)
+
+
+def test_run_toml_accepts_a_named_runtime(tmp_path):
+    (tmp_path / "run.toml").write_text(short_run(runtime="podman"), encoding="utf-8")
+    assert load_run(tmp_path).sandbox.runtime == "podman"
+
+
 def test_job_building_refuses_a_configuration_without_run_toml(tmp_path_factory, state, tc,
                                                                calendars):
     config = copy_config(tmp_path_factory)
@@ -180,6 +209,7 @@ def test_config_check_still_passes(tmp_path_factory, capsys, where):
     assert main([*args, "config", "check"]) == 0
     out = capsys.readouterr().out.splitlines()
     assert any(line.startswith("run: sandbox") for line in out)
+    assert any(line.startswith("run: container image discotrade-sandbox") for line in out)
     assert out[-1].startswith("config check: ok")
 
 
