@@ -17,7 +17,7 @@ Carried items:
 - [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, HF-008 in `meta/findings/FINDINGS.md`. — 7629de6
 - [x] U1 The derived exposure records (decision 84; decisions 78, 81; O-4; DESIGN §9.2, §9.3, §16.1, §16.2; REVIEW-10 note 3). — 93c2f91 (G1.3 first 30 days 1.341 -> 1.469 s/day; adjusted call 0.347 -> 0.012 s)
 - [x] U2 Dormancy, return and displacement on the adjusted measure (O-11, O-12; decisions 85, 87; decisions 62, 63, 68; DESIGN §10.3). — 489e749 (G1.3 first 30 days 1.474 -> 1.486 s/day; ledger.py touched, finding D-010 open)
-- [ ] U3 Admission on the adjusted measure and the candidates file (O-11 to O-13; decisions 86, 87; decisions 48, 63, 68, 73, 79 (b); DESIGN §10.3, §4.1).
+- [x] U3 Admission on the adjusted measure and the candidates file (O-11 to O-13; decisions 86, 87; decisions 48, 63, 68, 73, 79 (b); DESIGN §10.3, §4.1). — 5962663 (ledger.py and cli.py touched, noted under D-010)
 - [ ] U4 The table's adjusted figures (O-13; decision 88; decisions 30, 39, 41, 60, 71; DESIGN §10.4, §8).
 - [ ] U5 The register of return readers and its audit (O-16, O-18; decision 89).
 - [ ] U6 G1.3 on the adjusted measure, gate M1 item by item, and gate M0 (O-15, O-2, O-3; decisions 74, 90; DESIGN §18.2, §18.3 (M1)).

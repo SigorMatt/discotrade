@@ -4,13 +4,14 @@ Mission: 11 (`meta/BUILDER-11-PROMPT.md`), roadmap step S2.0b. Closes no milesto
 Done: U0 7629de6, U1 93c2f91 (records unit.parquet, positions.parquet; G1.3 30 days 1.341->1.469 s/day;
 one changed existing test: test_nothing_is_stored_for_it -> ..._but_the_records, decision 84 replaces 81 (d)),
 U2 489e749 (steps 2-3 adjusted; G1.3 30 days 1.474->1.486 s/day; ledger.py gained FIGURES/FIGURE_REASONS,
-finding D-010 open; 7 existing lifecycle tests changed under decisions 85, 87).
+finding D-010 open; 7 existing lifecycle tests changed under decisions 85, 87), U3 5962663 (admission on
+adjusted_t; trial keys; ledger.py TRIAL_FIGURES and cli.py loads the track before --candidates, noted under
+D-010; G1.3 expected red on new keys until U6).
 
-Unit in progress: U3 Admission on the adjusted measure and the candidates file (O-11 to O-13; decisions 86, 87).
-Intent: candidates lines require adjusted_t; admission score adjusted_t["sharpe"]; full cell compares live
-approaches on their own adjusted series over T; trial row gains adjusted_t/adjusted_w; admitted/displaced rows
-carry adjusted/plain; decision 86 (f) test.
-Done means: one pushed commit; tests as the brief's U3 gate; named wrong changes seen to fail;
+Unit in progress: U4 The table's adjusted figures (O-13; decision 88).
+Intent: approach rows gain adjusted_sharpe, adjusted_sharpe_2x, avg_position, adjusted_admission_score; null for
+controls and portfolio; table.md shows them labelled; deflated figures stay plain.
+Done means: one pushed commit; tests as the brief's U4 gate; named wrong changes seen to fail; timings in body;
 ./scripts/check green three times.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-14-m11 (83-90) and the owner's
