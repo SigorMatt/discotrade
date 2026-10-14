@@ -4,13 +4,15 @@ Mission: 12 (`meta/BUILDER-12-PROMPT.md`), roadmap step S2.1. Closes no mileston
 Done: U0 d250987, U1 52d7fec (audit widened; +cli._backtest_result display, +replay._adjusted producer;
 ledger requires figures, D-010; 3 test_return_readers assertions changed under 92, test_lifecycle seeds under 93; check 3/3 ~487 s), U2 92703c9 (static check, 365 tests, check 3/3 ~493 s),
 U3 fa4b53b (sandbox job/runner/in-process; runner `python -I -m discotrade.sandbox.runner <dir>`; check 3/3 ~506 s),
-U4 d553c35 (ProcessSandbox(scratch).run(job); run.toml wall/cpu 1200 s, 2 GiB, 64 MiB; base.py outside list; check 3/3 ~509 s).
+U4 d553c35 (ProcessSandbox(scratch).run(job); run.toml wall/cpu 1200 s, 2 GiB, 64 MiB; base.py outside list; check 3/3 ~509 s),
+U5 4c09fd1 (validation/sequence.py Context/Submission/dry_run_and_grid -> Outcome, STAGES; register +paper._window_units,
++paper.adjusted_rows producer, +sequence.fix_combination adjusted, +sequence._grid_result producer; check ~608 s, +100 s).
 
-Unit in progress: U5 next — the dry run and the grid on W, on the exposure-adjusted measure (O-17, O-4, O-18;
-decisions 97, 81, 86 (a), 89, 23, 25, 30; DESIGN §12.2 stage 2, §4.1, §8; R-23).
-Intent: paper.adjusted_rows + shared private function; validation/sequence.py dry run and grid fixing the
-combination on adjusted Sharpe at 1x, both measures recorded; register entries; call check in the audit.
-Done means: U5's gate in meta/BUILDER-12-PROMPT.md met, committed and pushed, check green 3/3.
+Unit in progress: U6 next — determinism, activity, the correlation gate and the sequence (decision 98; decisions 25,
+63, 95 (e); DESIGN §12.2 stages 1, 3, 4, 5, §12.3; R-1).
+Intent: stages 1/3/4/5 and the five in order in validation/sequence.py; validation/correlation.py; error texts
+free of symbols/venues/contracts/dates; the sequence writes nothing to the state directory.
+Done means: U6's gate in meta/BUILDER-12-PROMPT.md met, committed and pushed, check green 3/3.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-14-m12 (91-99) bind; the owner's
 decisions-2026-10-13-owner (O-N wins); decisions 1-90 still bind; no value of a frozen file changes
