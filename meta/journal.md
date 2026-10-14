@@ -102,3 +102,5 @@
 - 2026-10-14 mission 11 U3 done 5962663: admission on adjusted_t["sharpe"], full cell on own adjusted series over T, trial and lifecycle row keys (decisions 86, 87); ledger.py and cli.py outside the list, noted under D-010; check green 3/3.
 - 2026-10-14 mission 11 U4 done 3ff738a: table approach rows gain adjusted_sharpe, adjusted_sharpe_2x, avg_position, adjusted_admission_score (decision 88); deflated figures plain; G1.3 30 days 1.471->1.546 s/day; check green 3/3.
 - 2026-10-14 mission 11 U5 done 95650a4: tests/fixtures/return_readers.toml (24 entries: producer 14, display 5, adjusted 4, timing_gross 1; pending S4.1 x3) and tests/test_return_readers.py; no finding; check green 3/3.
+- 2026-10-14 mission 11 U6 done 6b61c6e: G1.3 on the adjusted measure, no scenario line changed, every transition held; check green 3/3; G1.1 PASS 387 s, G1.2 PASS 171 s, G1.3 PASS 518 s, G1.4 PASS 1 s; M0 PASS 246 s; no finding.
+- 2026-10-14 mission 11 U7 done: final report meta/FINAL-REPORT-11.md; check green 3/3 at the tip; D-010 and HF-008 open; mission finished.

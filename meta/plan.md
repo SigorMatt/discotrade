@@ -20,5 +20,5 @@ Carried items:
 - [x] U3 Admission on the adjusted measure and the candidates file (O-11 to O-13; decisions 86, 87; decisions 48, 63, 68, 73, 79 (b); DESIGN §10.3, §4.1). — 5962663 (ledger.py and cli.py touched, noted under D-010)
 - [x] U4 The table's adjusted figures (O-13; decision 88; decisions 30, 39, 41, 60, 71; DESIGN §10.4, §8). — 3ff738a (G1.3 first 30 days 1.471 -> 1.546 s/day)
 - [x] U5 The register of return readers and its audit (O-16, O-18; decision 89). — 95650a4 (24 entries; pending S4.1: stats.rank_persistence, stats.control_moments, table.build.approach_row)
-- [ ] U6 G1.3 on the adjusted measure, gate M1 item by item, and gate M0 (O-15, O-2, O-3; decisions 74, 90; DESIGN §18.2, §18.3 (M1)).
-- [ ] U7 Final report (`meta/FINAL-REPORT-11.md`).
+- [x] U6 G1.3 on the adjusted measure, gate M1 item by item, and gate M0 (O-15, O-2, O-3; decisions 74, 90; DESIGN §18.2, §18.3 (M1)). — 6b61c6e: G1.1 387 s, G1.2 171 s, G1.3 518 s, G1.4 1 s, all PASS; M0 PASS 246 s; no finding (all under 10 minutes)
+- [x] U7 Final report (`meta/FINAL-REPORT-11.md`). — this commit
