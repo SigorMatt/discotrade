@@ -1,21 +1,24 @@
-# PLAN — mission 10 (roadmap step S2.0a)
+# PLAN — mission 11 (roadmap step S2.0b)
 
-Base commit: 54cac11 (`plan: mission 10 kit (S2.0a, speed, REVIEW-9 items, static exposure)`).
-Brief: `meta/BUILDER-10-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-14.md` (items 76-82 new; 1-75 still bind); owner `meta/decisions/decisions-2026-10-13-owner.md` (O-3, O-4, O-10 this mission; O-1, O-2 still bind).
-Roadmap step: S2.0a (as decisions 76-82 cut it). This mission closes no milestone; it runs gate M1 again item by item and gate M0 at its pushed tip, as decision 82 says (U6).
+Base commit: c3a3f1d (`plan: mission 11 kit (S2.0b, adjusted lifecycle, reader register, G1.3)`).
+Brief: `meta/BUILDER-11-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-14-m11.md` (items 83-90 new); `meta/decisions/decisions-2026-10-14.md` (76-82; 78, 80, 81 met here); `meta/decisions/decisions-2026-10-12.md` (1-75 still bind); owner `meta/decisions/decisions-2026-10-13-owner.md` (O-11 to O-13, O-15, O-16, O-18 this mission; O-1 to O-4 still bind).
+Roadmap step: S2.0b (as decisions 83-90 cut it). This mission closes no milestone; it runs gate M1 again item by item and gate M0 at its pushed tip, as decision 90 says (U6). The only file under `tests/gates/` that may change is `tests/gates/test_g1_3_lifecycle.py`, in U6 only (decisions 83, 90 (a)).
 
 Carried items:
-- Owner decision O-3: the day loop's speed, each gate M1 item under 10 minutes (decision 80). — taken by U1 and U2
-- REVIEW-9 should-fix 1: the per-day paper update heals an interrupted day (decision 78). — taken by U3
-- REVIEW-9 should-fix 2: a test of decision 77's refusal on a mixed-calendar weekend day, and its equivalence with mission 8's rule on one calendar (decision 79 (a)). — taken by U4
-- REVIEW-9 should-fix 3: a test pinning the T days `replay` passes to admission (decision 79 (b)). — taken by U4
-- Finding D-007: the refusal rule mission 9 U2 built is confirmed (decision 77), held by decision 79's tests. — taken by U4
+- REVIEW-10 note 3: the derived exposure records stored, `journal._empty` replaced by a public name, staged callers pass `overlay` (decision 84). — taken by U1
+- REVIEW-9 note on decision 68 (b): a test with the day's admission doing the displacing (decision 86 (f)). — taken by U3
+- Owner decision O-11: dormancy, return, displacement and admission on the exposure-adjusted Sharpe (decisions 85, 86). — taken by U2 and U3
+- Owner decision O-12: each subject scored with its own average positions over the window compared (decisions 85, 86 (c)). — taken by U2 and U3
+- Owner decision O-13: both measures recorded; trial, lifecycle and table fields (decisions 86 (d), 87, 88). — taken by U2, U3 and U4
+- Owner decisions O-16 and O-18: the register of return readers and its audit test (decision 89). — taken by U5
+- Owner decision O-15: G1.3 on the adjusted measure (decision 90 (a)). — taken by U6
+- REVIEW-10 note 7: concurrent reviewers near the 20-minute cap, recorded as HF-008 (decision 90 (d)). — taken by U0
 
-- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, D-007 status line in `meta/findings/FINDINGS.md`. — b03a349
-- [x] U1 Where a replay day's time goes, and the bar files' hashes (O-3; decision 80; DESIGN §5.2, §9.2, §16.1, §18.2; decisions 18, 31, 35). — 4bf827d
-- [x] U2 The rest of the measured cost (O-3; decision 80; DESIGN §7, §9.2, §9.3, §10.4, §16.1). — 164c8ce
-- [x] U3 REVIEW-9 should-fix 1: the paper update heals an interrupted day (decision 78; DESIGN §9.3, §16.2). — 0518b34
-- [x] U4 REVIEW-9 should-fix 2 and 3, and finding D-007 (decisions 77, 79; DESIGN §4.1, §10.3, §16.1, §16.4; decisions 51, 63, 72, 73). — f1a2599
-- [x] U5 Static exposure, unit return and the adjusted series (O-4; decision 81; DESIGN §7.2, §8, §9.2, §9.3; decisions 23, 24, 25, 39, 78). — 6f8eec8
-- [x] U6 Gate M1 again item by item, and gate M0 (decision 82; O-2, O-3; DESIGN §18.2). — at 23f245c: G1.1 345 s, G1.2 155 s, G1.3 450 s, G1.4 0.5 s, all PASS; M0 PASS; no finding (all under 10 minutes)
-- [x] U7 Final report (`meta/FINAL-REPORT-10.md`). — this commit
+- [ ] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, HF-008 in `meta/findings/FINDINGS.md`.
+- [ ] U1 The derived exposure records (decision 84; decisions 78, 81; O-4; DESIGN §9.2, §9.3, §16.1, §16.2; REVIEW-10 note 3).
+- [ ] U2 Dormancy, return and displacement on the adjusted measure (O-11, O-12; decisions 85, 87; decisions 62, 63, 68; DESIGN §10.3).
+- [ ] U3 Admission on the adjusted measure and the candidates file (O-11 to O-13; decisions 86, 87; decisions 48, 63, 68, 73, 79 (b); DESIGN §10.3, §4.1).
+- [ ] U4 The table's adjusted figures (O-13; decision 88; decisions 30, 39, 41, 60, 71; DESIGN §10.4, §8).
+- [ ] U5 The register of return readers and its audit (O-16, O-18; decision 89).
+- [ ] U6 G1.3 on the adjusted measure, gate M1 item by item, and gate M0 (O-15, O-2, O-3; decisions 74, 90; DESIGN §18.2, §18.3 (M1)).
+- [ ] U7 Final report (`meta/FINAL-REPORT-11.md`).

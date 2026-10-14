@@ -95,3 +95,5 @@
 - 2026-10-14 mission 10 U5 done 6f8eec8: paper.adjusted (O-4, decision 81), computed on call, nothing stored, read by nothing; 13 tests in tests/test_exposure.py; check green 3/3.
 - 2026-10-14 mission 10 U6 done at 23f245c: check green 3/3; gate M1 item by item G1.1 PASS 345 s, G1.2 PASS 155 s, G1.3 PASS 450 s, G1.4 PASS 0.5 s; gate M0 PASS 248 s; every item under 10 minutes (O-3 met on this machine), no finding filed.
 - 2026-10-14 mission 10 U7 done: final report meta/FINAL-REPORT-10.md; gate M1 item by item all PASS under 10 minutes (O-3), gate M0 PASS; D-007 answered (decision 77); no new finding; mission finished.
+2026-10-14T02:40:34.930Z  consult 0mv7hxlzd-ammr (architect done) on aux.done of aux job 0mv7gfmo3-f3gn: VERDICT: next kit mission-11-kit
+- 2026-10-14 mission 11 U0: plan written (S2.0b, units U1-U7, base c3a3f1d); HF-008 recorded (REVIEW-10 note 7, decision 90 (d)); next U1.

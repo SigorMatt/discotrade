@@ -479,6 +479,26 @@ What this project does meanwhile: nothing in product code.
 
 Status: open
 
+### HF-008 — concurrent per-commit reviewers push `./scripts/check` near the tool's 20-minute cap
+
+Severity: low · Component: the review protocol (`meta/REVIEW-PROTOCOL.md`
+and hands' templates) and the agent tool's 20-minute foreground cap
+(HF-006) · Found: 2026-10-14, REVIEW-10 (`hands:` note 7), recorded by
+mission 11 U0 (decision 90 (d)).
+
+Symptom. With five per-commit review sub-agents running at once on a
+four-core machine, `./scripts/check` took 906 to 944 s a run, near the
+20-minute cap a foreground call has, and one run had to be split.
+
+Direction (for the hands Project). The review protocol should say
+whether per-commit reviewers may run concurrently, and if so how many on
+how many cores, so that a `./scripts/check` run stays well inside the
+cap.
+
+What this project does meanwhile: nothing in product code.
+
+Status: open
+
 D-004 status (appended 2026-10-12, mission 6 U0): Status: answered meta/decisions/decisions-2026-10-12.md (item 41)
 
 D-005 status (appended 2026-10-12, mission 6 U0): Status: answered meta/decisions/decisions-2026-10-12.md (item 43)
