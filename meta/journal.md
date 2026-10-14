@@ -100,3 +100,4 @@
 - 2026-10-14 mission 11 U1 done 93c2f91: derived exposure records staged with the day, paper.adjusted reads them (decision 84); 16 new tests; one existing test renamed/changed under decision 84; G1.3 30 days 1.341->1.469 s/day; check green 3/3.
 - 2026-10-14 mission 11 U2 done 489e749: lifecycle steps 2 and 3 on the adjusted Sharpe, rows carry adjusted and plain (decisions 85, 87); ledger.py changed outside the file list, finding D-010 filed (open); G1.3 30 days 1.474->1.486 s/day; check green 3/3.
 - 2026-10-14 mission 11 U3 done 5962663: admission on adjusted_t["sharpe"], full cell on own adjusted series over T, trial and lifecycle row keys (decisions 86, 87); ledger.py and cli.py outside the list, noted under D-010; check green 3/3.
+- 2026-10-14 mission 11 U4 done 3ff738a: table approach rows gain adjusted_sharpe, adjusted_sharpe_2x, avg_position, adjusted_admission_score (decision 88); deflated figures plain; G1.3 30 days 1.471->1.546 s/day; check green 3/3.
