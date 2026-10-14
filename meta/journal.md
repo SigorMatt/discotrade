@@ -101,3 +101,4 @@
 - 2026-10-14 mission 11 U2 done 489e749: lifecycle steps 2 and 3 on the adjusted Sharpe, rows carry adjusted and plain (decisions 85, 87); ledger.py changed outside the file list, finding D-010 filed (open); G1.3 30 days 1.474->1.486 s/day; check green 3/3.
 - 2026-10-14 mission 11 U3 done 5962663: admission on adjusted_t["sharpe"], full cell on own adjusted series over T, trial and lifecycle row keys (decisions 86, 87); ledger.py and cli.py outside the list, noted under D-010; check green 3/3.
 - 2026-10-14 mission 11 U4 done 3ff738a: table approach rows gain adjusted_sharpe, adjusted_sharpe_2x, avg_position, adjusted_admission_score (decision 88); deflated figures plain; G1.3 30 days 1.471->1.546 s/day; check green 3/3.
+- 2026-10-14 mission 11 U5 done 95650a4: tests/fixtures/return_readers.toml (24 entries: producer 14, display 5, adjusted 4, timing_gross 1; pending S4.1 x3) and tests/test_return_readers.py; no finding; check green 3/3.

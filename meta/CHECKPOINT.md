@@ -7,12 +7,13 @@ U2 489e749 (steps 2-3 adjusted; G1.3 30 days 1.474->1.486 s/day; ledger.py gaine
 finding D-010 open; 7 existing lifecycle tests changed under decisions 85, 87), U3 5962663 (admission on
 adjusted_t; trial keys; ledger.py TRIAL_FIGURES and cli.py loads the track before --candidates, noted under
 D-010; G1.3 expected red on new keys until U6), U4 3ff738a (table adjusted columns; G1.3 30 days 1.471->1.546 s/day;
-2 existing table tests changed under decision 88).
+2 existing table tests changed under decision 88), U5 95650a4 (register 24 entries, 3 pending S4.1; no finding).
 
-Unit in progress: U5 The register of return readers and its audit (O-16, O-18; decision 89).
-Intent: tests/fixtures/return_readers.toml plus an ast audit test under tests/; three pending S4.1 entries.
-Done means: one pushed commit; audit passes; three named wrong changes seen to fail; body lists every entry;
-./scripts/check green three times.
+Unit in progress: U6 G1.3 on the adjusted measure, gate M1 item by item, and gate M0 (O-15; decision 90).
+Intent: g1_lifecycle.jsonl and tests/gates/test_g1_3_lifecycle.py only, as decision 90 (a) says; then at the
+pushed tip check x3, gate M1 G1.1..G1.4 and gate M0, each its own 20-minute foreground call, outputs verbatim.
+Done means: one pushed commit; every G1.3 transition still occurs; the wrong change (plain net_1x in step 2)
+seen red on G1.3; gate outputs and times kept for the report; finding if an item passes above 10 minutes.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-14-m11 (83-90) and the owner's
 decisions-2026-10-13-owner (O-N wins) bind; decisions 1-82 still bind; no value of a frozen file changes
