@@ -44,7 +44,37 @@ passing staged records must pass `overlay` too) is taken by mission 11
 (step S2.0b, unit U1; decisions-2026-10-14-m11 item 84), its `hands:`
 note 7 is recorded as a hands finding by mission 11 U0 (item 90), and the
 REVIEW-9 note on decision 68 (b) with the day's admission doing the
-displacing by mission 11 (unit U3; item 86).
+displacing by mission 11 (unit U3; item 86). REVIEW-11 has no blocker;
+its should-fix 1 (`cli._backtest_result` unregistered) is taken by
+mission 12 (step S2.1, unit U1; decisions-2026-10-14-m12 item 92), with
+its note 7's list subscript and `replay._adjusted`, and finding D-010
+(its note 3) by mission 12 U1 (item 93).
+
+- REVIEW-11 notes, not carried as work unless named: decision 84 said
+  the existing tests of `tests/test_exposure.py` stay unchanged while it
+  replaced what one of them asserted, and the builder changed that test
+  without filing a finding (a kit that changes what a test asserts names
+  the test; the briefs since say so); `paper.adjusted` does not refuse a
+  day missing from `positions.parquet` while `unit.parquet` holds it
+  (decision 78's heal repairs it the next day; the step that next touches
+  `paper.py`'s records may refuse it); the U3 "not rewritten" test writes
+  the parent's format by hand; decision 79 (b)'s replay test passes on the
+  plain measure too; G1.3 tells the two measures apart only through
+  dormancy and return, every scenario line's adjusted admission score
+  equalling its plain one, and step 3's return by displacing the weakest
+  is not driven by G1.3 (step S3.2 or S4.1, whichever next touches the
+  scenario, may give one admission line a non-zero `avg_position`); the
+  rest of note 7 (the audit's module-wide match of the name `paper`, the
+  one-hop call through `_figures` counted where only the plain figure is
+  used, an uncalled nested function counted) and note 8 (`paper.portfolio`
+  and `paper._series` are `producer` where O-18's table says display and
+  `stage3_money` for the one condition) are step S4.1's, which next
+  changes the register and builds the stage-3 reader; `table.build`'s
+  `positions()` closure duplicates `paper._read_staged`, and the test
+  helpers `own_journal`/`own_unit` cache by state path (the step that next
+  touches `table.py`); G1.3 went from 450 s to 518 s and the per-day cost
+  grows with history unprofiled (step S4.3, whose replays are longest,
+  measures it if an M4 item nears 10 minutes).
 
 - REVIEW-10 notes, not carried as work unless named: a month file changed
   on disk during a day run after its first verified read is served from
@@ -92,7 +122,8 @@ displacing by mission 11 (unit U3; item 86).
 
 - Finding D-006 (decision 44): each instrument's evaluation gets a
   freshly loaded strategy, and the cheating strategy of G0.2 is driven
-  through the multi-instrument path. Step S2.1, with the sandbox's runner.
+  through the multi-instrument path. Step S2.1, with the sandbox's runner:
+  taken by mission 12 (unit U3; decisions-2026-10-14-m12 item 95).
 - REVIEW-5 notes, not carried as work; the step that next touches the
   file may take them: `rolls.py` reads, through `store.last_n`, up to 24
   bars before a roll that may lie before `trusted_from`, and uses only

@@ -1,1 +1,1 @@
-plan: mission 11 kit (S2.0b, adjusted lifecycle, reader register, G1.3)
+plan: mission 12 kit (S2.1, static check, sandbox, validation, grid)
