@@ -8,13 +8,11 @@ U2 c702fc4 (container.py, sandbox/Dockerfile, tag discotrade-sandbox:20fa1f2225a
 U3 0823a2d (probe, selftest, doctor --live sandbox; tag discotrade-sandbox:edeee6d2120e; check 3/3 697-738 s).
 Blocked: U4 (two attempts stopped by a safety classifier before writing fixtures; tree clean at 40fc911).
 
-Unit in progress: U5 (next; independent of U4).
-Intent: the day loop, replay and journal recompute obtain approach targets from one sandbox job per approach and day
-(mode positions), `--sandbox container|process` (process default when all sources synthetic, refused otherwise,
-exit 2), job error retires the approach, harness error fails the day; journal byte-identical on G1.3's first 30
-days at parent and commit; speed figures (decision 105).
-Done means: the U5 gate of the brief holds, three seen-to-fail changes made and reverted, ./scripts/check green 3/3
-with container tests run, one commit pushed.
+U5 bb27c90 (approaches behind the sandbox; fork server; findings D-011, D-012; check 3/3 970-1422 s under load).
+
+Unit in progress: none. U6 is blocked: G2.1 needs U4's hostile suite, and G1.3 is expected to fail on the retire
+reason (D-011) until the architect answers. U7 waits on U6. Next: the architect answers D-011 and D-012 and
+decides how U4 is to be built; then U4, U6, U7.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-14-m13 (100-108) bind; the owner's
 decisions-2026-10-13-owner (O-N wins); decisions 1-99 still bind (48 replaced by 105 for the day loop, U5 only);
