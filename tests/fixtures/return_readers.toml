@@ -1,0 +1,154 @@
+# The register of return readers (owner decisions O-16, O-18; decision
+# 2026-10-14 89). One [[reader]] per function under src/discotrade/:
+# module (dotted), function (qualified within the module: Class.method,
+# outer.inner for a nested function), class (producer, display,
+# stage3_money, adjusted or timing_gross; a function of two classes under the
+# stricter), note (one line). pending = "S4.1" only on the three readers of
+# decision 89 (c). Audited by tests/test_return_readers.py.
+
+[[reader]]
+module = "discotrade.backtest"
+function = "score"
+class = "producer"
+note = "computes a subject's gross, net_1x and net_2x rows on a window; decides nothing"
+
+[[reader]]
+module = "discotrade.cli"
+function = "_print_backtest"
+class = "display"
+note = "prints the backtest command's plain DESIGN 8 metrics; nothing selects on them"
+
+[[reader]]
+module = "discotrade.journal"
+function = "_columns"
+class = "producer"
+note = "builds the journal row columns gross, net_1x, net_2x for storage; decides nothing"
+
+[[reader]]
+module = "discotrade.lifecycle"
+function = "_sharpe_on"
+class = "display"
+note = "the plain Sharpe of paper net_1x written as `plain` beside the deciding figure (decision 87); selects nothing"
+
+[[reader]]
+module = "discotrade.lifecycle"
+function = "_figures"
+class = "adjusted"
+note = "Sharpe at 1x of paper.adjusted net_1x over the window, the figure steps 2, 3 and admission compare (O-11, O-12)"
+
+[[reader]]
+module = "discotrade.lifecycle"
+function = "step_rows"
+class = "adjusted"
+note = "dormancy, return and displacement on the adjusted Sharpe via _figures (decision 85, O-11, O-12)"
+
+[[reader]]
+module = "discotrade.lifecycle"
+function = "admit"
+class = "adjusted"
+note = "admission score adjusted_t sharpe, weakest of the cell via _figures; reads metrics_t sharpe as the plain row figure (decision 86)"
+
+[[reader]]
+module = "discotrade.metrics"
+function = "daily_series"
+class = "producer"
+note = "sums legs into the daily net_1x and net_2x series; decides nothing"
+
+[[reader]]
+module = "discotrade.metrics"
+function = "_breakeven_cost"
+class = "producer"
+note = "computes breakeven_cost from summed gross over turnover; decides nothing"
+
+[[reader]]
+module = "discotrade.metrics"
+function = "compute"
+class = "producer"
+note = "computes the DESIGN 8 metrics from net_1x and net_2x; decides nothing"
+
+[[reader]]
+module = "discotrade.metrics"
+function = "total_return"
+class = "producer"
+note = "computes the sum of a daily return series; decides nothing"
+
+[[reader]]
+module = "discotrade.metrics"
+function = "sharpe"
+class = "producer"
+note = "computes the annualised Sharpe of a daily return series; decides nothing"
+
+[[reader]]
+module = "discotrade.metrics"
+function = "max_drawdown"
+class = "producer"
+note = "computes the maximum drawdown of a daily return series; decides nothing"
+
+[[reader]]
+module = "discotrade.paper"
+function = "unit_bars"
+class = "producer"
+note = "computes an instrument's unit-position gross per bar for the exposure records; decides nothing"
+
+[[reader]]
+module = "discotrade.paper"
+function = "build"
+class = "producer"
+note = "computes the subjects' paper rows (gross, net_1x, net_2x) from the journal; decides nothing"
+
+[[reader]]
+module = "discotrade.paper"
+function = "_series"
+class = "producer"
+note = "computes one portfolio row as the mean of its members' gross, net_1x, net_2x; decides nothing"
+
+[[reader]]
+module = "discotrade.paper"
+function = "portfolio"
+class = "producer"
+note = "computes the portfolio and portfolio_clean series from the members' rows; decides nothing"
+
+[[reader]]
+module = "discotrade.paper"
+function = "adjusted"
+class = "producer"
+note = "computes the exposure-adjusted series (O-4, decision 81) that adjusted readers call; decides nothing"
+
+[[reader]]
+module = "discotrade.replay"
+function = "_candidate"
+class = "producer"
+note = "reads a scripted candidate's metrics_t and adjusted_t into a Candidate; decides nothing"
+
+[[reader]]
+module = "discotrade.stats"
+function = "rank_persistence"
+class = "timing_gross"
+pending = "S4.1"
+note = "rank persistence sums paper net_1x per block; O-5 moves it to gross timing return in S4.1 (O-10)"
+
+[[reader]]
+module = "discotrade.stats"
+function = "control_moments"
+class = "adjusted"
+pending = "S4.1"
+note = "moments of the random controls' plain paper net_1x Sharpes; O-7 adjusts it in S4.1 (decision 88, O-10)"
+
+[[reader]]
+module = "discotrade.table"
+function = "_day_sums"
+class = "display"
+note = "sums journal gross and turnover per day for the table's breakeven_cost; nothing selects on it"
+
+[[reader]]
+module = "discotrade.table"
+function = "_record"
+class = "display"
+note = "the table's plain paper record: Sharpe at 1x and 2x and drawdown of paper net_1x, net_2x"
+
+[[reader]]
+module = "discotrade.table"
+function = "build.approach_row"
+class = "adjusted"
+pending = "S4.1"
+note = "computes S, E_N, excess on plain paper net_1x (O-7 in S4.1); also the display record, admission scores, adjusted columns"
