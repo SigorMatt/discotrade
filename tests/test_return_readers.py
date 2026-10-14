@@ -15,9 +15,11 @@ The audit walks every ``.py`` file under ``src/discotrade/`` with ``ast`` and
 finds every function, method and nested function whose own body holds one
 of decision 89 (b)'s reference shapes:
 
-- one of the string constants ``REFERENCE_STRINGS`` as a subscript (the
-  whole subscript), a keyword (the value of a keyword argument of a call,
-  or the default of a parameter) or a call argument (a positional one);
+- one of the string constants ``REFERENCE_STRINGS`` anywhere in the body:
+  in a tuple, list, set or dict literal, a comparison, a subscript of any
+  kind, a default, an argument, a generator or a comprehension (decision
+  2026-10-14 92, widening decision 89 (b)'s subscript, keyword and call
+  argument after REVIEW-11 should-fix 1);
 - the attribute ``sharpe``, ``total_return`` or ``max_drawdown`` of the
   module ``discotrade.metrics`` (``metrics.sharpe`` under the name the
   module imports it by), or one of those names read where the module
@@ -114,22 +116,9 @@ class Module:
     def shapes(self, node: ast.AST) -> list[str]:
         """The reference shapes ``node`` itself is (not its children)."""
         found: list[str] = []
-
-        def constant(value: ast.AST | None, how: str) -> None:
-            if (isinstance(value, ast.Constant) and isinstance(value.value, str)
-                    and value.value in REFERENCE_STRINGS):
-                found.append(f'"{value.value}" {how}')
-
-        if isinstance(node, ast.Subscript):
-            constant(node.slice, "subscript")
-        if isinstance(node, ast.keyword):
-            constant(node.value, "keyword")
-        if isinstance(node, ast.arguments):
-            for default in [*node.defaults, *node.kw_defaults]:
-                constant(default, "keyword")
-        if isinstance(node, ast.Call):
-            for arg in node.args:
-                constant(arg, "argument")
+        if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                and node.value in REFERENCE_STRINGS):
+            found.append(f'"{node.value}" constant')
         if isinstance(node, ast.Attribute):
             if node.attr in COLUMN_ATTRIBUTES:
                 found.append(f".{node.attr}")
@@ -309,16 +298,62 @@ def test_each_reference_shape_is_found(tmp_path, body):
 
 def test_a_parameter_default_is_a_keyword(tmp_path):
     src = _plant(tmp_path, {"a.py": 'def f(paper, *, column="net_1x"):\n    return paper\n'})
-    assert modules(src)["discotrade.a"].readers() == {"f": ['"net_1x" keyword']}
+    # Decision 2026-10-14 92: one label for a constant wherever it stands.
+    assert modules(src)["discotrade.a"].readers() == {"f": ['"net_1x" constant']}
+
+
+@pytest.mark.parametrize("body", [
+    'x = sum(r[c] for c in ("net_1x", "net_2x"))',     # a tuple of a generator (REVIEW-11)
+    'x = [r[c] for c in ["gross"]]',                   # a list, a comprehension
+    'x = {c for c in {"max_drawdown"}}',               # a set
+    'x = {"sharpe": 1}',                               # a dict key
+    'x = {"k": "total_return"}',                       # a dict value
+    'x = "sharpe" in r',                               # a comparison
+    'x = r[["net_1x", "net_2x"]]',                     # a list subscript (REVIEW-11 note 7)
+    'x = r[0, "gross"]',                               # a tuple subscript
+    'x = r.get("sharpe")',                             # a call argument
+    'x = lambda c="net_2x": c',                        # a lambda's default
+    'x = {c: r for c in ("gross",)}',                  # a dict comprehension
+])
+def test_a_string_constant_is_found_anywhere_in_a_function_body(tmp_path, body):
+    # Decision 2026-10-14 92: the six constants anywhere in a function's body.
+    src = _plant(tmp_path, {"a.py": f"def f(r):\n    {body}\n    return x\n"})
+    assert list(modules(src)["discotrade.a"].readers()) == ["f"]
 
 
 def test_other_shapes_are_not_found(tmp_path):
+    # Decision 2026-10-14 92 changes this test: ``{"sharpe": 1}`` and
+    # ``"sharpe" in m`` inside a function are now found; a constant at module
+    # or class level is in no function, and ``m.sharpe`` on anything but the
+    # metrics module, another string, and a function named ``sharpe`` are not
+    # reference shapes.
     src = _plant(tmp_path, {"a.py": 'NAMES = ("net_1x",)\n'
+                                    'class K:\n    COLS = ["gross", "net_2x"]\n'
                                     'def f(m):\n'
-                                    '    d = {"sharpe": 1}\n'
-                                    '    return "sharpe" in m, m.sharpe, d, NAMES\n'
+                                    '    d = {"sharpe_2x": 1, "net": "gross_x"}\n'
+                                    '    return "Sharpe" in m, m.sharpe, d, NAMES\n'
                                     'def sharpe(d):\n    return d\n'})
     assert modules(src)["discotrade.a"].readers() == {}
+
+
+def test_a_constant_belongs_to_the_innermost_function(tmp_path):
+    src = _plant(tmp_path, {"a.py": "def outer(r):\n"
+                                    "    def inner():\n"
+                                    "        return [r[c] for c in ('net_1x',)]\n"
+                                    "    return inner\n"})
+    assert modules(src)["discotrade.a"].readers() == {"outer.inner": ['"net_1x" constant']}
+
+
+def test_the_readers_review_11_named_are_registered():
+    # REVIEW-11 should-fix 1 and note 7; decision 2026-10-14 92 (O-18).
+    classes = {(e["module"], e["function"]): e["class"] for e in read_register(REGISTER)}
+    assert classes[("discotrade.cli", "_backtest_result")] == "display"
+    assert classes[("discotrade.replay", "_adjusted")] == "producer"
+    found = modules(SRC)
+    assert "_backtest_result" in found["discotrade.cli"].readers()
+    # ``replay._adjusted`` names its keys through module constants, which no
+    # function holds, so the audit does not find it; decision 92 registers it.
+    assert "_adjusted" in found["discotrade.replay"].functions
 
 
 def test_methods_and_nested_functions_are_qualified(tmp_path):
@@ -332,7 +367,7 @@ def test_methods_and_nested_functions_are_qualified(tmp_path):
 
 def test_an_unregistered_reader_fails(tmp_path):
     src = _plant(tmp_path, {"a.py": 'def f(frame):\n    return frame["net_1x"]\n'})
-    assert audit(src, []) == ['unregistered: discotrade.a.f holds "net_1x" subscript']
+    assert audit(src, []) == ['unregistered: discotrade.a.f holds "net_1x" constant']
     assert audit(src, [_entry("discotrade.a", "f", "producer")]) == []
 
 

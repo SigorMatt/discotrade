@@ -19,6 +19,12 @@ class = "display"
 note = "prints the backtest command's plain DESIGN 8 metrics; nothing selects on them"
 
 [[reader]]
+module = "discotrade.cli"
+function = "_backtest_result"
+class = "display"
+note = "the backtest command's output: plain DESIGN 8 metrics and per-instrument net_1x, net_2x totals; nothing selects on them (O-18, decision 92)"
+
+[[reader]]
 module = "discotrade.journal"
 function = "_columns"
 class = "producer"
@@ -119,6 +125,12 @@ module = "discotrade.replay"
 function = "_candidate"
 class = "producer"
 note = "reads a scripted candidate's metrics_t and adjusted_t into a Candidate; decides nothing"
+
+[[reader]]
+module = "discotrade.replay"
+function = "_adjusted"
+class = "producer"
+note = "checks a scripted candidate's adjusted_t figures and avg_position against the track; decides nothing (decision 92)"
 
 [[reader]]
 module = "discotrade.stats"

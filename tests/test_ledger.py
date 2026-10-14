@@ -17,8 +17,21 @@ TRACK = "test_mixed"
 
 
 def lifecycle_row(k, reason="dormant"):
-    return {"date": date(2019, 6, 10 + k).isoformat(), "id": f"a{k:012x}", "from": "live",
-            "to": "dormant", "reason": reason}
+    """A lifecycle row; one of the four reasons of decision 2026-10-14 87
+    carries its two figures, required on append (decision 93)."""
+    row = {"date": date(2019, 6, 10 + k).isoformat(), "id": f"a{k:012x}", "from": "live",
+           "to": "dormant", "reason": reason}
+    if reason in ("admitted", "displaced", "dormant", "returned"):
+        row.update({"adjusted": -0.5 + k, "plain": 0.25 * k})
+    return row
+
+
+def trial_row(day="2019-06-10"):
+    """A trial row with every key of decision 62 and the two figures of
+    decision 86 (d), required on append (decision 93)."""
+    row = {k: None for k in ledger.KEYS[TRIALS]}
+    row.update({"date": day, "adjusted_t": None, "adjusted_w": None})
+    return row
 
 
 def call_row(k, outcome="trial"):
@@ -119,17 +132,20 @@ def test_the_keys_of_each_ledger(tmp_path):
 
 
 @pytest.mark.parametrize("reason", ["admitted", "displaced", "dormant", "returned"])
-def test_a_lifecycle_row_of_four_reasons_may_carry_adjusted_and_plain(tmp_path, reason):
-    # Decision 2026-10-14 87: both keys, each a number or null; one alone refused.
+def test_a_lifecycle_row_of_four_reasons_must_carry_adjusted_and_plain(tmp_path, reason):
+    # Decisions 2026-10-14 87 and 93: both keys, each a number or null; none,
+    # or one alone, refused on append.
     row = {**lifecycle_row(0, reason), "adjusted": -1.25, "plain": None}
     assert ledger.append(tmp_path, TRACK, LIFECYCLE, [row]) == [row]
     assert ledger.read(tmp_path, TRACK, LIFECYCLE) == [row]
     text = ledger.ledger_path(tmp_path, TRACK, LIFECYCLE).read_text(encoding="utf-8")
     assert '"adjusted":-1.25' in text and '"plain":null' in text
-    for half in ({**lifecycle_row(1, reason), "adjusted": 1.0},
-                 {**lifecycle_row(1, reason), "plain": 1.0}):
+    full = lifecycle_row(1, reason)
+    for drop in (("adjusted",), ("plain",), ("adjusted", "plain")):
+        short = {k: v for k, v in full.items() if k not in drop}
         with pytest.raises(LedgerError, match="keys"):
-            ledger.append(tmp_path, TRACK, LIFECYCLE, [half])
+            ledger.append(tmp_path, TRACK, LIFECYCLE, [short])
+    assert ledger.read(tmp_path, TRACK, LIFECYCLE) == [row]
 
 
 @pytest.mark.parametrize("reason", ["retired_dormant", "failure: boom"])
@@ -137,24 +153,53 @@ def test_a_lifecycle_row_of_another_reason_carries_neither_figure(tmp_path, reas
     row = {**lifecycle_row(0, reason), "adjusted": 1.0, "plain": 1.0}
     with pytest.raises(LedgerError, match="keys"):
         ledger.append(tmp_path, TRACK, LIFECYCLE, [row])
+    for half in ({**lifecycle_row(0, reason), "adjusted": 1.0},
+                 {**lifecycle_row(0, reason), "plain": 1.0}):
+        with pytest.raises(LedgerError, match="keys"):
+            ledger.append(tmp_path, TRACK, LIFECYCLE, [half])
     assert not (tmp_path / "ledger").exists()
+    assert ledger.append(tmp_path, TRACK, LIFECYCLE, [lifecycle_row(0, reason)]) == \
+        [lifecycle_row(0, reason)]
 
 
-def test_a_trial_row_may_carry_adjusted_t_and_adjusted_w_both_never_one(tmp_path):
-    # Decision 2026-10-14 86 (d): the trial row's adjusted figures, beside
-    # metrics_t and metrics_w; adjusted_w null for a candidate without W.
+def test_a_trial_row_must_carry_adjusted_t_and_adjusted_w(tmp_path):
+    # Decisions 2026-10-14 86 (d) and 93: the trial row's adjusted figures,
+    # beside metrics_t and metrics_w; adjusted_w null for a candidate without
+    # W; none, or one alone, refused on append.
     assert ledger.TRIAL_FIGURES == ("adjusted_t", "adjusted_w")
-    trial = {k: None for k in ledger.KEYS[TRIALS]}
     figures = {"sharpe": 0.5, "sharpe_2x": None, "total_return": 0.01,
                "total_return_2x": 0.005, "avg_position": {"SYNA": 0.25}}
-    row = {**trial, "date": "2019-06-10", "adjusted_t": figures, "adjusted_w": None}
+    row = {**trial_row(), "adjusted_t": figures}
     assert ledger.append(tmp_path, TRACK, TRIALS, [row]) == [row]
     assert ledger.read(tmp_path, TRACK, TRIALS) == [row]
-    for half in ({**trial, "date": "2019-06-11", "adjusted_t": figures},
-                 {**trial, "date": "2019-06-11", "adjusted_w": None}):
+    full = {**trial_row("2019-06-11"), "adjusted_t": figures}
+    for drop in (("adjusted_t",), ("adjusted_w",), ("adjusted_t", "adjusted_w")):
+        short = {k: v for k, v in full.items() if k not in drop}
         with pytest.raises(LedgerError, match="keys"):
-            ledger.append(tmp_path, TRACK, TRIALS, [half])
+            ledger.append(tmp_path, TRACK, TRIALS, [short])
     assert ledger.read(tmp_path, TRACK, TRIALS) == [row]
+
+
+@pytest.mark.parametrize("name, old, new", [
+    (LIFECYCLE,
+     {"date": "2019-06-07", "id": "a000000000009", "from": "live", "to": "dormant",
+      "reason": "dormant"},
+     lifecycle_row(0)),
+    (TRIALS, {**{k: None for k in ledger.KEYS[TRIALS]}, "date": "2019-06-07"}, trial_row()),
+])
+def test_a_ledger_holding_a_line_written_before_the_figures_is_still_appended_to(
+        tmp_path, name, old, new):
+    # Decision 2026-10-14 93 with I-5: the check runs on append only; a line
+    # already on disk without the figures is neither read against it nor
+    # rewritten.
+    path = ledger.ledger_path(tmp_path, TRACK, name)
+    path.parent.mkdir(parents=True)
+    before = (ledger.line(old) + "\n").encode("utf-8")
+    path.write_bytes(before)
+    assert ledger.append(tmp_path, TRACK, name, [new]) == [new]
+    data = path.read_bytes()
+    assert data.startswith(before) and data == before + (ledger.line(new) + "\n").encode()
+    assert ledger.read(tmp_path, TRACK, name) == [old, new]
 
 
 def test_the_call_writer_takes_the_outcomes_of_10_2(tmp_path):
@@ -170,7 +215,7 @@ def test_the_call_writer_takes_the_outcomes_of_10_2(tmp_path):
 
 def test_a_float_that_is_not_finite_is_written_as_null_and_dates_as_iso(tmp_path):
     row = {**lifecycle_row(0), "date": date(2019, 6, 10)}
-    trial = {k: None for k in ledger.KEYS[TRIALS]}
+    trial = trial_row()
     trial.update({"date": date(2019, 6, 10), "metrics_t": {"sharpe": float("nan"),
                                                            "trades": 3, "x": float("inf")}})
     ledger.append(tmp_path, TRACK, LIFECYCLE, [row])

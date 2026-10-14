@@ -8,21 +8,25 @@ the state directory hold one JSON object per line, keys sorted, no whitespace
   ``cutoff``, ``code_sha256``, ``profile_version``, ``cost_model``,
   ``config_hash``, ``grid`` (the grid and its results on W), ``params``,
   ``metrics_w``, ``metrics_t``, ``admitted``, ``reason`` and ``displaced``
-  (decision 62); a row may also hold both of ``TRIAL_FIGURES``
+  (decision 62); a row appended also holds both of ``TRIAL_FIGURES``
   (``adjusted_t``, ``adjusted_w``: the exposure-adjusted figures on T and W
-  beside ``metrics_t`` and ``metrics_w``, decision 2026-10-14 86 (d)), never
-  one alone (rows written before them are read as they are, I-5);
-- ``lifecycle``: ``date``, ``id``, ``from``, ``to``, ``reason``; a row whose
-  reason is one of ``FIGURE_REASONS`` (``admitted``, ``displaced``,
-  ``dormant``, ``returned``) may also hold both of ``FIGURES``
+  beside ``metrics_t`` and ``metrics_w``, decision 2026-10-14 86 (d)),
+  required (decision 2026-10-14 93);
+- ``lifecycle``: ``date``, ``id``, ``from``, ``to``, ``reason``; a row
+  appended whose reason is one of ``FIGURE_REASONS`` (``admitted``,
+  ``displaced``, ``dormant``, ``returned``) also holds both of ``FIGURES``
   (``adjusted``, ``plain``: the Sharpe at 1x that decided it and the plain
-  one beside it, decision 2026-10-14 87), never one alone; a row of another
-  reason holds neither (rows written before them are read as they are, I-5);
+  one beside it, decision 2026-10-14 87), required (decision 2026-10-14 93);
+  a row of another reason holds neither;
 - ``calls``: ``call``, ``date``, ``cell``, ``model``, ``attempt``,
   ``tokens_in``, ``tokens_out``, ``outcome`` (``trial``, ``duplicate``,
   ``invalid:<stage>``, ``provider_error`` or ``budget``) and ``response``
   (the response file), DESIGN 10.2's fields under the simplest names; its
   first caller is step S3.2.
+
+The keys are checked on append only: a line already in a ledger (one written
+before the figures were required) is never read against them and never
+rewritten, so a ledger holding it is still appended to (I-5; decision 93).
 
 A value is written as JSON: a date in ISO form, a tuple as a list, a numpy
 scalar as the Python number, a float that is not finite as ``null`` (JSON has
@@ -111,9 +115,9 @@ def line(row: Mapping[str, Any]) -> str:
 
 def _check(name: str, row: Mapping[str, Any]) -> None:
     keys = KEYS[name]
-    if name == LIFECYCLE and row.get("reason") in FIGURE_REASONS and set(FIGURES) <= set(row):
+    if name == LIFECYCLE and row.get("reason") in FIGURE_REASONS:
         keys = (*keys, *FIGURES)
-    if name == TRIALS and set(TRIAL_FIGURES) <= set(row):
+    if name == TRIALS:
         keys = (*keys, *TRIAL_FIGURES)
     if set(row) != set(keys):
         raise LedgerError(f"a {name} row holds the keys {sorted(row)}, not {list(keys)}")

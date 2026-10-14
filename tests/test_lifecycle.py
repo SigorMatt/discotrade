@@ -120,8 +120,17 @@ def steps(state, setup, day, records, failures=None, units=None, positions=None)
     return lifecycle.run_steps(state, setup, day, frame(records), failures or {})
 
 
-def put(state, *rows):
-    ledger.append(state, TRACK, ledger.LIFECYCLE, list(rows))
+def put(state, *rows, track=TRACK):
+    """Seed the ledger with ``rows``; a row of one of decision 87's four
+    reasons given without its figures is written with both ``null``, as
+    decision 2026-10-14 93 requires them on append."""
+    ledger.append(state, track, ledger.LIFECYCLE, [seeded(r) for r in rows])
+
+
+def seeded(r):
+    if r["reason"] in ledger.FIGURE_REASONS and not set(ledger.FIGURES) & set(r):
+        return {**r, "adjusted": None, "plain": None}
+    return r
 
 
 def row(day, aid, frm, to, reason, adjusted=None, plain=None):
@@ -246,8 +255,7 @@ def test_step_3_waits_revival_min_dormant_days_trading_days_not_calendar_days(tm
     assert sorted(synth.calendars) == ["synth_week"]
     a = new(tmp_path, synth, 1)
     since = date(2019, 6, 6)                    # a Thursday
-    ledger.append(tmp_path, "test_synth", ledger.LIFECYCLE,
-                  [row(since, a, "live", "dormant", "dormant")])
+    put(tmp_path, row(since, a, "live", "dormant", "dormant"), track="test_synth")
     records = {a: dated(series(0.002, 40), first=date(2019, 4, 28))}
     calendars = [synth.calendars[n] for n in sorted(synth.calendars)]
 
