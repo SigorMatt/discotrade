@@ -43,8 +43,12 @@ releasing it on success and on failure:
   exactly those of the journal index before ``D`` (a date missing, a date
   extra, no file), rebuilt from the whole journal (decision 2026-10-14 78),
   so that with that rule it equals a rebuild from the whole journal (when
-  the stored rows of the dates it holds are a rebuild's); then the
-  lifecycle's steps 1 to 4 (DESIGN 10.3; decision 63; ``lifecycle.run_steps``)
+  the stored rows of the dates it holds are a rebuild's), and with them the
+  derived exposure records (``paper.update_exposure``, decision 2026-10-14 84:
+  ``R_i(D)`` per instrument and date, row count and summed position per
+  subject, instrument and date) under the same rule, both written to the
+  staging directory (a re-run writes neither); then the lifecycle's steps 1
+  to 4 (DESIGN 10.3; decision 63; ``lifecycle.run_steps``)
   on those paper records (the stored ones on a re-run), their rows appended
   to ``ledger/<track>/lifecycle.jsonl`` in the staging directory (decision
   62). An approach whose evaluation breaks decision 22's contract has its rows
@@ -329,6 +333,8 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
         if result.status == journal.WRITTEN:
             records = paper.update(state_dir, track, len(setup.instruments), d, overlay=staging)
             paper.write(staging, track, records)
+            unit, positions = paper.update_exposure(state_dir, setup, d, overlay=staging)
+            paper.write_exposure(staging, track, unit, positions)
         else:
             records = paper.read(state_dir, track)
         changes = list(lifecycle.run_steps(state_dir, setup, d, records,

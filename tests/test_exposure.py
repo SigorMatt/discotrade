@@ -30,6 +30,7 @@ import shutil
 from datetime import date, timedelta
 
 import pandas as pd
+import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
@@ -347,14 +348,284 @@ def test_net_minus_adjusted_equals_gross_minus_timing_on_every_day(ran, setup):
                 assert eq(mine[column][d] - adj[d], mine["gross"][d] - timing[d])
 
 
-def test_nothing_is_stored_for_it(ran):
-    """Decision 81 (d)'s simplest reading: the series is computed on call, so
-    the day's paper directory holds the paper file only."""
+def test_nothing_is_stored_for_it_but_the_records(ran):
+    """Decision 2026-10-14 84 replaces decision 81 (d)'s simplest reading
+    (nothing stored): the day's paper directory holds the paper file and the
+    two derived exposure records, nothing else."""
     state, _, _ = ran
-    assert sorted(p.name for p in (state / "paper" / TRACK).iterdir()) == [paper.FILE]
+    assert sorted(p.name for p in (state / "paper" / TRACK).iterdir()) == sorted(
+        [paper.FILE, paper.UNIT_FILE, paper.POSITIONS_FILE])
 
 
 def test_a_column_that_is_not_a_paper_value_is_refused(ran, setup):
     state, _, _ = ran
     with pytest.raises(ValueError):
         paper.adjusted(state, setup, SLOT, W, "trades")
+
+
+# ------------------------------------------ the derived exposure records (decision 84)
+#
+# The day stores, under paper/<track>/, ``R_i(D)`` per instrument and journaled
+# date (0 on a date the instrument has no bar) and, per subject, instrument and
+# date, the journal row count and summed position. The tests below compare them
+# with the test's own computation above, run one more day (2019-06-17, a Monday)
+# on copies of the state, and fetch bars past SYNA's next quarterly roll
+# (2019-09-14) on another copy. No random draw is made beyond the day's own.
+
+NEXT = date(2019, 6, 17)
+#: A window holding the staged day, the roll and the weekend.
+W_NEXT = frozenset({ROLL_DAY, *WEEKEND, NEXT})
+LATER_AS_OF = "2019-09-20T00:00:00+00:00"
+
+
+def records_paths(state):
+    return (state / "paper" / TRACK / paper.UNIT_FILE,
+            state / "paper" / TRACK / paper.POSITIONS_FILE)
+
+
+def own_records(state):
+    """``(unit, positions)`` of the state, each a dict keyed as the records are."""
+    unit_path, positions_path = records_paths(state)
+    unit = pq.read_table(unit_path).to_pandas()
+    positions = pq.read_table(positions_path).to_pandas()
+    return ({(r["instrument"], r["date"]): float(r["unit"]) for r in unit.to_dict("records")},
+            {(r["subject"], r["instrument"], r["date"]): (int(r["rows"]), float(r["position"]))
+             for r in positions.to_dict("records")})
+
+
+def own_journaled(state):
+    index = state / "journal" / TRACK / "index.jsonl"
+    return sorted(date.fromisoformat(json.loads(line)["date"])
+                  for line in index.read_text(encoding="utf-8").splitlines())
+
+
+def assert_records_are_the_tests_own(state, setup):
+    rows = own_journal(state)
+    days = own_journaled(state)
+    symbols = sorted(i.symbol for i in setup.instruments)
+    unit, positions = own_records(state)
+    units = own_day_units(state, rows, symbols, set(days))
+    assert set(unit) == {(s, d) for s in symbols for d in days}
+    for (s, d), value in unit.items():
+        assert eq(value, units.get((s, d), 0.0)), (s, d)
+    own = {}
+    for (subject, symbol, d), mine in rows.groupby(["subject", "instrument", "date"]):
+        own[(subject, symbol, d)] = (len(mine), float(mine["position"].sum()))
+    assert set(positions) == set(own)
+    for key, (n, total) in positions.items():
+        assert n == own[key][0] and eq(total, own[key][1]), key
+
+
+def test_the_stored_records_equal_the_tests_own_over_a_roll_and_a_weekend(ran, setup):
+    state, _, _ = ran
+    days = own_journaled(state)
+    assert days == list(DAYS) and ROLL_DAY in days and set(WEEKEND) <= set(days)
+    assert_records_are_the_tests_own(state, setup)
+    unit, _ = own_records(state)
+    assert unit[("SYNA", WEEKEND[0])] == 0.0 and unit[("SYNX", WEEKEND[0])] != 0.0
+
+
+def test_hbar_is_the_summed_position_over_the_summed_rows_not_a_mean_of_daily_means():
+    d1, d2, d3 = date(2019, 6, 13), date(2019, 6, 14), date(2019, 6, 15)
+    positions = pd.DataFrame({
+        "subject": ["s", "s", "s", "t"], "instrument": ["A", "A", "A", "A"],
+        "date": [d1, d2, d3, d1], "rows": [3, 1, 2, 4],
+        "position": [3.0, -1.0, 0.5, 4.0]})
+    got = paper.hbar(positions, "s", ["A", "B"], {d1, d2})
+    assert got == {"A": 2.0 / 4.0, "B": 0.0}       # mean of daily means would be 0.0
+    assert paper.hbar(positions, "s", ["A"], {d1, d2, d3}) == {"A": 2.5 / 6.0}
+    assert paper.hbar(positions, "s", ["A"], {date(2019, 6, 16)}) == {"A": 0.0}
+
+
+@pytest.mark.parametrize("window", [W, W2], ids=["W", "W2"])
+def test_adjusted_from_the_records_equals_the_on_call_computation(ran, setup, window,
+                                                                 monkeypatch):
+    """For an approach, a random slot and a buy-and-hold control: the value
+    from the stored records equals the test's own on-call computation (the
+    parent's), with the on-call functions made unusable."""
+    state, trend, _ = ran
+    symbols = sorted(i.symbol for i in setup.instruments)
+    expected = {}
+    for subject, n, mine in ((trend, len(symbols), symbols), (SLOT, len(symbols), symbols),
+                             ("bh:SYNA", 1, ["SYNA"])):
+        for column in COLUMNS:
+            expected[(subject, column)] = own_series(state, subject, window, column, n, mine)
+
+    def refused(*args, **kwargs):
+        raise AssertionError("computed on call")
+
+    for name in ("unit_bars", "unit_returns", "average_positions"):
+        monkeypatch.setattr(paper, name, refused)
+    monkeypatch.setattr(journal, "read_day", refused)
+    for (subject, column), own in expected.items():
+        got = paper.adjusted(state, setup, subject, window, column)
+        assert list(got.index) == sorted(own)
+        assert subject == "bh:SYNA" or sorted(own) == sorted(window)
+        assert ROLL_DAY in own
+        for d, value in got.items():
+            assert abs(value - own[d][2]) <= 1e-12, (subject, column, d)
+
+
+def test_a_stored_unit_return_equals_the_one_computed_after_a_later_roll(ran, config, setup,
+                                                                        tmp_path):
+    state, _, _ = ran
+    later = tmp_path / "later"
+    shutil.copytree(state, later)
+    assert main(["--state", str(later), "--config", str(config), "--track",
+                 TRACK, "--as-of", LATER_AS_OF, "bars", "fetch", "--day", "2019-09-19"]) == 0
+    rolls = [json.loads(line) for line in
+             (later / "rolls" / TRACK / "SYNA.jsonl").read_text(encoding="utf-8").splitlines()]
+    after = [r for r in rolls if pd.Timestamp(r["ts"]) > pd.Timestamp("2019-06-17", tz="UTC")]
+    assert after, "no later roll of SYNA"
+    unit, _ = own_records(state)
+    syna = next(i for i in setup.instruments if i.symbol == "SYNA")
+    days = own_journaled(state)
+    roll_day = pd.Timestamp(after[0]["ts"]).date()
+    span = {*days, roll_day, roll_day + timedelta(days=3)}
+    whole = paper.unit_returns(later, setup, syna, span)
+    assert roll_day in whole or roll_day + timedelta(days=3) in whole
+    for d in days:
+        one = paper.unit_returns(later, setup, syna, {d}).get(d, 0.0)
+        assert eq(unit[("SYNA", d)], one), d
+        assert eq(unit[("SYNA", d)], whole.get(d, 0.0)), d
+
+
+def test_a_rebuild_from_the_journal_and_the_bars_has_the_same_content_hash(ran, setup):
+    from discotrade.state import content_hash
+
+    state, _, _ = ran
+    unit, positions = paper.rebuild_exposure(state, setup)
+    unit_path, positions_path = records_paths(state)
+    stored_unit = pq.read_table(unit_path).to_pandas()
+    stored_positions = pq.read_table(positions_path).to_pandas()
+    assert content_hash(unit, paper.UNIT_KEY) == content_hash(stored_unit, paper.UNIT_KEY)
+    assert (content_hash(positions, paper.POSITIONS_KEY)
+            == content_hash(stored_positions, paper.POSITIONS_KEY))
+
+
+def run_next(state, config):
+    assert main(["--state", str(state), "--config", str(config), "--track", TRACK,
+                 "--as-of", AS_OF, "run-day", "--day", NEXT.isoformat()]) == 0
+
+
+@pytest.fixture(scope="module")
+def next_day(tmp_path_factory, ran, config, setup):
+    """A copy of ``ran`` that runs 2019-06-17 and then again, recording the
+    staged files each run moves and, inside the new day (from the lifecycle's
+    call, as mission 11's readers are called), ``paper.adjusted`` on the staged
+    records with ``overlay`` and without it."""
+    from discotrade import daily, lifecycle
+
+    state, trend, _ = ran
+    copy = tmp_path_factory.mktemp("xnext") / "state"
+    shutil.copytree(state, copy)
+    moved, seen = [], {}
+    original_move, original_steps = daily._move, lifecycle.run_steps
+
+    def move(staging, state_dir):
+        moved.append(sorted(p.relative_to(staging).as_posix()
+                            for p in staging.rglob("*") if p.is_file()))
+        return original_move(staging, state_dir)
+
+    def steps(state_dir, setup_, day, records, failures, into=None):
+        if not seen:
+            for subject in (trend, SLOT):
+                for column in COLUMNS:
+                    seen[(subject, column)] = paper.adjusted(
+                        state_dir, setup_, subject, W_NEXT, column, records=records,
+                        overlay=into)
+                try:
+                    paper.adjusted(state_dir, setup_, subject, W_NEXT, "gross",
+                                   records=records)
+                except ValueError as exc:
+                    seen[(subject, "without overlay")] = str(exc)
+        return original_steps(state_dir, setup_, day, records, failures, into=into)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(daily, "_move", move)
+        mp.setattr(lifecycle, "run_steps", steps)
+        run_next(copy, config)
+        before = [p.read_bytes() for p in records_paths(copy)]
+        run_next(copy, config)
+    after = [p.read_bytes() for p in records_paths(copy)]
+    return copy, moved, seen, before, after
+
+
+def test_the_records_are_staged_on_a_new_day_only_and_a_rerun_writes_nothing(next_day):
+    _, moved, _, before, after = next_day
+    names = {f"paper/{TRACK}/{paper.UNIT_FILE}", f"paper/{TRACK}/{paper.POSITIONS_FILE}"}
+    assert len(moved) == 2
+    assert names <= set(moved[0])
+    assert not names & set(moved[1])
+    assert before == after
+
+
+def test_after_the_next_day_the_records_are_the_tests_own(next_day, setup):
+    state, _, _, _, _ = next_day
+    assert own_journaled(state)[-1] == NEXT
+    assert_records_are_the_tests_own(state, setup)
+
+
+def test_a_caller_passing_staged_records_and_overlay_reads_the_staged_days_rows(
+        next_day, ran, setup):
+    state, _, seen, _, _ = next_day
+    _, trend, _ = ran
+    symbols = sorted(i.symbol for i in setup.instruments)
+    for subject in (trend, SLOT):
+        assert "overlay" in seen[(subject, "without overlay")]
+        for column in COLUMNS:
+            own = own_series(state, subject, W_NEXT, column, len(symbols), symbols)
+            got = seen[(subject, column)]
+            assert list(got.index) == sorted(own) == sorted(W_NEXT)
+            for d, value in got.items():
+                assert abs(value - own[d][2]) <= 1e-12, (subject, column, d)
+
+
+def _drop_day(path, day):
+    frame = pq.read_table(path).to_pandas()
+    pq.write_table(pa.Table.from_pandas(frame[frame["date"] != day], preserve_index=False,
+                                        schema=pq.read_schema(path)), path)
+
+
+def _add_day(path, day):
+    frame = pq.read_table(path).to_pandas()
+    extra = frame[frame["date"] == frame["date"].max()].copy()
+    extra["date"] = day
+    both = pd.concat([frame, extra], ignore_index=True)
+    pq.write_table(pa.Table.from_pandas(both, preserve_index=False,
+                                        schema=pq.read_schema(path)), path)
+
+
+@pytest.mark.parametrize("damage", ["day removed", "day removed from positions",
+                                    "extra date", "files removed"])
+def test_the_next_day_heals_the_records(ran, config, setup, tmp_path, damage):
+    """Decision 78's rule for the records: a journaled day missing from them, a
+    date the journal index does not name, or no file, is healed by the next day."""
+    from discotrade.state import content_hash
+
+    state = tmp_path / "state"
+    shutil.copytree(ran[0], state)
+    unit_path, positions_path = records_paths(state)
+    if damage == "day removed":
+        _drop_day(unit_path, WEEKEND[1])
+        _drop_day(positions_path, WEEKEND[1])
+    elif damage == "day removed from positions":
+        _drop_day(positions_path, WEEKEND[0])
+    elif damage == "extra date":
+        _add_day(unit_path, date(2019, 6, 11))
+        _add_day(positions_path, date(2019, 6, 11))
+    else:
+        unit_path.unlink()
+        positions_path.unlink()
+    run_next(state, config)
+    assert_records_are_the_tests_own(state, setup)
+    unit, positions = paper.rebuild_exposure(state, setup)
+    assert (content_hash(pq.read_table(unit_path).to_pandas(), paper.UNIT_KEY)
+            == content_hash(unit, paper.UNIT_KEY))
+    assert (content_hash(pq.read_table(positions_path).to_pandas(), paper.POSITIONS_KEY)
+            == content_hash(positions, paper.POSITIONS_KEY))
+
+
+def test_paper_no_longer_calls_the_private_journal_empty():
+    text = (REPO_ROOT / "src" / "discotrade" / "paper.py").read_text(encoding="utf-8")
+    assert "journal._empty" not in text
