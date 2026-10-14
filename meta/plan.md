@@ -25,7 +25,7 @@ Carried items:
 - Decision 48's in-process path in the day loop (decision 105). — taken by U5
 
 - [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, the HF-008 status line in `meta/findings/FINDINGS.md` (decision 108).
-- [ ] U1 REVIEW-12's should-fix items: the runner's error texts and result channel, the static check's order, determinism's sample (decision 101; decisions 94, 95, 98; DESIGN §12.1, §12.2, §12.4, §13.2; I-1, I-8).
+- [x] U1 REVIEW-12's should-fix items: the runner's error texts and result channel, the static check's order, determinism's sample (decision 101; decisions 94, 95, 98; DESIGN §12.1, §12.2, §12.4, §13.2; I-1, I-8). — 6372322 (check 3/3 674-699 s; helper tests/error_texts.py; three test_zz_* replaced by per-test helper checks under 101 (f))
 - [ ] U2 The container backend, its image and `discotrade sandbox build` (decision 102; decisions 47, 95, 96, 97 (a), 98 (c); DESIGN §12.4, §3, §18.1; I-7, I-11, I-13, I-14; REVIEW-12 notes 5 and 6).
 - [ ] U3 The probe, `discotrade sandbox selftest` and `discotrade doctor --live sandbox` (decision 103; decisions 15, 19, 95 (a); DESIGN §12.4, §18.3 G2.3, §19.3 L5; I-11, I-12).
 - [ ] U4 The hostile suite, its rejection pass and its containment pass (decision 104; decisions 94, 98, 101, 102; DESIGN §12.5, §12.1, §12.2, §12.4; I-7, I-14).

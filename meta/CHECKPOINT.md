@@ -2,15 +2,15 @@
 
 Mission: 13 (`meta/BUILDER-13-PROMPT.md`), roadmap step S2.2. Closes milestone M2. Base 9db93b8.
 Container runtime: docker, server Engine 29.1.3 (API 1.52).
-Done: U0 (this plan commit).
+Done: U0 2a216eb, U1 6372322 (error texts via fixed built-in/numpy tuples, private result fd + no_result,
+BaseException caught, static order by attr name position, determinism `called` check; check 3/3 ~675 s).
 
-Unit in progress: U1 (next).
-Intent: REVIEW-12 should-fix 1 to 4 and notes 2 and 3 (decision 101): error texts name only built-in
-exception types and fixed result types; the runner's result on a private descriptor, `no_result`;
-BaseException caught at load and call; static check's first offender by the attribute name's position;
-determinism compares the reverse job's called bars with its sample (harness error); shared error-text helper.
-Done means: the U1 gate of the brief holds, the four "seen to fail" changes were made and reverted,
-./scripts/check green 3/3, one commit pushed.
+Unit in progress: U2 (next).
+Intent: the container backend (sandbox/container.py), its image under sandbox/ pinned by digest with numpy/pandas
+at uv.lock's versions, tag = 12 hex of sha256 over inputs, `discotrade sandbox build`, [sandbox] keys image/pids/
+cpus/tmpfs_bytes(/runtime) in both run.toml, the `container` marker and its skip rule (decision 102).
+Done means: the U2 gate of the brief holds with no container test skipped, the three seen-to-fail changes made and
+reverted, ./scripts/check green 3/3, one commit pushed; image built.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-14-m13 (100-108) bind; the owner's
 decisions-2026-10-13-owner (O-N wins); decisions 1-99 still bind (48 replaced by 105 for the day loop, U5 only);
