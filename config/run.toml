@@ -1,0 +1,9 @@
+# Run settings (DESIGN 3, 12.4; decision 2026-10-14-m12 96). Not one of the
+# frozen files of DESIGN 4.3. Every value here is the project's own choice,
+# not a fact from outside it. tests/fixtures/config/run.toml holds the same values.
+
+[sandbox]
+wall_seconds = 1200.0        # a job's wall-clock limit; the harness kills the child
+cpu_seconds = 1200.0         # CPU-time limit set in the child (RLIMIT_CPU)
+memory_bytes = 2147483648    # address-space limit set in the child (RLIMIT_AS), 2 GiB
+output_bytes = 67108864      # cap on the result read from standard output, 64 MiB

@@ -37,12 +37,13 @@ import numpy as np
 import pandas as pd
 
 from discotrade.backtest import _local_clock, read_window
-from discotrade.config import Calendar, DateRange, Instrument, Track
+from discotrade.config import Calendar, DateRange, Instrument, Track, load_run
 from discotrade.sandbox.runner import ARRAYS, FORMAT, JOB_FILE, MODES, STAGES
 
 __all__ = ["ARRAYS", "FORMAT", "JOB_FILE", "MODES", "STAGES", "JobInstrument", "Sandbox",
            "SandboxError", "SandboxJob", "SandboxLimits", "SandboxRefused", "SandboxResult",
-           "build_job", "job_arrays", "job_doc", "result_from_doc", "write_job"]
+           "build_job", "job_arrays", "job_doc", "limits_from_config", "result_from_doc",
+           "write_job"]
 
 
 class SandboxRefused(ValueError):
@@ -55,11 +56,14 @@ class SandboxRefused(ValueError):
 
 @dataclass(frozen=True)
 class SandboxLimits:
-    """The limits a backend enforces from outside the runner (DESIGN 12.4)."""
+    """The limits a backend enforces from outside the runner (DESIGN 12.4), read
+    from ``[sandbox]`` of ``run.toml`` by :func:`limits_from_config` (decision 96).
+    ``cpu_seconds`` None means the wall-clock limit's value."""
 
     wall_seconds: float
     memory_bytes: int
     output_bytes: int
+    cpu_seconds: float | None = None
 
 
 @dataclass(frozen=True)
@@ -121,14 +125,28 @@ class Sandbox(Protocol):
     def run(self, job: SandboxJob) -> SandboxResult: ...
 
 
+def limits_from_config(config_dir: Path) -> SandboxLimits:
+    """The limits of ``[sandbox]`` in ``<config_dir>/run.toml``; a configuration
+    without the file is refused naming it (``ConfigError``, decision 96)."""
+    s = load_run(config_dir).sandbox
+    return SandboxLimits(wall_seconds=s.wall_seconds, memory_bytes=s.memory_bytes,
+                         output_bytes=s.output_bytes, cpu_seconds=s.cpu_seconds)
+
+
 def build_job(state_dir: Path, track: Track, instruments: Sequence[Instrument],
               calendars: Mapping[str, Calendar], window: DateRange, *,
-              param_sets: Sequence[Mapping[str, Any]], limits: SandboxLimits,
+              param_sets: Sequence[Mapping[str, Any]], limits: SandboxLimits | None = None,
+              config_dir: Path | None = None,
               source: str | None = None, function: Callable[..., Any] | None = None,
               mode: str = "positions",
               samples: Mapping[str, Sequence[int]] | None = None) -> SandboxJob:
     """The job that runs ``source`` (or ``function``) on ``window`` of each of
-    ``instruments``, in their order, under each of ``param_sets``."""
+    ``instruments``, in their order, under each of ``param_sets``. Its limits are
+    ``limits``, or those of ``config_dir``'s ``run.toml`` (exactly one is given)."""
+    if (limits is None) == (config_dir is None):
+        raise ValueError("a job takes its limits from exactly one of limits and config_dir")
+    if limits is None:
+        limits = limits_from_config(Path(config_dir))
     if (source is None) == (function is None):
         raise ValueError("a job carries exactly one of a source text and a function object")
     if mode not in MODES:

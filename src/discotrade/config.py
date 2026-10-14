@@ -807,6 +807,49 @@ def threshold_drift(current: Thresholds, frozen: Thresholds) -> list[str]:
     return problems
 
 
+# --- run settings (DESIGN 3, 12.4; decision 2026-10-14-m12 96) -----------------
+
+#: The run-settings file of a configuration directory. Not frozen (DESIGN 4.3):
+#: it holds how the harness runs, not a value that moves a result.
+RUN_FILE = "run.toml"
+_SANDBOX_KEYS = ("wall_seconds", "cpu_seconds", "memory_bytes", "output_bytes")
+
+
+@dataclass(frozen=True)
+class SandboxSettings:
+    """``[sandbox]`` of ``run.toml``: the limits a sandbox job carries (DESIGN 12.4).
+    ``wall_seconds`` is enforced by the harness, which kills the child;
+    ``cpu_seconds`` and ``memory_bytes`` (address space) are set in the child;
+    ``output_bytes`` caps the result read from its standard output."""
+
+    wall_seconds: float
+    cpu_seconds: float
+    memory_bytes: int
+    output_bytes: int
+
+
+@dataclass(frozen=True)
+class RunConfig:
+    sandbox: SandboxSettings
+
+
+def load_run(config_dir: Path) -> RunConfig:
+    """Load ``<config_dir>/run.toml``. Only the code that builds a sandbox job
+    requires it (decision 96); its absence is refused naming the file."""
+    path = Path(config_dir) / RUN_FILE
+    if not path.is_file():
+        raise ConfigError(f"{path}: no such file; a sandbox job takes its limits from "
+                          f"{RUN_FILE} (DESIGN 3, 12.4)")
+    top = _Table(path, read_toml(path), "", ("sandbox",))
+    s = _Table(path, top.raw("sandbox"), "sandbox.", _SANDBOX_KEYS)
+    return RunConfig(sandbox=SandboxSettings(
+        wall_seconds=s.number("wall_seconds", positive=True),
+        cpu_seconds=s.number("cpu_seconds", positive=True),
+        memory_bytes=s.integer("memory_bytes", low=1),
+        output_bytes=s.integer("output_bytes", low=1),
+    ))
+
+
 # --- frozen config and config/HISTORY.toml (DESIGN 4.3) ------------------------
 
 
@@ -1061,6 +1104,12 @@ def check(config_dir: Path, track_name: str) -> CheckReport:
         f"thresholds: {len(thresholds.values)} values in {len(THRESHOLD_SCHEMA)} tables, "
         f"{len(thresholds.history)} history entries"
     )
+    if (config_dir / RUN_FILE).is_file():  # checked when present; only job building needs it
+        s = load_run(config_dir).sandbox
+        lines.append(
+            f"run: sandbox wall {s.wall_seconds:g} s, cpu {s.cpu_seconds:g} s, "
+            f"memory {s.memory_bytes} bytes, output {s.output_bytes} bytes"
+        )
     history = config_dir / "HISTORY.toml"
     changes = load_changes(history) if history.is_file() else ()
     lines.append(f"history: {len(changes)} changes")
