@@ -11,6 +11,19 @@ with the production ``config/thresholds.toml`` (``dormant_window_days`` 30,
 ``state.write_approach`` into a pytest temporary directory and their paper
 records are frames the test builds, so no bar is read, no strategy runs, no
 random draw is made and no clock is read.
+
+Steps 2 and 3 read the adjusted Sharpe (owner's O-11, O-12; decision
+2026-10-14 85) through ``paper.adjusted``, which reads the derived exposure
+records (decision 84): ``steps`` writes them by hand with ``paper.write_exposure``
+under the test's tmp directory, ``R_i(D)`` 0 and no position unless a test
+gives them, so that the adjusted series is the plain one there. Where a test
+gives them, its expected adjusted series is the test's own: per paper day,
+``net_1x`` minus the sum over the track's three instruments of ``hbar_i(W) *
+R_i(D)`` over 3, ``hbar_i(W)`` the summed position over the row count of the
+approach's position records dated in ``W`` (decisions 81 (c), 84), computed
+from the frames the test writes without ``paper.adjusted``, ``paper.hbar`` or
+``paper.average_positions``. The rows of ``dormant``, ``returned`` and
+``displaced`` carry ``adjusted`` and ``plain`` (decision 87).
 """
 
 import hashlib
@@ -81,7 +94,25 @@ def lifecycle_rows(state):
     return ledger.read(state, TRACK, ledger.LIFECYCLE)
 
 
-def steps(state, setup, day, records, failures=None):
+def exposure(state, setup, records, units=None, positions=None):
+    """The derived exposure records of ``records``' dates, written by hand:
+    ``units`` maps (symbol, date) to ``R_i(D)`` (0 where absent), ``positions``
+    maps (subject, symbol, date) to the summed position of one journal row."""
+    units, positions = units or {}, positions or {}
+    days = sorted({d for values in records.values() for d, _ in values})
+    symbols = sorted(i.symbol for i in setup.instruments)
+    unit = pd.DataFrame([{"instrument": s, "date": d, "unit": float(units.get((s, d), 0.0))}
+                         for s in symbols for d in days],
+                        columns=["instrument", "date", "unit"])
+    held = pd.DataFrame([{"subject": a, "instrument": s, "date": d, "rows": 1,
+                          "position": float(p)}
+                         for (a, s, d), p in sorted(positions.items())],
+                        columns=["subject", "instrument", "date", "rows", "position"])
+    paper.write_exposure(state, setup.track.name, unit, held)
+
+
+def steps(state, setup, day, records, failures=None, units=None, positions=None):
+    exposure(state, setup, records, units, positions)
     return lifecycle.run_steps(state, setup, day, frame(records), failures or {})
 
 
@@ -89,8 +120,27 @@ def put(state, *rows):
     ledger.append(state, TRACK, ledger.LIFECYCLE, list(rows))
 
 
-def row(day, aid, frm, to, reason):
-    return {"date": day.isoformat(), "id": aid, "from": frm, "to": to, "reason": reason}
+def row(day, aid, frm, to, reason, adjusted=None, plain=None):
+    """A lifecycle row; a ``dormant``, ``returned`` or ``displaced`` row with
+    its two figures (decision 87) when ``adjusted`` or ``plain`` is given as a
+    series (its Sharpe, ``None`` when not a number)."""
+    out = {"date": day.isoformat(), "id": aid, "from": frm, "to": to, "reason": reason}
+    if adjusted is not None or plain is not None:
+        out["adjusted"], out["plain"] = fig(adjusted), fig(plain)
+    return out
+
+
+def fig(values):
+    """The Sharpe of ``values`` as a lifecycle row holds it: ``None`` when not
+    a number (decision 87)."""
+    value = sharpe(pd.Series(list(values), dtype="float64"))
+    return None if math.isnan(value) else value
+
+
+def same(values):
+    """Decision 87's two figures where the adjusted series is the plain one
+    (no exposure written)."""
+    return {"adjusted": values, "plain": values}
 
 
 # ------------------------------------------------------------------ states
@@ -141,7 +191,7 @@ def test_step_2_dormancy_at_dormant_window_days_and_not_before(tmp_path, setup):
     # Rows after the day are not read.
     assert steps(tmp_path, setup, day29, {a: dated(values)}) == []
     assert steps(tmp_path, setup, day30, {a: dated(values)}) == \
-        [row(day30, a, "live", "dormant", "dormant")]
+        [row(day30, a, "live", "dormant", "dormant", **same(values))]
 
 
 def test_step_2_uses_the_last_window_only_and_not_a_positive_sharpe(tmp_path, setup):
@@ -149,7 +199,7 @@ def test_step_2_uses_the_last_window_only_and_not_a_positive_sharpe(tmp_path, se
     good, bad = series(0.002, 30), series(-0.002, 30)
     day = START + timedelta(days=39)
     out = steps(tmp_path, setup, day, {a: dated(bad[:10] + good), b: dated(good[:10] + bad)})
-    assert out == [row(day, b, "live", "dormant", "dormant")]
+    assert out == [row(day, b, "live", "dormant", "dormant", **same(bad))]
 
 
 def test_step_2_a_sharpe_that_is_not_a_number_is_not_negative(tmp_path, setup):
@@ -170,7 +220,9 @@ def test_step_3_returns_into_a_free_slot_not_before_revival_min_dormant_days(tmp
     four = since + timedelta(days=4)            # 4 trading days after the dormant row
     assert steps(tmp_path, setup, four, records) == []
     five = since + timedelta(days=5)
-    assert steps(tmp_path, setup, five, records) == [row(five, a, "dormant", "live", "returned")]
+    window = series(0.002, 40)[5:35]            # the last 30 rows up to ``five``
+    assert steps(tmp_path, setup, five, records) == \
+        [row(five, a, "dormant", "live", "returned", **same(window))]
 
 
 @pytest.fixture(scope="module")
@@ -204,10 +256,11 @@ def test_step_3_waits_revival_min_dormant_days_trading_days_not_calendar_days(tm
         assert steps(tmp_path, synth, day, records) == []
     fifth = date(2019, 6, 13)                   # Fri, Mon, Tue, Wed, Thu
     assert waited(fifth) == 5
+    window = series(0.002, 40)[10:]             # the last 30 rows (to 2019-06-06)
     assert steps(tmp_path, synth, fifth, records) == \
-        [row(fifth, a, "dormant", "live", "returned")]
+        [row(fifth, a, "dormant", "live", "returned", **same(window))]
     assert ledger.read(tmp_path, "test_synth", ledger.LIFECYCLE)[-1] == \
-        row(fifth, a, "dormant", "live", "returned")
+        row(fifth, a, "dormant", "live", "returned", **same(window))
 
 
 def test_step_3_a_dormant_approach_with_no_positive_sharpe_stays(tmp_path, setup):
@@ -239,8 +292,8 @@ def test_step_3_returns_by_displacing_the_weakest(tmp_path, setup):
     day = since + timedelta(days=5)
     weak = live[1]
     assert steps(tmp_path, setup, day, records) == [
-        row(day, a, "dormant", "live", "returned"),
-        row(day, weak, "live", "dormant", "displaced")]
+        row(day, a, "dormant", "live", "returned", **same(series(0.001, 40)[6:36])),
+        row(day, weak, "live", "dormant", "displaced", **same(series(0.0005, 40)[6:36]))]
 
 
 def test_step_3_stays_dormant_when_not_above_the_weakest(tmp_path, setup):
@@ -261,8 +314,8 @@ def test_step_3_sees_the_slot_step_2_freed(tmp_path, setup):
     records[live[2]] = dated(series(-0.002, 40))
     day = since + timedelta(days=5)
     assert steps(tmp_path, setup, day, records) == [
-        row(day, live[2], "live", "dormant", "dormant"),
-        row(day, a, "dormant", "live", "returned")]
+        row(day, live[2], "live", "dormant", "dormant", **same(series(-0.002, 40)[6:36])),
+        row(day, a, "dormant", "live", "returned", **same(series(0.0001, 40)[6:36]))]
 
 
 def test_returned_and_displaced_on_one_day_both_rows_stand_and_dormancy_counts_from_the_second(
@@ -278,9 +331,10 @@ def test_returned_and_displaced_on_one_day_both_rows_stand_and_dormancy_counts_f
     records = {held[0]: dated(series(0.003, 50)), held[1]: dated(series(0.003, 50)),
                first: dated(series(0.0005, 50)), second: dated(series(0.002, 50))}
     d = START + timedelta(days=35)
-    taken = [row(d, first, "dormant", "live", "returned"),
-             row(d, second, "dormant", "live", "returned"),
-             row(d, first, "live", "dormant", "displaced")]
+    low, high = series(0.0005, 50)[6:36], series(0.002, 50)[6:36]
+    taken = [row(d, first, "dormant", "live", "returned", **same(low)),
+             row(d, second, "dormant", "live", "returned", **same(high)),
+             row(d, first, "live", "dormant", "displaced", **same(low))]
     assert steps(tmp_path, setup, d, records) == taken
     assert lifecycle_rows(tmp_path)[-3:] == taken
     apps = read_approaches(tmp_path)
@@ -293,7 +347,7 @@ def test_returned_and_displaced_on_one_day_both_rows_stand_and_dormancy_counts_f
         [row(four, held[0], "live", "retired", "failure: boom")]
     five = d + timedelta(days=5)
     assert steps(tmp_path, setup, five, records) == \
-        [row(five, first, "dormant", "live", "returned")]
+        [row(five, first, "dormant", "live", "returned", **same(series(0.0005, 50)[11:41]))]
 
 
 # ------------------------------------------------------------------ step 4
@@ -329,6 +383,240 @@ def test_run_steps_again_for_the_same_day_appends_nothing(tmp_path, setup):
     held = ledger.ledger_path(tmp_path, TRACK, ledger.LIFECYCLE).read_bytes()
     assert steps(tmp_path, setup, day, records, {b: "boom"}) == []
     assert ledger.ledger_path(tmp_path, TRACK, ledger.LIFECYCLE).read_bytes() == held
+
+
+# ------------------------------------------------------------------ the adjusted measure
+# Owner's O-11, O-12; decisions 2026-10-14 85, 87. Production thresholds
+# (dormant_window_days 30, asserted in test_the_production_values).
+
+SYMBOLS = ("SYNA", "SYNL", "SYNX")
+BASE_KEYS = {"date", "id", "from", "to", "reason"}
+
+
+def test_the_track_has_three_instruments(setup):
+    assert sorted(i.symbol for i in setup.instruments) == list(SYMBOLS)
+
+
+def own(records, positions, units, aid, window):
+    """``aid``'s adjusted ``net_1x`` on its paper days in ``window``, the test's
+    own computation from the frames it writes: ``net_1x`` minus the sum over
+    the three instruments, in symbol order, of ``hbar_i(W) * R_i(D)`` over 3,
+    ``hbar_i(W)`` the summed position over the row count in ``W``, 0 with no
+    row."""
+    days = set(window)
+    hbar = {}
+    for s in SYMBOLS:
+        mine = [p for (a, sym, d), p in sorted(positions.items())
+                if a == aid and sym == s and d in days]
+        hbar[s] = sum(mine) / len(mine) if mine else 0.0
+    out = []
+    for d, v in records[aid]:
+        if d in days:
+            total = 0.0
+            for s in SYMBOLS:
+                total = total + hbar[s] * units.get((s, d), 0.0)
+            out.append(v - total / 3)
+    return out
+
+
+def plain(records, aid, window):
+    days = set(window)
+    return [v for d, v in records[aid] if d in days]
+
+
+def dates_of(records, aid):
+    return [d for d, _ in records[aid]]
+
+
+def held(aid, symbol, dates, position):
+    return {(aid, symbol, d): position for d in dates}
+
+
+def priced(symbol, dates, values):
+    values = [values] * len(dates) if isinstance(values, float) else values
+    return {(symbol, d): v for d, v in zip(dates, values, strict=True)}
+
+
+def test_step_2_dormant_on_a_negative_adjusted_sharpe_whose_plain_is_positive(tmp_path, setup):
+    a = new(tmp_path, setup, 1)
+    records = {a: dated(series(0.002, 30))}
+    dates = dates_of(records, a)
+    units, positions = priced("SYNX", dates, 0.012), held(a, "SYNX", dates, 1.0)
+    adj = own(records, positions, units, a, dates)
+    assert fig(plain(records, a, dates)) > 0 > fig(adj)
+    day = dates[-1]
+    assert steps(tmp_path, setup, day, records, units=units, positions=positions) == \
+        [row(day, a, "live", "dormant", "dormant", adj, plain(records, a, dates))]
+
+
+def test_step_2_stays_live_on_an_adjusted_sharpe_that_is_not_negative_whose_plain_is(
+        tmp_path, setup):
+    a = new(tmp_path, setup, 1)
+    records = {a: dated(series(-0.002, 30))}
+    dates = dates_of(records, a)
+    units, positions = priced("SYNX", dates, -0.012), held(a, "SYNX", dates, 1.0)
+    assert fig(plain(records, a, dates)) < 0 < fig(own(records, positions, units, a, dates))
+    assert steps(tmp_path, setup, dates[-1], records, units=units, positions=positions) == []
+
+
+def test_step_2_reads_the_last_window_rows_not_the_whole_paper_record(tmp_path, setup):
+    # W is the dates of the last 30 paper rows: the average position is taken
+    # over them, not over the 40 rows of the record.
+    a = new(tmp_path, setup, 1)
+    records = {a: dated(series(0.002, 40))}
+    dates = dates_of(records, a)
+    units = priced("SYNX", dates, 0.012)
+    positions = {**held(a, "SYNX", dates[:10], 3.0), **held(a, "SYNX", dates[10:], 0.0)}
+    assert fig(own(records, positions, units, a, dates[10:])) > 0
+    assert fig(own(records, positions, units, a, dates)) < 0       # over the whole record
+    assert steps(tmp_path, setup, dates[-1], records, units=units, positions=positions) == []
+
+
+def constant_units(dates):
+    """``R_i(D)`` of the three instruments, each with a negative mean."""
+    out = {}
+    for j, s in enumerate(SYMBOLS):
+        values = [-0.003 + 0.001 * j + (0.01 if k % 2 else -0.01) for k in range(len(dates))]
+        out.update(priced(s, dates, values))
+    return out
+
+
+def test_one_constant_position_neither_goes_dormant_nor_returns(tmp_path, setup):
+    # O-11: a subject holding one constant position has an adjusted series of
+    # zeros (no costs here), hence no Sharpe: not negative, not positive.
+    a, b = new(tmp_path, setup, 1), new(tmp_path, setup, 2)
+    days = [START + timedelta(days=k) for k in range(40)]
+    units = constant_units(days)
+    positions = {}
+    records = {}
+    for aid, h in ((a, 1.0), (b, -1.0)):           # a long throughout, b short throughout
+        values = []
+        for d in days:
+            total = 0.0
+            for s in SYMBOLS:
+                total = total + h * units[(s, d)]
+            values.append(total / 3)
+        records[aid] = list(zip(days, values, strict=True))
+        for s in SYMBOLS:
+            positions.update(held(aid, s, days, h))
+    since = START + timedelta(days=20)
+    put(tmp_path, row(since, b, "live", "dormant", "dormant"))
+    day = days[-1]
+    w = days[-30:]
+    for aid in (a, b):
+        assert own(records, positions, units, aid, w) == [0.0] * 30
+        assert fig(own(records, positions, units, aid, w)) is None
+    assert fig(plain(records, a, w)) < 0 < fig(plain(records, b, w))
+    assert steps(tmp_path, setup, day, records, units=units, positions=positions) == []
+
+
+def test_step_3_returns_on_a_positive_adjusted_sharpe_and_not_on_a_positive_plain_one(
+        tmp_path, setup):
+    a, b = new(tmp_path, setup, 1), new(tmp_path, setup, 2)
+    since = START + timedelta(days=30)
+    put(tmp_path, row(since, a, "live", "dormant", "dormant"),
+        row(since, b, "live", "dormant", "dormant"))
+    records = {a: dated(series(-0.002, 40)), b: dated(series(0.002, 40))}
+    days = dates_of(records, a)
+    units = {**priced("SYNX", days, -0.012), **priced("SYNL", days, 0.012)}
+    positions = {**held(a, "SYNX", days, 1.0), **held(b, "SYNL", days, 1.0)}
+    day = since + timedelta(days=5)
+    w = days[6:36]                                  # the last 30 rows up to ``day``
+    assert fig(plain(records, a, w)) < 0 < fig(own(records, positions, units, a, w))
+    assert fig(own(records, positions, units, b, w)) < 0 < fig(plain(records, b, w))
+    assert steps(tmp_path, setup, day, records, units=units, positions=positions) == [
+        row(day, a, "dormant", "live", "returned", own(records, positions, units, a, w),
+            plain(records, a, w))]
+
+
+def test_step_3_displaces_the_lowest_adjusted_sharpe_each_on_its_own_positions(
+        tmp_path, setup):
+    # O-12: each live approach is scored over the returning approach's W on its
+    # own adjusted series with its own average positions. The plain measure
+    # names live[0] (the lowest plain mean); the adjusted one live[1].
+    live = [new(tmp_path, setup, 10 + k) for k in range(3)]
+    other = new(tmp_path, setup, 20, cell="trend/medium")
+    a = new(tmp_path, setup, 1)
+    since = START + timedelta(days=30)
+    put(tmp_path, row(since, a, "live", "dormant", "dormant"))
+    records = {live[0]: dated(series(0.0005, 40)), live[1]: dated(series(0.002, 40)),
+               live[2]: dated(series(0.003, 40)), other: dated(series(0.003, 40)),
+               a: dated(series(0.003, 40))}
+    days = dates_of(records, a)
+    units = priced("SYNX", days, 0.0048)
+    positions = held(live[1], "SYNX", days, 1.0)
+    day = since + timedelta(days=5)
+    w = days[6:36]
+    adjusted = {aid: fig(own(records, positions, units, aid, w)) for aid in live}
+    plains = {aid: fig(plain(records, aid, w)) for aid in live}
+    assert min(plains, key=plains.get) == live[0]
+    # live[1]'s adjusted Sharpe is positive (step 2 keeps it live) and the lowest.
+    assert min(adjusted, key=adjusted.get) == live[1] and adjusted[live[1]] > 0
+    assert steps(tmp_path, setup, day, records, units=units, positions=positions) == [
+        row(day, a, "dormant", "live", "returned", plain(records, a, w), plain(records, a, w)),
+        row(day, live[1], "live", "dormant", "displaced",
+            own(records, positions, units, live[1], w), plain(records, live[1], w))]
+
+
+def test_a_figure_that_is_not_a_number_is_written_null(tmp_path, setup):
+    # Decision 87: a dormant row whose plain Sharpe is not a number (a constant
+    # plain series), and a displaced row whose adjusted Sharpe is not a number
+    # (one constant position, no costs: the weakest, as a Sharpe that is not a
+    # number counts the lowest).
+    a = new(tmp_path, setup, 1)
+    records = {a: dated([0.001] * 30)}
+    dates = dates_of(records, a)
+    units = priced("SYNX", dates, series(0.012, 30, amp=0.03))
+    positions = held(a, "SYNX", dates, 1.0)
+    adj = own(records, positions, units, a, dates)
+    assert fig(adj) < 0 and fig(plain(records, a, dates)) is None
+    day = dates[-1]
+    assert steps(tmp_path, setup, day, records, units=units, positions=positions) == \
+        [row(day, a, "live", "dormant", "dormant", adj, [0.001] * 30)]
+    line = ledger.ledger_path(tmp_path, TRACK, ledger.LIFECYCLE).read_text().splitlines()[-1]
+    assert '"plain":null' in line and f'"adjusted":{fig(adj)!r}' in line
+
+    state = tmp_path / "displaced"
+    live = [new(state, setup, 10 + k) for k in range(3)]
+    b = new(state, setup, 2)
+    since = START + timedelta(days=30)
+    put(state, row(since, b, "live", "dormant", "dormant"))
+    days = [START + timedelta(days=k) for k in range(40)]
+    units = constant_units(days)
+    flat = []
+    for d in days:
+        total = 0.0
+        for s in SYMBOLS:
+            total = total + 1.0 * units[(s, d)]
+        flat.append(total / 3)
+    records = {live[0]: dated(series(0.002, 40)), live[1]: list(zip(days, flat, strict=True)),
+               live[2]: dated(series(0.003, 40)), b: dated(series(0.003, 40))}
+    positions = {}
+    for s in SYMBOLS:
+        positions.update(held(live[1], s, days, 1.0))
+    day = since + timedelta(days=5)
+    w = days[6:36]
+    assert fig(own(records, positions, units, live[1], w)) is None
+    assert fig(plain(records, live[1], w)) is not None
+    assert steps(state, setup, day, records, units=units, positions=positions) == [
+        row(day, b, "dormant", "live", "returned", plain(records, b, w), plain(records, b, w)),
+        row(day, live[1], "live", "dormant", "displaced", [0.0] * 30,
+            plain(records, live[1], w))]
+    line = ledger.ledger_path(state, TRACK, ledger.LIFECYCLE).read_text().splitlines()[-1]
+    assert '"adjusted":null' in line and '"reason":"displaced"' in line
+
+
+def test_retired_dormant_and_failure_rows_carry_neither_figure(tmp_path, setup):
+    a, b = new(tmp_path, setup, 1), new(tmp_path, setup, 2)
+    since = START + timedelta(days=29)
+    put(tmp_path, row(since, a, "live", "dormant", "dormant"))
+    day = since + timedelta(days=365)
+    records = {a: dated(series(-0.002, 30)), b: dated(series(0.002, 30))}
+    out = steps(tmp_path, setup, day, records, {b: "boom"})
+    assert [(r["id"], r["reason"]) for r in out] == [(b, "failure: boom"),
+                                                    (a, "retired_dormant")]
+    assert all(set(r) == BASE_KEYS for r in out)
+    assert all(set(r) == BASE_KEYS for r in lifecycle_rows(tmp_path)[-2:])
 
 
 # ------------------------------------------------------------------ admission

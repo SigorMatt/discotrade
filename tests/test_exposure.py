@@ -629,3 +629,55 @@ def test_the_next_day_heals_the_records(ran, config, setup, tmp_path, damage):
 def test_paper_no_longer_calls_the_private_journal_empty():
     text = (REPO_ROOT / "src" / "discotrade" / "paper.py").read_text(encoding="utf-8")
     assert "journal._empty" not in text
+
+
+# ------------------------------------------- the lifecycle reads it (decisions 2026-10-14 85, 87)
+
+#: ``lifecycle.dormant_window_days`` on a configuration copied under tmp, in
+#: place of the production 30 (which tests/test_lifecycle.py uses): 30 paper
+#: rows would need 30 more days of runs. 4 rows: 2019-06-14 to 2019-06-17.
+LOW_WINDOW = 4
+
+
+def test_run_day_step_2_reads_the_staged_adjusted_series_and_writes_both_figures(
+        ran, config, setup, tmp_path):
+    """A copy of ``ran`` runs 2019-06-17 at ``dormant_window_days`` 4: each
+    approach (5 paper rows) goes dormant exactly when the test's own adjusted
+    Sharpe at 1x over its last 4 paper days, from the journal parquet files and
+    the stored bars, is negative, and its row carries that figure and the plain
+    one (decision 39's equality). The staged day 2019-06-17 is in W: the
+    exposure records it needs are only in the staging directory."""
+    state, trend, const = ran
+    copy = tmp_path / "state"
+    shutil.copytree(state, copy)
+    low = tmp_path / "config"
+    shutil.copytree(config, low)
+    text = (low / "thresholds.toml").read_text(encoding="utf-8")
+    assert "dormant_window_days = 30 " in text
+    (low / "thresholds.toml").write_text(
+        text.replace("dormant_window_days = 30 ", f"dormant_window_days = {LOW_WINDOW}  "),
+        encoding="utf-8")
+    run_next(copy, low)
+    window = frozenset({ROLL_DAY, *WEEKEND, NEXT})
+    symbols = sorted(i.symbol for i in setup.instruments)
+    expected = []
+    for aid in sorted((trend, const)):
+        days = sorted(set(own_journal(copy).query("subject == @aid")["date"]))
+        assert len(days) == 5 and set(days[-LOW_WINDOW:]) == window
+        own = own_series(copy, aid, window, "net_1x", len(symbols), symbols)
+        adjusted = metrics.sharpe(pd.Series([own[d][2] for d in sorted(own)]))
+        plain = metrics.sharpe(pd.Series([own[d][0] for d in sorted(own)]))
+        if adjusted < 0:
+            expected.append((aid, adjusted, plain))
+    # One of them goes dormant on its adjusted Sharpe while its plain one is
+    # positive: the plain measure would have kept it live.
+    assert any(plain > 0 for _, _, plain in expected)
+    rows = [r for r in json.loads("[" + ",".join(
+        (copy / "ledger" / TRACK / "lifecycle.jsonl").read_text(encoding="utf-8").splitlines())
+        + "]") if r["date"] == NEXT.isoformat()]
+    assert [(r["id"], r["from"], r["to"], r["reason"]) for r in rows] == \
+        [(aid, "live", "dormant", "dormant") for aid, _, _ in expected]
+    for r, (_, adjusted, plain) in zip(rows, expected, strict=True):
+        assert set(r) == {"date", "id", "from", "to", "reason", "adjusted", "plain"}
+        assert eq(r["adjusted"], adjusted)
+        assert (r["plain"] is None and math.isnan(plain)) or eq(r["plain"], plain)

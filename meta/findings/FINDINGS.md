@@ -300,6 +300,33 @@ Status: answered — owner decision O-2 of `meta/decisions/decisions-2026-10-13-
 
 ---
 
+### D-010 — decision 87's lifecycle keys need `ledger.py`, which no unit of mission 11 names
+
+Severity: low · Component: `meta/BUILDER-11-PROMPT.md` U2 and U3 file lists
+with decision 87 and decision 62's `ledger.KEYS` · Found: 2026-10-14,
+mission 11 U2.
+
+Symptom. `ledger.append` refuses a row whose keys are not exactly its
+ledger's `KEYS` (decision 62), so a `dormant`, `returned`, `displaced` or
+`admitted` row carrying decision 87's `adjusted` and `plain` cannot be
+written without a change to `src/discotrade/ledger.py`. U2's files are
+`lifecycle.py`, `daily.py` and tests; U3's do not name `ledger.py` either.
+U3's trial keys `adjusted_t` and `adjusted_w` (decision 86 (d)) meet the
+same check.
+
+What U2 did (the simplest reading of decision 87, said in its commit body).
+`ledger.py` gains `FIGURES` (`adjusted`, `plain`) and `FIGURE_REASONS`
+(`admitted`, `displaced`, `dormant`, `returned`): a lifecycle row of those
+reasons may hold both figures, never one alone; a row of another reason
+holds neither. `KEYS` is unchanged, so rows written before (and the
+admission rows U3 has not yet changed) still pass, and no earlier line is
+rewritten (I-5). Whether the figures become required on those rows once U3
+is in is the architect's call.
+
+Status: open (for the architect: confirm, or name the file for U3).
+
+---
+
 ## hands findings
 
 ### HF-001 — after an autonomous apply, the engine sends the kickoff of the playbook it loaded before the apply

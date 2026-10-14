@@ -118,6 +118,28 @@ def test_the_keys_of_each_ledger(tmp_path):
                                        "tokens_in", "tokens_out", "outcome", "response"}
 
 
+@pytest.mark.parametrize("reason", ["admitted", "displaced", "dormant", "returned"])
+def test_a_lifecycle_row_of_four_reasons_may_carry_adjusted_and_plain(tmp_path, reason):
+    # Decision 2026-10-14 87: both keys, each a number or null; one alone refused.
+    row = {**lifecycle_row(0, reason), "adjusted": -1.25, "plain": None}
+    assert ledger.append(tmp_path, TRACK, LIFECYCLE, [row]) == [row]
+    assert ledger.read(tmp_path, TRACK, LIFECYCLE) == [row]
+    text = ledger.ledger_path(tmp_path, TRACK, LIFECYCLE).read_text(encoding="utf-8")
+    assert '"adjusted":-1.25' in text and '"plain":null' in text
+    for half in ({**lifecycle_row(1, reason), "adjusted": 1.0},
+                 {**lifecycle_row(1, reason), "plain": 1.0}):
+        with pytest.raises(LedgerError, match="keys"):
+            ledger.append(tmp_path, TRACK, LIFECYCLE, [half])
+
+
+@pytest.mark.parametrize("reason", ["retired_dormant", "failure: boom"])
+def test_a_lifecycle_row_of_another_reason_carries_neither_figure(tmp_path, reason):
+    row = {**lifecycle_row(0, reason), "adjusted": 1.0, "plain": 1.0}
+    with pytest.raises(LedgerError, match="keys"):
+        ledger.append(tmp_path, TRACK, LIFECYCLE, [row])
+    assert not (tmp_path / "ledger").exists()
+
+
 def test_the_call_writer_takes_the_outcomes_of_10_2(tmp_path):
     rows = [call_row(0), call_row(1, "duplicate"), call_row(2, "invalid:static"),
             call_row(3, "provider_error"), call_row(4, "budget")]

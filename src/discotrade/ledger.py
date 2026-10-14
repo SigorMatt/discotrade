@@ -9,7 +9,12 @@ the state directory hold one JSON object per line, keys sorted, no whitespace
   ``config_hash``, ``grid`` (the grid and its results on W), ``params``,
   ``metrics_w``, ``metrics_t``, ``admitted``, ``reason`` and ``displaced``
   (decision 62);
-- ``lifecycle``: ``date``, ``id``, ``from``, ``to``, ``reason``;
+- ``lifecycle``: ``date``, ``id``, ``from``, ``to``, ``reason``; a row whose
+  reason is one of ``FIGURE_REASONS`` (``admitted``, ``displaced``,
+  ``dormant``, ``returned``) may also hold both of ``FIGURES``
+  (``adjusted``, ``plain``: the Sharpe at 1x that decided it and the plain
+  one beside it, decision 2026-10-14 87), never one alone; a row of another
+  reason holds neither (rows written before them are read as they are, I-5);
 - ``calls``: ``call``, ``date``, ``cell``, ``model``, ``attempt``,
   ``tokens_in``, ``tokens_out``, ``outcome`` (``trial``, ``duplicate``,
   ``invalid:<stage>``, ``provider_error`` or ``budget``) and ``response``
@@ -56,6 +61,9 @@ KEYS: Mapping[str, tuple[str, ...]] = {
             "tokens_in", "tokens_out"),
     LIFECYCLE: ("date", "from", "id", "reason", "to"),
 }
+#: Decision 2026-10-14 87: the two figures a lifecycle row of these reasons carries.
+FIGURES = ("adjusted", "plain")
+FIGURE_REASONS = ("admitted", "displaced", "dormant", "returned")
 CALL_OUTCOMES = ("trial", "duplicate", "provider_error", "budget")
 INVALID_PREFIX = "invalid:"
 
@@ -98,6 +106,8 @@ def line(row: Mapping[str, Any]) -> str:
 
 def _check(name: str, row: Mapping[str, Any]) -> None:
     keys = KEYS[name]
+    if name == LIFECYCLE and row.get("reason") in FIGURE_REASONS and set(FIGURES) <= set(row):
+        keys = (*keys, *FIGURES)
     if set(row) != set(keys):
         raise LedgerError(f"a {name} row holds the keys {sorted(row)}, not {list(keys)}")
     if name == CALLS:

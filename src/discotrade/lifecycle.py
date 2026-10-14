@@ -18,8 +18,14 @@ approaches are taken in ascending id order, and each step and each approach
 sees the states the earlier ones left. ``paper`` is the paper records (rows
 dated after ``day`` are ignored); ``failures`` maps each approach whose
 evaluation on ``day`` broke decision 22's contract to the error text. With
-``N = lifecycle.dormant_window_days`` and a Sharpe meaning
-``metrics.sharpe`` of the paper ``net_1x`` in date order:
+``N = lifecycle.dormant_window_days`` and a Sharpe over a window ``W`` (a set
+of dates) meaning, for steps 2 and 3, ``metrics.sharpe`` of
+``paper.adjusted(state_dir, setup, aid, W, "net_1x", records=paper,
+overlay=into)``: the approach's paper ``net_1x`` on its paper days in ``W``
+less its static exposure, with its own average positions over its rows of
+``W`` (owner's O-11, O-12; decision 2026-10-14 85; the staging directory
+``into`` is passed as ``overlay`` so that the staged day's exposure records
+are read, decision 84):
 
 1. a failed approach is retired, reason ``failure: <text>``;
 2. a live approach with at least ``N`` paper rows whose Sharpe over its last
@@ -33,7 +39,9 @@ evaluation on ``day`` broke decision 22's contract to the error text. With
    positive returns to live, reason ``returned``, when its cell has fewer than
    ``cell_slots`` live approaches, or when that Sharpe beats the weakest live
    approach of its cell over the same days (the dates of those paper rows),
-   which goes dormant, reason ``displaced``;
+   each live approach scored on its own adjusted series with its own average
+   positions over its rows of those dates (O-12), which goes dormant, reason
+   ``displaced``;
 4. an approach dormant for at least ``lifecycle.retire_dormant_days`` calendar
    days (``day`` minus the date of its row to ``dormant``) is retired, reason
    ``retired_dormant``.
@@ -45,6 +53,15 @@ above the weakest's Sharpe, a weakest Sharpe that is not a number being below
 every positive score (it counts as the lowest; the design is silent on
 ``above`` a value that is not a number, this is that rule's reading). Where a
 newcomer displaces the weakest, the newcomer's row comes first.
+
+A row of steps 2 and 3 (``dormant``, ``returned``, ``displaced``) carries
+``adjusted``, the adjusted Sharpe that decided it, and ``plain``, the
+``metrics.sharpe`` of the plain paper ``net_1x`` on the same paper days
+(decision 87): for ``dormant`` and ``returned`` the approach's own over its
+``W``, for ``displaced`` the displaced approach's over the returning one's
+``W``; ``None`` (JSON ``null``) for a figure that is not a number. Rows of
+steps 1 and 4 carry neither. Admission still reads the plain measure here
+(mission 11 U3 takes it).
 
 ``admit(state_dir, setup, candidate, day, into=None)`` applies DESIGN 10.3's
 admission rule after steps 1 to 4 of ``day`` (decision 63), from the states
@@ -160,6 +177,23 @@ def _sharpe_on(paper: pd.DataFrame, aid: str, days: set[date]) -> float:
     return sharpe(mine[mine["date"].isin(days)]["net_1x"])
 
 
+def _figures(state_dir: Path, setup: Any, paper: pd.DataFrame, aid: str, days: set[date],
+             overlay: Path | None) -> tuple[float, float]:
+    """``(adjusted, plain)``: the Sharpe at 1x of ``aid``'s adjusted paper
+    ``net_1x`` on its paper days in ``days``, with its own average positions
+    over its rows of ``days`` (O-11, O-12; decision 85), and of its plain one
+    on the same days (decision 87)."""
+    from discotrade import paper as paper_module  # paper imports this module
+
+    adjusted = sharpe(paper_module.adjusted(state_dir, setup, aid, days, "net_1x",
+                                            records=paper, overlay=overlay))
+    return adjusted, _sharpe_on(paper, aid, days)
+
+
+def _figure(value: float) -> float | None:
+    return None if math.isnan(value) else float(value)
+
+
 def _cells(approaches: Sequence[Approach]) -> dict[str, str]:
     return {a.id: str(a.meta["cell"]) for a in approaches}
 
@@ -168,14 +202,22 @@ def _live_in(cell: str, current: Mapping[str, Status], cells: Mapping[str, str])
     return sorted(aid for aid, s in current.items() if s.state == LIVE and cells[aid] == cell)
 
 
-def _row(day: date, aid: str, frm: str, to: str, reason: str) -> dict[str, Any]:
-    return {"date": day.isoformat(), "id": aid, "from": frm, "to": to, "reason": reason}
+def _row(day: date, aid: str, frm: str, to: str, reason: str,
+         figures: tuple[float, float] | None = None) -> dict[str, Any]:
+    out: dict[str, Any] = {"date": day.isoformat(), "id": aid, "from": frm, "to": to,
+                           "reason": reason}
+    if figures is not None:
+        out["adjusted"], out["plain"] = _figure(figures[0]), _figure(figures[1])
+    return out
 
 
 def step_rows(setup: Any, day: date, rows: Sequence[Mapping[str, Any]],
               approaches: Sequence[Approach], paper: pd.DataFrame,
-              failures: Mapping[str, str]) -> list[dict[str, Any]]:
-    """The lifecycle rows of steps 1 to 4 of ``day`` (DESIGN 10.3; decision 63)."""
+              failures: Mapping[str, str], *, state_dir: Path,
+              overlay: Path | None = None) -> list[dict[str, Any]]:
+    """The lifecycle rows of steps 1 to 4 of ``day`` (DESIGN 10.3; decisions 63,
+    85, 87); the exposure records are read from ``overlay`` first, then
+    ``state_dir``."""
     th = setup.thresholds
     n = int(th["lifecycle.dormant_window_days"])
     revival = int(th["lifecycle.revival_min_dormant_days"])
@@ -186,9 +228,13 @@ def step_rows(setup: Any, day: date, rows: Sequence[Mapping[str, Any]],
     cells = _cells(approaches)
     out: list[dict[str, Any]] = []
 
-    def change(aid: str, to: str, reason: str) -> None:
-        out.append(_row(day, aid, current[aid].state, to, reason))
+    def change(aid: str, to: str, reason: str,
+               figures: tuple[float, float] | None = None) -> None:
+        out.append(_row(day, aid, current[aid].state, to, reason, figures))
         current[aid] = Status(to, day)
+
+    def measured(aid: str, days: set[date]) -> tuple[float, float]:
+        return _figures(state_dir, setup, paper, aid, days, overlay)
 
     # 1. Retire failures.
     for aid in sorted(failures):
@@ -199,8 +245,10 @@ def step_rows(setup: Any, day: date, rows: Sequence[Mapping[str, Any]],
         if current[aid].state != LIVE:
             continue
         mine = _subject(paper, aid)
-        if n > 0 and len(mine) >= n and sharpe(mine["net_1x"].iloc[-n:]) < 0:
-            change(aid, DORMANT, DORMANT_REASON)
+        if n > 0 and len(mine) >= n:
+            figures = measured(aid, set(mine["date"].iloc[-n:]))
+            if figures[0] < 0:
+                change(aid, DORMANT, DORMANT_REASON, figures)
     # 3. Return.
     calendars = [setup.calendars[name] for name in sorted(setup.calendars)]
     for aid in sorted(current):
@@ -211,20 +259,20 @@ def step_rows(setup: Any, day: date, rows: Sequence[Mapping[str, Any]],
                                s.since + timedelta(days=1), day)
         if len(waited) < revival:
             continue
-        mine = _subject(paper, aid).iloc[-n:]
-        score = sharpe(mine["net_1x"])
+        days = set(_subject(paper, aid)["date"].iloc[-n:])
+        figures = measured(aid, days)
+        score = figures[0]
         if math.isnan(score) or not score > 0:
             continue
         live = _live_in(cells[aid], current, cells)
         if len(live) < slots:
-            change(aid, LIVE, RETURNED)
+            change(aid, LIVE, RETURNED, figures)
             continue
-        days = set(mine["date"])
-        scores = {other: _sharpe_on(paper, other, days) for other in live}
-        weak = weakest(scores)
-        if beats(score, scores[weak]):
-            change(aid, LIVE, RETURNED)
-            change(weak, DORMANT, DISPLACED)
+        others = {other: measured(other, days) for other in live}
+        weak = weakest({other: f[0] for other, f in others.items()})
+        if beats(score, others[weak][0]):
+            change(aid, LIVE, RETURNED, figures)
+            change(weak, DORMANT, DISPLACED, others[weak])
     # 4. Retire the long dormant.
     for aid in sorted(current):
         s = current[aid]
@@ -244,7 +292,8 @@ def run_steps(state_dir: Path, setup: Any, day: date, paper: pd.DataFrame | None
     if paper is None:
         from discotrade import paper as paper_module
         paper = paper_module.build(pd.DataFrame(), 1, {})
-    changes = step_rows(setup, day, rows, approaches, paper, failures)
+    changes = step_rows(setup, day, rows, approaches, paper, failures,
+                        state_dir=Path(state_dir), overlay=into)
     return ledger.append(state_dir, track, ledger.LIFECYCLE, changes, into=into)
 
 

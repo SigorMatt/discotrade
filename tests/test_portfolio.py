@@ -233,8 +233,16 @@ def test_the_lifecycle_sharpes_take_no_portfolio_row(tmp_path, setup):
     records = pd.DataFrame(rows)[list(paper.COLUMNS)]
     day = start + timedelta(days=n - 1)
     approaches = read_approaches(tmp_path)
-    plain = lifecycle.step_rows(setup, day, [], approaches, records, {})
-    mixed = lifecycle.step_rows(setup, day, [], approaches, with_portfolio(records), {})
+    # Step 2 reads the adjusted series (decision 2026-10-14 85), from the derived
+    # exposure records (decision 84): written here with every R_i(D) 0 and no
+    # position, so that it is the plain series.
+    unit = pd.DataFrame([{"instrument": i.symbol, "date": d, "unit": 0.0}
+                         for i in setup.instruments for d in records["date"]])
+    held = pd.DataFrame(columns=["subject", "instrument", "date", "rows", "position"])
+    paper.write_exposure(tmp_path, setup.track.name, unit, held)
+    plain = lifecycle.step_rows(setup, day, [], approaches, records, {}, state_dir=tmp_path)
+    mixed = lifecycle.step_rows(setup, day, [], approaches, with_portfolio(records), {},
+                                state_dir=tmp_path)
     assert plain == mixed == []
 
 
