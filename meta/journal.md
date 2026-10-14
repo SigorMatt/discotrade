@@ -118,3 +118,4 @@
 - 2026-10-14 mission 13 U1 done 6372322: REVIEW-12 should-fix 1-4 and notes 2, 3 (decision 101); four seen-to-fail changes made and reverted; no finding; check green 3/3 (674-699 s).
 - 2026-10-14 mission 13 U2 done c702fc4: container backend, image discotrade-sandbox:20fa1f2225a3 (python:3.14.6-slim by digest, numpy 2.5.4, pandas 3.0.6), `sandbox build`, run.toml [sandbox] keys; three seen-to-fail changes; no finding; check green 3/3 (712-737 s, +~55 s).
 - 2026-10-14 mission 13 U3 done 0823a2d: probe (stdlib only), sandbox selftest 15 PASS, doctor --live sandbox; image discotrade-sandbox:edeee6d2120e (old tag removed); two seen-to-fail changes; no finding; check green 3/3 (697-738 s).
+- 2026-10-14 mission 13 U4 blocked: two sub-agent attempts each stopped by a safety classifier while planning the hostile fixtures, before writing any file; tree clean at 40fc911; U6 (G2.1) depends on it; continuing with U5.
