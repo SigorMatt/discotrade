@@ -1,11 +1,11 @@
 # CHECKPOINT
 
 Mission: 10 (`meta/BUILDER-10-PROMPT.md`), roadmap step S2.0a. Closes no milestone. Base 54cac11.
-Done: U0 b03a349, U1 4bf827d (controls 2.460->1.744 s/day, G1.3 3.078->2.059 s/day), U2 164c8ce (controls 1.771->1.032, G1.3 2.132->1.375 s/day), U3 0518b34, U4 f1a2599, U5 6f8eec8 (nothing stored; computed on call)
+Done: U0 b03a349, U1 4bf827d (controls 2.460->1.744 s/day, G1.3 3.078->2.059 s/day), U2 164c8ce (controls 1.771->1.032, G1.3 2.132->1.375 s/day), U3 0518b34, U4 f1a2599, U5 6f8eec8 (nothing stored; computed on call), U6 at 23f245c: check green 3/3; G1.1 PASS 345 s, G1.2 PASS 155 s, G1.3 PASS 450 s, G1.4 PASS 0.5 s; M0 PASS 248 s; no item over 10 minutes, no finding; U7 report meta/FINAL-REPORT-10.md
 
-Unit in progress: U6 Gate M1 again item by item, and gate M0 (decision 82).
-Intent: check green 3x at the pushed tip, then ./scripts/gate M1 G1.1..G1.4 and ./scripts/gate M0, each its own foreground call (20-min timeout); outputs verbatim with wall times to meta/drafts/.
-Done means: all items PASS; any item over 10 minutes has decision 80 (e)'s finding; a FAIL is fixed or blocks.
+Unit in progress: none. Mission 10 finished; meta/FINAL-REPORT-10.md exists. Closes no milestone.
+Intent: next: the cold review of mission 10, then the architect's kit for step S2.0b (mission 11).
+Done means: n/a
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-14 (76-82) and the owner's
 decisions-2026-10-13-owner (O-N wins over 76-82) bind; decisions-2026-10-12 items 1-75 still bind;
