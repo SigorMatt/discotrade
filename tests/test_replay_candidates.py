@@ -30,6 +30,12 @@ fixture ``tests/fixtures/scenarios/u6_candidates.jsonl``, one candidate a day:
   ``free_slot`` only because step 1 of 06-13 retired the failing approach
   first, so its lifecycle row comes after the retirement.
 
+A second replay (REVIEW-9 should-fix 3, decision 2026-10-14 79 (b)) covers
+Thursday 2019-06-13 to Friday 2019-06-21 with the new fixture
+``tests/fixtures/scenarios/u4_t_days.jsonl`` (one candidate, into a full
+cell, on 06-21) and pins the T days ``replay`` passes to the admission
+function and a verdict that depends on them.
+
 The synthetic instruments' seeds are those of their fixture records
 (``SEEDS``, asserted); no other random draw is made. Time comes only from
 ``--as-of`` and the replay's clock. Every git run is on local paths with
@@ -363,3 +369,83 @@ def test_run_day_takes_no_candidate(first_day, config, tmp_path):
                           "2019-06-11", "--candidates", str(SCENARIO))
     assert status == 2 and out == ""
     assert files(path) == before
+
+
+# ------------------------------------------------------------------ T's days at admission
+# REVIEW-9 should-fix 3, decision 2026-10-14 79 (b); DESIGN 4.1, 10.3; decision 63.
+
+T_SCENARIO = REPO_ROOT / "tests" / "fixtures" / "scenarios" / "u4_t_days.jsonl"
+T_ADMITTED = date(2019, 6, 12)
+T_FIRST, T_DAY = date(2019, 6, 13), date(2019, 6, 21)
+#: DESIGN 4.1 for D = Friday 2019-06-21 and t_days 7: the trading days whose
+#: date lies in 2019-06-15 to 2019-06-21, a span holding a weekend.
+T_RIGHT = tuple(date(2019, 6, d) for d in (17, 18, 19, 20, 21))
+#: The wrong window: the last seven trading days ending with D.
+T_WRONG = tuple(date(2019, 6, d) for d in (13, 14, 17, 18, 19, 20, 21))
+#: The full cell: three parameter sets of reference/trend_ma.py in trend/short.
+T_CELL = [{"fast": 12, "slow": 48}, {"fast": 4, "slow": 48}, {"fast": 16, "slow": 64}]
+
+
+def test_admission_reads_t_s_trading_days_for_a_weekend_window(tmp_path, config, setup,
+                                                                 monkeypatch):
+    """Three approaches of ``reference/trend_ma.py`` (``T_CELL``) are written
+    admitted Wednesday 2019-06-12 into ``trend/short`` (full, ``cell_slots``
+    3); the replay runs Thursday 2019-06-13 to Friday 2019-06-21 (seven
+    trading days) with ``u4_t_days.jsonl``: one candidate dated 06-21 into
+    that cell, score 0.3 with 40 trades. ``replay`` passes the admission
+    function exactly the five weekdays 06-17 to 06-21 (DESIGN 4.1 over
+    06-15 to 06-21). Over those days the weakest live approach's net Sharpe
+    at 1x is above 0.3, so the candidate is refused
+    ``not_better_than_weakest``; over the last seven trading days (06-13 to
+    06-21) it is below 0.3, which would have displaced it."""
+    import math
+
+    from discotrade import paper
+    from discotrade.metrics import sharpe
+
+    path = tmp_path / "state"
+    assert main(["init-state", "--state", str(path), "--as-of", INIT_AS_OF]) == 0
+    ids = []
+    for params in T_CELL:
+        source = TREND.read_text(encoding="utf-8")
+        write_approach(
+            path, source=source, params=params, cell="trend/short", model_id="test-model",
+            model_version="test-model-v0", cutoff=date(2019, 1, 1), description="trend_ma",
+            profile_version="w-test", admitted=T_ADMITTED, instruments=setup.instruments,
+            spread_tables=setup.spread_tables)
+        ids.append(approach_id(source, params))
+    seen = []
+    real = lifecycle.admit
+
+    def admit(state_dir, setup_, candidate, day, **kw):
+        seen.append((day, tuple(candidate.t_days)))
+        return real(state_dir, setup_, candidate, day, **kw)
+
+    monkeypatch.setattr(lifecycle, "admit", admit)
+    status, out, err = replay(path, config, T_FIRST, T_DAY, T_SCENARIO)
+    assert status == 0, err
+    assert len(out.splitlines()) == 7
+    assert seen == [(T_DAY, T_RIGHT)]
+
+    line = json.loads(T_SCENARIO.read_text(encoding="utf-8"))
+    score = line["metrics_t"]["sharpe"]
+    records = paper.read(path, TRACK)
+    journaled = sorted(set(records["date"]))
+    assert tuple(journaled[-7:]) == T_WRONG
+
+    def weakest_on(days):
+        values = []
+        for aid in ids:
+            mine = records[(records["subject"] == aid) & records["date"].isin(days)]
+            assert sorted(mine["date"]) == sorted(days)
+            values.append(sharpe(mine.sort_values("date")["net_1x"]))
+        assert not any(math.isnan(v) for v in values)
+        return min(values)
+
+    assert weakest_on(T_RIGHT) > score > weakest_on(T_WRONG)
+    aid = cid(line)
+    assert out.splitlines()[-1].endswith(f"; candidate {aid} refused (not_better_than_weakest)")
+    trial = ledger.read(path, TRACK, ledger.TRIALS)
+    assert [(r["id"], r["admitted"], r["reason"], r["displaced"]) for r in trial] == \
+        [(aid, False, "not_better_than_weakest", None)]
+    assert ledger.read(path, TRACK, ledger.LIFECYCLE) == []

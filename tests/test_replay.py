@@ -17,6 +17,11 @@ directory at ``INIT_AS_OF``, with one approach written by
   (a Tuesday): all its instruments are on ``synth_week``, so the weekend is
   not.
 
+The not-closed refusal of the day function (decision 2026-10-14 77; REVIEW-9
+should-fix 2, decision 79 (a)) is tested on ``test_mixed`` with SYNA on a
+delayed synthetic source (a fake in this file, said so), and on
+``test_synth`` against mission 8's rule, written in this file.
+
 The synthetic instruments' seeds are those of their fixture records
 (``SEEDS``, asserted); no other random draw is made. Time comes only from
 ``--as-of`` and the replay's clock; the instants each day is expected to run
@@ -32,11 +37,12 @@ import io
 import os
 import shutil
 import subprocess
-from datetime import date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 import pytest
 
-from discotrade import journal
+from discotrade import daily, journal
+from discotrade.bars.gaps import latest_closed_day
 from discotrade.cli import REPO_ROOT, main
 from discotrade.config import load_track_config
 from discotrade.replay import replay_days
@@ -334,3 +340,117 @@ def test_run_day_takes_a_day_one_instrument_does_not_trade_at_its_close(tmp_path
     assert status == 1
     assert "2019-06-10 has not closed" in err and "SYNX" in err
     assert head(state) == sha
+
+
+# ------------------------------------------------------------------ the not-closed refusal
+# Decision 2026-10-14 77 confirms the rule (REVIEW-9 should-fix 2, decision 79 (a)).
+
+#: SYNA's delay in the fake source below, once it falls behind: SYNA's Friday
+#: 2019-06-07 has its last bar open at 20:00 UTC (16:00 New York) and close at
+#: 21:00 UTC, so with 28 hours of delay that bar has closed under the source at
+#: 2019-06-09 01:00 UTC and not before.
+SYNA_DELAY_HOURS = 28
+
+
+class _Delayed:
+    """A delayed synthetic source (a fake, said so): the synthetic source of
+    the run, whose ``available_until(now)`` is ``now - SYNA_DELAY_HOURS``
+    hours while ``behind["on"]`` is true (``now`` otherwise); everything else
+    is the synthetic source's."""
+
+    def __init__(self, inner, behind):
+        self._inner = inner
+        self._behind = behind
+
+    def available_until(self, now):
+        until = self._inner.available_until(now)
+        return until - timedelta(hours=SYNA_DELAY_HOURS) if self._behind["on"] else until
+
+    def __getattr__(self, name):
+        return getattr(self._inner, name)
+
+
+def test_a_saturday_waits_for_a_weekday_instrument_s_friday(tmp_path, configs, monkeypatch):
+    """test_mixed, SYNA on a delayed source (``_Delayed``), SYNL and SYNX on
+    the synthetic source (``available_until(now) = now``). Friday 2019-06-07
+    runs at its close, 2019-06-08 00:00 UTC, before SYNA's source falls
+    behind. Then, at 2019-06-09 00:00 UTC, every SYNX bar of Saturday
+    2019-06-08 has closed, but SYNA's Friday has its last expected bar (20:00
+    to 21:00 UTC) not closed under its source's ``available_until`` (20:00
+    UTC): run-day refuses the Saturday, naming SYNA and its latest closed day,
+    Thursday 2019-06-06, and writes nothing. At 2019-06-09 01:00 UTC that bar
+    has closed under the source and the same Saturday runs."""
+    import discotrade.sources as sources_module
+
+    real = sources_module.sources_for
+    behind = {"on": False}
+
+    def delayed(instruments, calendars, bar_seconds):
+        out = real(instruments, calendars, bar_seconds)
+        return {k: _Delayed(v, behind) if k == "SYNA" else v for k, v in out.items()}
+
+    monkeypatch.setattr(sources_module, "sources_for", delayed)
+    track, config = "test_mixed", configs["test_mixed"]
+    state = fresh(tmp_path / "state", config, track)
+
+    def run_day(as_of, day):
+        return call("--state", str(state), "--config", str(config), "--track", track,
+                    "--as-of", as_of, "run-day", "--day", day)
+
+    status, _, err = run_day("2019-06-08T00:00:00+00:00", "2019-06-07")
+    assert status == 0, err
+    behind["on"] = True
+    before, sha = files(state), head(state)
+
+    status, out, err = run_day("2019-06-09T00:00:00+00:00", "2019-06-08")
+    assert status == 1, out
+    assert "2019-06-08 has not closed" in err
+    assert "the latest closed trading day of SYNA in test_mixed is 2019-06-06" in err
+    assert out == ""
+    assert files(state) == before and head(state) == sha
+
+    status, out, err = run_day("2019-06-09T01:00:00+00:00", "2019-06-08")
+    assert status == 0, err
+    assert "run-day: test_mixed 2019-06-08: journal written" in out
+    assert [e["date"] for e in journal.read_index(state, track)] == \
+        ["2019-06-07", "2019-06-08"]
+
+
+def _mission_8_refuses(tc, calendars, used, day, now) -> bool:
+    """Mission 8's rule, written here: refuse any ``day`` later than the
+    earliest, over the track's instruments, of each one's latest closed
+    trading day under its source's ``available_until(now)``."""
+    bar = tc.track.bar_seconds
+    latest = min(latest_closed_day(calendars[inst.calendar],
+                                   used[inst.symbol].available_until(now), bar)
+                 for inst in tc.instruments)
+    return day > latest
+
+
+def test_on_one_calendar_the_refusal_is_mission_8_s(configs):
+    """test_synth (every instrument on synth_week): at every hour from
+    2019-06-03 00:00 UTC to 2019-06-17 00:00 UTC (fourteen calendar days, two
+    weekends), for every trading day of the track from four calendar days
+    before the instant's UTC date to two after, the not-closed refusal of the
+    day function (``daily._unclosed``, the check run-day makes before any
+    other) refuses exactly the days mission 8's rule refuses. Both rules refuse
+    some days and accept some."""
+    track = "test_synth"
+    setup = journal.Setup.load(configs[track], track)
+    tc = load_track_config(configs[track], track)
+    calendars = dict(setup.calendars)
+    assert {inst.calendar for inst in tc.instruments} == {"synth_week"}
+    used = daily._sources(tc, calendars)
+    start = datetime(2019, 6, 3, tzinfo=UTC)
+    instants = [start + timedelta(hours=h) for h in range(14 * 24 + 1)]
+    refused = accepted = 0
+    for now in instants:
+        for k in range(-4, 3):
+            day = now.date() + timedelta(days=k)
+            if not daily.is_trading_day(tc, calendars, day):
+                continue
+            code = daily._unclosed(tc, calendars, day, now, used) is not None
+            assert code == _mission_8_refuses(tc, calendars, used, day, now), (now, day)
+            refused += code
+            accepted += not code
+    assert refused > 0 and accepted > 0
