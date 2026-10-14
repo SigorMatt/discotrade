@@ -90,3 +90,6 @@
 - 2026-10-14 mission 10 U0: plan written (base 54cac11, step S2.0a, closes no milestone; carried O-3 -> U1/U2, REVIEW-9 SF1 -> U3, SF2/SF3 + D-007 -> U4); D-007 status answered (decision 77).
 - 2026-10-14 mission 10 U1 done 4bf827d: bar files hashed once per day run (store.day_run); controls replay 2.460->1.744 s/day, G1.3 30 days 3.078->2.059 s/day; state identical at parent and commit; check green 3/3.
 - 2026-10-14 mission 10 U2 done 164c8ce: hashing, score, executor, control rows sped up; controls 1.771->1.032 s/day, G1.3 2.132->1.375 s/day; state identical; implied one-year G1.1 268-374 s, G1.2 122-145 s, G1.3 367-484 s; check green 3/3.
+- 2026-10-14 mission 10 U3 done 0518b34: paper.update rebuilds when its dates differ from the journal index's before D (decision 78); missing/extra/absent tests; check green 3/3.
+- 2026-10-14 mission 10 U4 done f1a2599: decision 79 tests (a1 mixed-calendar Saturday refusal, a2 equivalence with mission 8's rule over 337 hours, b T days and admission verdict); tests only; check green 3/3.
+- 2026-10-14 mission 10 U5 done 6f8eec8: paper.adjusted (O-4, decision 81), computed on call, nothing stored, read by nothing; 13 tests in tests/test_exposure.py; check green 3/3.
