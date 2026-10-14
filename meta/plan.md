@@ -1,21 +1,34 @@
-# PLAN — mission 12 (roadmap step S2.1)
+# PLAN — mission 13 (roadmap step S2.2)
 
-Base commit: c2612a6 (`plan: mission 12 kit (S2.1, static check, sandbox, validation, grid)`).
-Brief: `meta/BUILDER-12-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-14-m12.md` (items 91-99 new); `meta/decisions/decisions-2026-10-14-m11.md` (83-90; 84, 86, 89 met here); `meta/decisions/decisions-2026-10-14.md` (76-82; 81 met here); `meta/decisions/decisions-2026-10-12.md` (1-75 still bind; 21-25, 30, 36, 37, 39, 40, 44, 47, 48, 62, 63 met here); owner `meta/decisions/decisions-2026-10-13-owner.md` (O-16, O-17, O-18 this mission; O-1 to O-4 and O-11 to O-13 still bind).
-Roadmap step: S2.1 (as decisions 91-99 cut it). This mission closes no milestone; it runs gate M1 item by item and gate M0 again as a regression check at its pushed tip, as decision 91 says (U7). No file under `tests/gates/` changes. The container backend, its image, the probe, the hostile suite and approach execution behind the sandbox in the day loop are step S2.2's; the grid and W figures on a trial row and the retry with the error text are step S3.2's (decision 99).
+Base commit: 9db93b8 (`plan: mission 13 kit (S2.2, container sandbox, hostile suite, gate M2)`).
+Brief: `meta/BUILDER-13-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-14-m13.md` (items 100-108 new); `meta/decisions/decisions-2026-10-14-m12.md` (91-99; 94-98 hardened and built on here); `meta/decisions/decisions-2026-10-14-m11.md` (83-90); `meta/decisions/decisions-2026-10-14.md` (76-82; 80 is the speed method); `meta/decisions/decisions-2026-10-12.md` (1-75 still bind; 15, 19, 21-23, 44, 47, 48, 49, 63, 72 met here; 48 replaced by 105 for the day loop); owner `meta/decisions/decisions-2026-10-13-owner.md` (O-1 to O-4, O-11 to O-13, O-16 to O-18 still bind).
+Roadmap step: S2.2 (as decisions 100-107 cut it).
+
+This mission closes milestone M2.
+
+It also runs gate M1 item by item (G1.1 to G1.4, each its own call) and gate M0 again as a regression check at its pushed tip, as decision 100 (b) says (U6), each output verbatim with its time beside mission 12's (G1.1 386 s, G1.2 172 s, G1.3 575 s, G1.4 1 s, M0 257 s).
+
+Container runtime found (decision 100 (a)): `docker version` — Server: Engine Version 29.1.3 (API 1.52, minimum 1.44), Go go1.24.4, Git commit 29.1.3-0ubuntu3~24.04.2, linux/amd64; containerd 2.2.1; runc 1.3.4-0ubuntu1~24.04.1.
+
+Not built here (decision 107): calling the validation sequence from the day loop, the retry with the error text, workers, the call log (S3.2); gate G4.6 and the container smoke replay (S4.3); where trusted sources live in an installed package (S5.1).
 
 Carried items:
-- REVIEW-11 should-fix 1: `cli._backtest_result` registered, the audit widened (decision 92). — taken by U1
-- REVIEW-11 note 7: the list subscript and `replay._adjusted` (decision 92). — taken by U1
-- Finding D-010: `ledger.append` requires the figures on new rows (decision 93). — taken by U1
-- Finding D-006: a fresh load of the text per instrument (decision 44; decision 95). — taken by U3
-- Owner decision O-17: the grid on W fixes its combination on the exposure-adjusted net Sharpe at 1x, both measures recorded (decision 97). — taken by U5
+- REVIEW-12 should-fix 1: no error text names a type a submission chose (decision 101 (a)). — taken by U1
+- REVIEW-12 should-fix 2: the runner's result on a private descriptor; `no_result` (decision 101 (b)). — taken by U1
+- REVIEW-12 should-fix 3: the static check's first offender in source order (decision 101 (d)). — taken by U1
+- REVIEW-12 should-fix 4: determinism checks the bars the reverse job called (decision 101 (e)). — taken by U1
+- REVIEW-12 note 2: error-text tests pass alone and in any order; compact dates matched (decision 101 (f)). — taken by U1
+- REVIEW-12 note 3: `BaseException` while loading or calling (decision 101 (c)). — taken by U1
+- REVIEW-12 note 5: correlation with an approach whose frozen source is not a repository file (decision 102 (g)). — taken by U2
+- REVIEW-12 note 6: how `import discotrade.indicators` resolves in the image (decision 102 (e)). — taken by U2
+- REVIEW-1 note on the `container` marker (decision 102 (g); `meta/BACKLOG.md`). — taken by U2
+- Decision 48's in-process path in the day loop (decision 105). — taken by U5
 
-- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, D-010 and D-006 status lines in `meta/findings/FINDINGS.md`. — d250987
-- [x] U1 The widened audit, REVIEW-11 should-fix 1 and finding D-010 (decisions 92, 93; decisions 62, 87, 89; O-13, O-18). — 52d7fec (2 entries added: cli._backtest_result display, replay._adjusted producer; 17 test_lifecycle seeds carry null figures under decision 93)
-- [x] U2 The static check (decision 94; DESIGN §12.1; R-24; I-10). — 92703c9 (365 tests; from-import-star refused under the "further trick" clause)
-- [x] U3 The sandbox interface, the job, the runner and the in-process backend (decision 95; decisions 22, 23, 24, 36, 37, 44; DESIGN §12.4, §6.2, §5.6; I-2, I-7; D-006). — fa4b53b (check ~506 s, +13 s)
-- [x] U4 The subprocess backend and `config/run.toml` (decision 96; DESIGN §12.4, §3; I-7, I-11, I-13; decision 47). — d553c35 (sandbox/base.py touched outside the list: build_job reads run.toml; check ~509 s)
-- [x] U5 The dry run and the grid on W, on the exposure-adjusted measure (O-17, O-4, O-18; decisions 97, 81, 86 (a), 89, 23, 25, 30; DESIGN §12.2 stage 2, §4.1, §8; R-23). — 4c09fd1 (check ~509 -> ~608 s: +29 s test_validation_grid.py, rest unexplained, said in the body)
-- [x] U6 Determinism, activity, the correlation gate and the sequence (decision 98; decisions 25, 63, 95 (e); DESIGN §12.2 stages 1, 3, 4, 5, §12.3; R-1). — 4d77450 (check ~659 s, +~46 s)
-- [x] U7 Gate M1 and gate M0 as a regression check, and the final report (decision 91; O-2, O-3). — this commit: check 856/590/589 s green at 054daa1; G1.1 386 s, G1.2 172 s, G1.3 575 s, G1.4 1 s, all PASS; M0 PASS 257 s; no finding (all under 10 minutes)
+- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, the HF-008 status line in `meta/findings/FINDINGS.md` (decision 108).
+- [ ] U1 REVIEW-12's should-fix items: the runner's error texts and result channel, the static check's order, determinism's sample (decision 101; decisions 94, 95, 98; DESIGN §12.1, §12.2, §12.4, §13.2; I-1, I-8).
+- [ ] U2 The container backend, its image and `discotrade sandbox build` (decision 102; decisions 47, 95, 96, 97 (a), 98 (c); DESIGN §12.4, §3, §18.1; I-7, I-11, I-13, I-14; REVIEW-12 notes 5 and 6).
+- [ ] U3 The probe, `discotrade sandbox selftest` and `discotrade doctor --live sandbox` (decision 103; decisions 15, 19, 95 (a); DESIGN §12.4, §18.3 G2.3, §19.3 L5; I-11, I-12).
+- [ ] U4 The hostile suite, its rejection pass and its containment pass (decision 104; decisions 94, 98, 101, 102; DESIGN §12.5, §12.1, §12.2, §12.4; I-7, I-14).
+- [ ] U5 Approaches in the day loop behind the sandbox (decision 105; decisions 23, 44, 48, 49, 63, 72, 80; DESIGN §12.4, §16.1 step 2, §16.4, §9.4; I-6, I-7, I-12).
+- [ ] U6 The gate tests of M2 and the gate runs (decisions 106, 100 (b); decisions 9, 40, 72; O-2, O-3; DESIGN §18.2, §18.3 M2).
+- [ ] U7 The final report (decision 100; DESIGN §18.2).

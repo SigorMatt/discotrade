@@ -539,3 +539,5 @@ D-007 status (appended 2026-10-14, mission 10 U0): Status: answered meta/decisio
 D-010 status (appended 2026-10-14, mission 12 U0): Status: answered meta/decisions/decisions-2026-10-14-m12.md (item 93)
 
 D-006 status (appended 2026-10-14, mission 12 U0): Status: taken by mission 12 U3 (decision 44; meta/decisions/decisions-2026-10-14-m12.md item 95)
+
+HF-008 status (appended 2026-10-14, mission 13 U0): REVIEW-12 note 10: with `./scripts/check` near 660 s, per-commit reviewers had to run one at a time, and a reviewer's endless-loop mutant left an orphaned runner child it killed by hand. Status: open (meta/decisions/decisions-2026-10-14-m13.md item 108)

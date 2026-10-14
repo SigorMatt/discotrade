@@ -113,3 +113,5 @@
 - 2026-10-14 mission 12 U5 done 4c09fd1: dry run and grid on W fixing on the adjusted Sharpe at 1x, both measures recorded (O-17, decision 97); 4 register entries; no finding; check green 3/3 (604-624 s; orchestrator run 608 s; +~100 s over U4, 29 s from the new test file, rest unexplained).
 - 2026-10-14 mission 12 U6 done 4d77450: determinism, activity, correlation gate and the five stages in order (decision 98); 27 tests; no register entry, no finding; check green 3/3 (631-668 s).
 - 2026-10-14 mission 12 U7 done: check green 3/3 at 054daa1 (856, 590, 589 s); G1.1 PASS 386 s, G1.2 PASS 172 s, G1.3 PASS 575 s, G1.4 PASS 1 s; M0 PASS 257 s; no finding; final report meta/FINAL-REPORT-12.md; mission finished.
+2026-10-14T16:07:22.524Z  consult 0mv8ak9im-xttp (architect done) on aux.done of aux job 0mv880e6v-3h2a: VERDICT: next kit mission-13-kit
+- 2026-10-14 mission 13 U0: docker server 29.1.3 found (decision 100 (a)); plan, checkpoint, HF-008 status line (decision 108); closes M2; gate M1 item by item and M0 again at the tip (decision 100 (b)).
