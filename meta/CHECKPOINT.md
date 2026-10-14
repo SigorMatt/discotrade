@@ -1,13 +1,13 @@
 # CHECKPOINT
 
 Mission: 12 (`meta/BUILDER-12-PROMPT.md`), roadmap step S2.1. Closes no milestone. Base c2612a6.
-Done: U0 (this plan commit).
+Done: U0 d250987, U1 52d7fec (audit widened; +cli._backtest_result display, +replay._adjusted producer;
+ledger requires figures, D-010; 3 test_return_readers assertions changed under 92, test_lifecycle seeds under 93; check 3/3 ~487 s).
 
-Unit in progress: U1 next — the widened audit, REVIEW-11 should-fix 1 and finding D-010 (decisions 92, 93).
-Intent: widen the return-reader audit (six string constants anywhere in a function body), register
-cli._backtest_result display and replay._adjusted producer and every newly found function; ledger.append
-requires decision 87's / 86 (d)'s figures on new rows, older lines still appendable (I-5).
-Done means: U1's gate in meta/BUILDER-12-PROMPT.md met, committed and pushed, check green 3/3.
+Unit in progress: U2 next — the static check (decision 94; DESIGN §12.1; R-24; I-10).
+Intent: src/discotrade/validation/{__init__,static}.py, tests/test_static_check.py: every rule of §12.1 refused
+by name in §12.1's order at production thresholds; reference/ and the named fixtures pass.
+Done means: U2's gate in meta/BUILDER-12-PROMPT.md met, committed and pushed, check green 3/3.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-14-m12 (91-99) bind; the owner's
 decisions-2026-10-13-owner (O-N wins); decisions 1-90 still bind; no value of a frozen file changes

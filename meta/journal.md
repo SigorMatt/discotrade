@@ -106,3 +106,4 @@
 - 2026-10-14 mission 11 U7 done: final report meta/FINAL-REPORT-11.md; check green 3/3 at the tip; D-010 and HF-008 open; mission finished.
 2026-10-14T09:22:57.298Z  consult 0mv7w7wuz-zouk (architect done) on aux.done of aux job 0mv7uxra0-bkk9: VERDICT: next kit mission-12-kit
 - 2026-10-14 mission 12 U0: plan written (S2.1, units U1-U7, base c2612a6); D-010 answered (item 93), D-006 taken by U3 (item 95); next U1.
+- 2026-10-14 mission 12 U1 done 52d7fec: audit reads the six constants anywhere in a function body; +cli._backtest_result display, +replay._adjusted producer, no other new reader; ledger.append requires the figures (D-010, decision 93); check green 3/3 (~487 s).

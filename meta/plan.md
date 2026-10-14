@@ -11,8 +11,8 @@ Carried items:
 - Finding D-006: a fresh load of the text per instrument (decision 44; decision 95). — taken by U3
 - Owner decision O-17: the grid on W fixes its combination on the exposure-adjusted net Sharpe at 1x, both measures recorded (decision 97). — taken by U5
 
-- [ ] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, D-010 and D-006 status lines in `meta/findings/FINDINGS.md`.
-- [ ] U1 The widened audit, REVIEW-11 should-fix 1 and finding D-010 (decisions 92, 93; decisions 62, 87, 89; O-13, O-18).
+- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, D-010 and D-006 status lines in `meta/findings/FINDINGS.md`. — d250987
+- [x] U1 The widened audit, REVIEW-11 should-fix 1 and finding D-010 (decisions 92, 93; decisions 62, 87, 89; O-13, O-18). — 52d7fec (2 entries added: cli._backtest_result display, replay._adjusted producer; 17 test_lifecycle seeds carry null figures under decision 93)
 - [ ] U2 The static check (decision 94; DESIGN §12.1; R-24; I-10).
 - [ ] U3 The sandbox interface, the job, the runner and the in-process backend (decision 95; decisions 22, 23, 24, 36, 37, 44; DESIGN §12.4, §6.2, §5.6; I-2, I-7; D-006).
 - [ ] U4 The subprocess backend and `config/run.toml` (decision 96; DESIGN §12.4, §3; I-7, I-11, I-13; decision 47).
