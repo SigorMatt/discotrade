@@ -8,14 +8,12 @@ U4 d553c35 (ProcessSandbox(scratch).run(job); run.toml wall/cpu 1200 s, 2 GiB, 6
 U5 4c09fd1 (validation/sequence.py Context/Submission/dry_run_and_grid -> Outcome, STAGES; register +paper._window_units,
 +paper.adjusted_rows producer, +sequence.fix_combination adjusted, +sequence._grid_result producer; check ~608 s, +100 s),
 U6 4d77450 (stages 1/3/4/5, correlation.py; fail fixtures six_params, grid_out_of_range, keeps_state, changes_29,
-trend_ma_flipped; changes_30 passes all five; check 3/3 ~659 s).
+trend_ma_flipped; changes_30 passes all five; check 3/3 ~659 s),
+U7 report meta/FINAL-REPORT-12.md (gates at 054daa1: G1.1 386 s, G1.2 172 s, G1.3 575 s, G1.4 1 s PASS; M0 PASS 257 s).
 
-Unit in progress: U7 next — gate M1 item by item and gate M0 as a regression check, and the final report
-(decision 91; O-2, O-3).
-Intent: check 3/3 at the tip, then ./scripts/gate M1 G1.1..G1.4 and ./scripts/gate M0, each its own foreground
-call with a 20-minute timeout, outputs verbatim with wall times; finding if an item passes above 10 minutes;
-meta/FINAL-REPORT-12.md drafted under meta/drafts/.
-Done means: U7's gate and the Acceptance list of meta/BUILDER-12-PROMPT.md met, report committed and pushed.
+Unit in progress: none. Mission 12 finished; meta/FINAL-REPORT-12.md exists. Closes no milestone.
+Intent: next: the cold review of mission 12.
+Done means: n/a
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-14-m12 (91-99) bind; the owner's
 decisions-2026-10-13-owner (O-N wins); decisions 1-90 still bind; no value of a frozen file changes
