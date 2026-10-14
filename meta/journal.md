@@ -97,3 +97,4 @@
 - 2026-10-14 mission 10 U7 done: final report meta/FINAL-REPORT-10.md; gate M1 item by item all PASS under 10 minutes (O-3), gate M0 PASS; D-007 answered (decision 77); no new finding; mission finished.
 2026-10-14T02:40:34.930Z  consult 0mv7hxlzd-ammr (architect done) on aux.done of aux job 0mv7gfmo3-f3gn: VERDICT: next kit mission-11-kit
 - 2026-10-14 mission 11 U0: plan written (S2.0b, units U1-U7, base c3a3f1d); HF-008 recorded (REVIEW-10 note 7, decision 90 (d)); next U1.
+- 2026-10-14 mission 11 U1 done 93c2f91: derived exposure records staged with the day, paper.adjusted reads them (decision 84); 16 new tests; one existing test renamed/changed under decision 84; G1.3 30 days 1.341->1.469 s/day; check green 3/3.

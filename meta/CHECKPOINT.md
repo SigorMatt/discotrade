@@ -1,14 +1,13 @@
 # CHECKPOINT
 
 Mission: 11 (`meta/BUILDER-11-PROMPT.md`), roadmap step S2.0b. Closes no milestone. Base c3a3f1d.
-Done: U0 (this plan commit).
+Done: U0 7629de6, U1 93c2f91 (records unit.parquet, positions.parquet; G1.3 30 days 1.341->1.469 s/day;
+one changed existing test: test_nothing_is_stored_for_it -> ..._but_the_records, decision 84 replaces 81 (d)).
 
-Unit in progress: U1 The derived exposure records (decision 84; decisions 78, 81; O-4; REVIEW-10 note 3).
-Intent: store, staged with the day, per instrument and trading date R_i(D), and per subject, instrument
-and trading date the journal row count and summed position, under paper/<track>/; paper.adjusted reads them;
-journal._empty replaced by a public name; staged callers pass overlay.
-Done means: one pushed commit; existing tests/test_exposure.py tests unchanged and green; new tests as the
-brief's U1 gate lists; the three named wrong changes seen to fail; decision 90 (c) timings in the body;
+Unit in progress: U2 Dormancy, return and displacement on the adjusted measure (O-11, O-12; decisions 85, 87).
+Intent: lifecycle steps 2 and 3 read metrics.sharpe of paper.adjusted net_1x over decision 85's W, each subject
+with its own average positions; dormant/returned/displaced rows carry adjusted and plain (decision 87).
+Done means: one pushed commit; tests as the brief's U2 gate; named wrong changes seen to fail; timings in body;
 ./scripts/check green three times.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-14-m11 (83-90) and the owner's

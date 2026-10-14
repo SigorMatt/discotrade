@@ -14,8 +14,8 @@ Carried items:
 - Owner decision O-15: G1.3 on the adjusted measure (decision 90 (a)). — taken by U6
 - REVIEW-10 note 7: concurrent reviewers near the 20-minute cap, recorded as HF-008 (decision 90 (d)). — taken by U0
 
-- [ ] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, HF-008 in `meta/findings/FINDINGS.md`.
-- [ ] U1 The derived exposure records (decision 84; decisions 78, 81; O-4; DESIGN §9.2, §9.3, §16.1, §16.2; REVIEW-10 note 3).
+- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, HF-008 in `meta/findings/FINDINGS.md`. — 7629de6
+- [x] U1 The derived exposure records (decision 84; decisions 78, 81; O-4; DESIGN §9.2, §9.3, §16.1, §16.2; REVIEW-10 note 3). — 93c2f91 (G1.3 first 30 days 1.341 -> 1.469 s/day; adjusted call 0.347 -> 0.012 s)
 - [ ] U2 Dormancy, return and displacement on the adjusted measure (O-11, O-12; decisions 85, 87; decisions 62, 63, 68; DESIGN §10.3).
 - [ ] U3 Admission on the adjusted measure and the candidates file (O-11 to O-13; decisions 86, 87; decisions 48, 63, 68, 73, 79 (b); DESIGN §10.3, §4.1).
 - [ ] U4 The table's adjusted figures (O-13; decision 88; decisions 30, 39, 41, 60, 71; DESIGN §10.4, §8).
