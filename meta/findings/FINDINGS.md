@@ -535,3 +535,7 @@ D-005 status (appended 2026-10-12, mission 6 U0): Status: answered meta/decision
 D-006 status (appended 2026-10-12, mission 6 U0): Status: deferred S2.1 (meta/decisions/decisions-2026-10-12.md item 44)
 
 D-007 status (appended 2026-10-14, mission 10 U0): Status: answered meta/decisions/decisions-2026-10-14.md (item 77)
+
+D-010 status (appended 2026-10-14, mission 12 U0): Status: answered meta/decisions/decisions-2026-10-14-m12.md (item 93)
+
+D-006 status (appended 2026-10-14, mission 12 U0): Status: taken by mission 12 U3 (decision 44; meta/decisions/decisions-2026-10-14-m12.md item 95)
