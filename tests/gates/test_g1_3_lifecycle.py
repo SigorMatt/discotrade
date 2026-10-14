@@ -2,7 +2,8 @@
 ledgers hold one row per event and are never rewritten; the table and the two
 portfolio series match a hand count (DESIGN 18.3 G1.3, 18.2, 10.2 to 10.5, 8,
 9.3, 11.2, 11.3; decisions 2026-10-12 25, 30, 39, 41, 48, 60, 62, 63, 69, 71,
-72, 73, 74; I-5).
+72, 73, 74; owner's O-4, O-11 to O-13, O-15; decisions 2026-10-14 81, 85 to 88,
+90 (a); I-5).
 
 The replay runs on the fixture track ``test_synth`` (four synthetic
 instruments on ``synth_week``, ``cell_slots`` 3) and decision 72's gate
@@ -18,7 +19,8 @@ candidates:
 
 - 06-03 ``tests/fixtures/strategies/always_flat.py`` (new fixture, always 0,
   so its paper Sharpe is not a number) into ``trend/short``: ``free_slot``;
-- 06-04 ``reference/zscore_reversal.py``, score -0.3: refused ``not_positive``;
+- 06-04 ``reference/zscore_reversal.py``, score -0.3: refused ``not_positive``
+  (the admission score is the line's ``adjusted_t["sharpe"]``, decision 86);
 - 06-05 ``reference/hour_of_day.py``, score 0.9 with 9 trades: refused
   ``too_few_trades`` (gate ``min_trades_t`` 10);
 - 06-06 and 06-07 ``tests/fixtures/strategies/breaks_thursday_noon.py`` at
@@ -30,11 +32,23 @@ candidates:
   rows exposed until then.
 
 Then, as the replay runs: on Thursday 06-13 both breaking approaches are
-retired on failure (step 1); trend_ma goes dormant (step 2) and returns
-(step 3) as its paper Sharpe over its last 15 rows turns; the always-flat
-approach, never able to return, is retired on 2020-06-10, 365 calendar days
-after its row to ``dormant`` (step 4). The test lists every trial row and
-every lifecycle row, in full and in order.
+retired on failure (step 1); trend_ma goes dormant (step 2, first on
+2019-07-02) and returns (step 3, first on 2019-08-12) as its exposure-adjusted
+paper Sharpe at 1x over its last 15 rows turns (O-11, decision 85); the
+always-flat approach, never able to return, is retired on 2020-06-10, 365
+calendar days after its row to ``dormant`` (step 4). The test lists every
+trial row and every lifecycle row, in full and in order, with the ``adjusted``
+and ``plain`` figures of decision 87 on the rows of the reasons it names.
+
+The adjusted figures are computed here (O-4, decision 81): the unit return of
+a stored bar ``u`` is ``(Cr(u) - (Cr(u-1) + gap(u))) / Or(u)``, DESIGN 7.2 with
+``h = 1`` and the previous bar's prices adjusted as of ``u`` (section 5.6:
+``gap(u)`` the gap of the roll recorded at ``u``, else 0; ``u-1`` the previous
+stored bar), ``(Cr(u) - Or(u)) / Or(u)`` at an instrument's first stored bar;
+``R_i(D)`` the sum over the bars of ``i`` journaled on ``D``; ``hbar_i(W)`` the
+mean journal ``position`` of the subject on ``i`` over its rows dated in ``W``,
+0 with none; the adjusted value of a paper day the paper column less the mean
+over the track's four instruments of ``hbar_i(W) * R_i(D)``.
 
 The ledgers are never rewritten: after each segment, each ledger's earlier
 bytes are a prefix of its later bytes. The two portfolio series of the paper
@@ -45,8 +59,9 @@ equals, row for row and field for field under decision 39's rule, the test's
 own count (decision 71), the DESIGN 8 figures computed here with decisions 30
 and 41 written below, and the deflated figures with decision 60's formula and
 the standard library's normal quantile. The test reads the paper file, the
-journal and the ledgers with pyarrow and json directly; no function of
-``table.py``, ``stats.py`` or ``paper.py`` computes a count it compares with.
+journal, the stored bars, the roll records and the ledgers with pyarrow and
+json directly; no function of ``table.py``, ``stats.py``, ``paper.py`` or
+``lifecycle.py`` computes a count or a figure it compares with.
 
 Seeds: the synthetic instruments' seeds are those of their fixture records
 (``SEEDS``, asserted); the random pool is seeded by decision 64 with the
@@ -58,7 +73,7 @@ import hashlib
 import json
 import math
 import tomllib
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, timedelta
 from statistics import NormalDist
 
 import numpy as np
@@ -83,6 +98,7 @@ LEDGERS = ("trials.jsonl", "lifecycle.jsonl", "calls.jsonl")
 TOL = 1e-12
 G = 0.5772156649015329          # Euler-Mascheroni (decision 60)
 PERIODS = 252                   # trading days a year (DESIGN 8, R-7)
+T_DAYS, WINDOW = 7, 15          # test_synth's t_days; the gate dormant_window_days
 
 
 def scenario() -> list[dict]:
@@ -114,13 +130,15 @@ LIFECYCLE = [
     ("2019-06-13", BREAK13, "live", "retired", fail(17)),
     ("2019-07-02", TREND, "live", "dormant", "dormant"),          # step 2
     ("2019-08-12", TREND, "dormant", "live", "returned"),         # step 3
-    ("2019-08-14", TREND, "live", "dormant", "dormant"),
+    ("2019-08-13", TREND, "live", "dormant", "dormant"),
     ("2019-11-18", TREND, "dormant", "live", "returned"),
-    ("2019-12-02", TREND, "live", "dormant", "dormant"),
-    ("2020-03-18", TREND, "dormant", "live", "returned"),
-    ("2020-03-19", TREND, "live", "dormant", "dormant"),
+    ("2019-11-19", TREND, "live", "dormant", "dormant"),
+    ("2019-11-26", TREND, "dormant", "live", "returned"),
+    ("2019-11-29", TREND, "live", "dormant", "dormant"),
     ("2020-06-10", FLAT, "dormant", "retired", "retired_dormant"),  # 2019-06-11 + 365 days
 ]
+#: The reasons whose rows carry ``adjusted`` and ``plain`` (decision 87).
+FIGURED = ("admitted", "displaced", "dormant", "returned")
 #: Each candidate's verdict: (admitted, reason, displaced).
 VERDICTS = [(True, "free_slot", None), (False, "not_positive", None),
             (False, "too_few_trades", None), (True, "free_slot", None),
@@ -185,6 +203,94 @@ def read_journal_sums(state) -> dict:
                 d, math.fsum(mine["gross"].to_numpy(dtype=np.float64)),
                 math.fsum(mine["trade"].to_numpy(dtype=np.float64)), math.fsum(rolled)))
     return out
+
+
+@pytest.fixture(scope="module")
+def exposure(ran):
+    return read_exposure(ran[0])
+
+
+def read_unit_returns(state) -> dict:
+    """``r_i(u)`` per (symbol, bar ts) of every stored bar (O-4; decision 81 (b);
+    DESIGN 7.2 with ``h = 1``, 5.6): ``(Cr(u) - (Cr(u-1) + gap(u))) / Or(u)``,
+    ``(Cr(u) - Or(u)) / Or(u)`` at the first stored bar."""
+    out = {}
+    for sym in SEEDS:
+        files = sorted((state / "bars" / TRACK / sym).glob("*.parquet"))
+        bars = [pq.read_table(f, columns=["ts", "open", "close"]).to_pylist() for f in files]
+        bars = sorted((b for month in bars for b in month), key=lambda b: b["ts"])
+        rolls = state / "rolls" / TRACK / f"{sym}.jsonl"
+        gaps = ({instant(r["ts"]): float(r["gap"]) for r in read_jsonl(rolls)}
+                if rolls.exists() else {})
+        for k, bar in enumerate(bars):
+            if k == 0:
+                r = (bar["close"] - bar["open"]) / bar["open"]
+            else:
+                before = bars[k - 1]["close"] + gaps.get(bar["ts"], 0.0)
+                r = (bar["close"] - before) / bar["open"]
+            out[(sym, bar["ts"])] = r
+    return out
+
+
+def instant(text: str):
+    return datetime.fromisoformat(text).astimezone(UTC)
+
+
+def read_exposure(state) -> dict:
+    """``R`` per (symbol, journal day): the unit returns of the instrument's bars
+    journaled that day, summed in bar order; ``pos`` per (approach, day, symbol):
+    its journal row count and summed ``position``."""
+    unit = read_unit_returns(state)
+    big_r, pos = {}, {}
+    for d in journal_days(state):
+        path = state / "journal" / TRACK / f"{d.year:04d}" / f"{d.isoformat()}.parquet"
+        rows = pq.read_table(path, columns=["ts", "subject", "kind", "instrument",
+                                            "position"]).to_pandas()
+        for sym, mine in rows.groupby("instrument", sort=True):
+            total = 0.0
+            for ts in sorted(set(mine["ts"].dt.to_pydatetime())):
+                total += unit[(str(sym), ts)]
+            big_r[(str(sym), d)] = total
+        own = rows[rows["kind"] == "approach"]
+        for (subject, sym), mine in own.groupby(["subject", "instrument"], sort=True):
+            pos[(str(subject), d, str(sym))] = (
+                len(mine), math.fsum(mine["position"].to_numpy(dtype=np.float64)))
+    return {"R": big_r, "pos": pos}
+
+
+def own_hbar(exp, subject, days) -> dict[str, float]:
+    """``hbar_i(W)`` (decision 81 (c)): mean journal position over the subject's
+    rows dated in ``days``, 0 with none."""
+    out = {}
+    for sym in SEEDS:
+        held = [exp["pos"][(subject, d, sym)] for d in sorted(days)
+                if (subject, d, sym) in exp["pos"]]
+        n = sum(c for c, _ in held)
+        out[sym] = math.fsum(s for _, s in held) / n if n else 0.0
+    return out
+
+
+def own_adjusted(exp, records, subject, days, column) -> list[float]:
+    """``column`` of the subject's paper days in ``days`` less its static
+    exposure, the mean over the four instruments of ``hbar_i(W) * R_i(D)``."""
+    mine = records[(records["subject"] == subject) & records["date"].isin(set(days))]
+    mine = mine.sort_values("date", kind="mergesort")
+    average = own_hbar(exp, subject, set(mine["date"]))
+    out = []
+    for d, value in zip(mine["date"], mine[column], strict=True):
+        static = 0.0
+        for sym in sorted(SEEDS):
+            static += average[sym] * exp["R"].get((sym, d), 0.0)
+        out.append(float(value) - static / len(SEEDS))
+    return out
+
+
+def own_figures(exp, records, subject, days) -> tuple[float, float]:
+    """Decision 87's (adjusted, plain): the Sharpe at 1x of the subject's
+    adjusted and plain paper ``net_1x`` on its paper days in ``days``."""
+    mine = records[(records["subject"] == subject) & records["date"].isin(set(days))]
+    plain = [float(x) for x in mine.sort_values("date", kind="mergesort")["net_1x"]]
+    return own_sharpe(own_adjusted(exp, records, subject, days, "net_1x")), own_sharpe(plain)
 
 
 def journal_days(state) -> list[date]:
@@ -253,6 +359,9 @@ def state_after(rows, approaches, day) -> dict[str, str]:
 
 
 def same(a, b) -> bool:
+    if isinstance(a, dict) or isinstance(b, dict):      # avg_position (decision 88)
+        return (isinstance(a, dict) and isinstance(b, dict) and set(a) == set(b)
+                and all(same(a[k], b[k]) for k in a))
     if isinstance(a, float) and math.isnan(a):
         a = None
     if isinstance(b, float) and math.isnan(b):
@@ -273,19 +382,40 @@ def test_seeds_scenario_and_gate_values(ran, setup):
     assert {inst.symbol: inst.source.get("seed") for inst in tc.instruments} == SEEDS
     th = setup.thresholds
     assert int(th["lifecycle.retire_dormant_days"]) == 365
-    assert int(th["lifecycle.dormant_window_days"]) == 15
+    assert int(th["lifecycle.dormant_window_days"]) == WINDOW
     assert int(th["lifecycle.revival_min_dormant_days"]) == 5
     assert int(th["admission.min_trades_t"]) == 10
     assert int(tc.track.cell_slots) == 3
+    assert int(tc.track.t_days) == T_DAYS
     assert [x["day"] for x in LINES] == ["2019-06-03", "2019-06-04", "2019-06-05",
                                          "2019-06-06", "2019-06-07", "2019-06-11"]
     assert date(2019, 6, 11) + timedelta(days=365) == SEGMENTS[-1][1]
 
 
-def test_every_lifecycle_row_in_full_and_in_order(ran):
+def test_every_lifecycle_row_in_full_and_in_order(ran, records, exposure):
     rows = read_jsonl(ran[0] / "ledger" / TRACK / "lifecycle.jsonl")
     assert [(r["date"], r["id"], r["from"], r["to"], r["reason"]) for r in rows] == LIFECYCLE
-    assert all(set(r) == {"date", "id", "from", "to", "reason"} for r in rows)
+    by_id = {cid(x): x for x in LINES}
+    for r in rows:
+        keys = {"date", "id", "from", "to", "reason"}
+        if r["reason"] not in FIGURED:
+            assert set(r) == keys, r
+            continue
+        assert set(r) == keys | {"adjusted", "plain"}, r
+        d = date.fromisoformat(r["date"])
+        if r["reason"] == "admitted":       # the candidate's own figures on T
+            want = (by_id[r["id"]]["adjusted_t"]["sharpe"], by_id[r["id"]]["metrics_t"]["sharpe"])
+        elif r["reason"] == "displaced":    # over T's days: the t_days calendar days to d
+            first = d - timedelta(days=T_DAYS - 1)
+            mine = records[records["subject"] == r["id"]]
+            t_days = [x for x in mine["date"] if first <= x <= d]
+            want = own_figures(exposure, records, r["id"], t_days)
+        else:                               # W: the approach's last 15 paper rows to d
+            mine = records[(records["subject"] == r["id"]) & (records["date"] <= d)]
+            w = sorted(mine["date"])[-WINDOW:]
+            assert len(w) == WINDOW
+            want = own_figures(exposure, records, r["id"], w)
+        assert same(r["adjusted"], want[0]) and same(r["plain"], want[1]), (r, want)
     # One row per event: no event twice.
     assert len({json.dumps(r, sort_keys=True) for r in rows}) == len(rows)
 
@@ -314,7 +444,8 @@ def test_one_trial_row_per_candidate_in_full(ran, setup):
             "profile_version": line["profile_version"], "cost_model": costs.VERSION,
             "config_hash": costs.config_hash(setup.instruments, setup.spread_tables),
             "grid": None, "params": line["params"], "metrics_w": None,
-            "metrics_t": line["metrics_t"], "admitted": admitted, "reason": reason,
+            "metrics_t": line["metrics_t"], "adjusted_w": None,
+            "adjusted_t": line["adjusted_t"], "admitted": admitted, "reason": reason,
             "displaced": displaced})
     assert rows == want
 
@@ -341,7 +472,7 @@ def test_ledgers_are_never_rewritten(ran):
         for earlier, later in zip(seen, seen[1:], strict=False):
             assert later.startswith(earlier)
     assert len(snaps[0]["ledgers"]["lifecycle.jsonl"].splitlines()) == 7
-    assert len(snaps[1]["ledgers"]["lifecycle.jsonl"].splitlines()) == 9
+    assert len(snaps[1]["ledgers"]["lifecycle.jsonl"].splitlines()) == 10
     assert len(snaps[0]["ledgers"]["trials.jsonl"].splitlines()) == 6
 
 
@@ -393,7 +524,7 @@ def test_portfolio_series_match_a_hand_count(ran, records):
 # ------------------------------------------------------------------ the table
 
 
-def hand_table(state, setup_toml, records, sums, day) -> dict:
+def hand_table(state, setup_toml, records, sums, exp, day) -> dict:
     """Decision 71's table of ``day``, counted here."""
     life = [r for r in read_jsonl(state / "ledger" / TRACK / "lifecycle.jsonl")
             if date.fromisoformat(r["date"]) <= day]
@@ -447,10 +578,15 @@ def hand_table(state, setup_toml, records, sums, day) -> dict:
         mine = by_subject.get(aid)
         days = [] if mine is None else sorted(mine["date"])
         e = own_e(*moments(days), n)
+        adjusted_t = admitted[-1].get("adjusted_t") if admitted else None
         return {"section": section, "subject": aid, "cell": meta["cell"],
                 "description": meta["description"], "model_id": meta["model_id"],
                 "model_version": meta["model_version"], "admitted": meta["admitted"],
                 "admission_score": admitted[-1]["metrics_t"]["sharpe"] if admitted else None,
+                "adjusted_admission_score": None if adjusted_t is None else adjusted_t["sharpe"],
+                "adjusted_sharpe": own_sharpe(own_adjusted(exp, paper, aid, days, "net_1x")),
+                "adjusted_sharpe_2x": own_sharpe(own_adjusted(exp, paper, aid, days, "net_2x")),
+                "avg_position": own_hbar(exp, aid, days),
                 **rec, "breakeven_cost": breakeven(aid), "S": rec["sharpe"], "E_N": e,
                 "excess": rec["sharpe"] - e,
                 "state_history": [{"date": r["date"], "from": r["from"], "to": r["to"],
@@ -459,8 +595,9 @@ def hand_table(state, setup_toml, records, sums, day) -> dict:
     def other(section, subject):
         return {"section": section, "subject": subject,
                 **dict.fromkeys(("cell", "description", "model_id", "model_version",
-                                 "admitted", "admission_score", "S", "E_N", "excess",
-                                 "state_history")),
+                                 "admitted", "admission_score", "adjusted_admission_score",
+                                 "adjusted_sharpe", "adjusted_sharpe_2x", "avg_position",
+                                 "S", "E_N", "excess", "state_history")),
                 **record(subject),
                 "breakeven_cost": breakeven(subject) if section == "control" else None}
 
@@ -488,11 +625,12 @@ def read_setup_toml(config) -> dict:
 
 
 @pytest.mark.parametrize("segment", [0, 1, 2])
-def test_table_matches_a_hand_count(ran, records, journal_sums, setup_toml, segment):
+def test_table_matches_a_hand_count(ran, records, journal_sums, exposure, setup_toml,
+                                    segment):
     state, _, snaps = ran
     day = snaps[segment]["last"]
     got = snaps[segment]["table"]
-    want = hand_table(state, setup_toml, records, journal_sums, day)
+    want = hand_table(state, setup_toml, records, journal_sums, exposure, day)
     assert {k: got[k] for k in ("track", "date", "N")} == {
         k: want[k] for k in ("track", "date", "N")}
     assert [(r["section"], r["subject"]) for r in got["rows"]] == [
@@ -502,12 +640,14 @@ def test_table_matches_a_hand_count(ran, records, journal_sums, setup_toml, segm
         for key in w:
             assert same(g[key], w[key]), (day, g["subject"], key, g[key], w[key])
     # What each table shows, by the scenario: 06-13 trend_ma live, the flat
-    # one dormant, the two breaking ones retired and not listed; 08-13 the
-    # same after trend_ma's return; the last day trend_ma dormant only.
+    # one dormant, the two breaking ones retired and not listed; 08-13 both
+    # dormant (trend_ma returned on 08-12, dormant again on 08-13); the last
+    # day trend_ma dormant only.
     sections = {r["subject"]: r["section"] for r in got["rows"]}
     assert BREAK12 not in sections and BREAK13 not in sections
     if segment < 2:
-        assert (sections[TREND], sections[FLAT]) == ("live", "dormant")
+        assert (sections[TREND], sections[FLAT]) == (("live", "dormant"),
+                                                     ("dormant", "dormant"))[segment]
     else:
         assert sections[TREND] == "dormant" and FLAT not in sections
     assert len(got["rows"]) == len(want["rows"]) == {0: 2, 1: 2, 2: 1}[segment] + 4 + 50 + 2
