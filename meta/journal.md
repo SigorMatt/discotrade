@@ -117,3 +117,4 @@
 - 2026-10-14 mission 13 U0: docker server 29.1.3 found (decision 100 (a)); plan, checkpoint, HF-008 status line (decision 108); closes M2; gate M1 item by item and M0 again at the tip (decision 100 (b)).
 - 2026-10-14 mission 13 U1 done 6372322: REVIEW-12 should-fix 1-4 and notes 2, 3 (decision 101); four seen-to-fail changes made and reverted; no finding; check green 3/3 (674-699 s).
 - 2026-10-14 mission 13 U2 done c702fc4: container backend, image discotrade-sandbox:20fa1f2225a3 (python:3.14.6-slim by digest, numpy 2.5.4, pandas 3.0.6), `sandbox build`, run.toml [sandbox] keys; three seen-to-fail changes; no finding; check green 3/3 (712-737 s, +~55 s).
+- 2026-10-14 mission 13 U3 done 0823a2d: probe (stdlib only), sandbox selftest 15 PASS, doctor --live sandbox; image discotrade-sandbox:edeee6d2120e (old tag removed); two seen-to-fail changes; no finding; check green 3/3 (697-738 s).

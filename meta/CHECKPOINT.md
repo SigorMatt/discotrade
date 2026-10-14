@@ -4,14 +4,15 @@ Mission: 13 (`meta/BUILDER-13-PROMPT.md`), roadmap step S2.2. Closes milestone M
 Container runtime: docker, server Engine 29.1.3 (API 1.52).
 Done: U0 2a216eb, U1 6372322 (error texts via fixed built-in/numpy tuples, private result fd + no_result,
 BaseException caught, static order by attr name position, determinism `called` check; check 3/3 ~675 s),
-U2 c702fc4 (container.py, sandbox/Dockerfile, tag discotrade-sandbox:20fa1f2225a3 built; check 3/3 712-737 s).
+U2 c702fc4 (container.py, sandbox/Dockerfile, tag discotrade-sandbox:20fa1f2225a3 built; check 3/3 712-737 s),
+U3 0823a2d (probe, selftest, doctor --live sandbox; tag discotrade-sandbox:edeee6d2120e; check 3/3 697-738 s).
 
-Unit in progress: U3 (next).
-Intent: sandbox/probe.py (stdlib only, an input of the image tag, rebuild), run by container.py with a job's
-options on a real W job; `discotrade sandbox selftest` (PASS/FAIL per finding, exit 0 only when all pass; exit 1
-without runtime/image); `discotrade doctor --live sandbox` (L5) (decision 103).
-Done means: the U3 gate of the brief holds, two seen-to-fail changes made and reverted, ./scripts/check green 3/3
-with container tests run, one commit pushed; image of the new tag built.
+Unit in progress: U4 (next).
+Intent: tests/fixtures/hostile/ (one text per §12.5 attack + REVIEW-12's two, manifest.toml), rejection pass on the
+container backend at production thresholds on test_synth W, containment pass past the static check, subprocess
+backend refuses hostile files (decision 104).
+Done means: the U4 gate of the brief holds, two seen-to-fail changes made and reverted, ./scripts/check green 3/3
+with container tests run, one commit pushed with the per-file table in its body.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-14-m13 (100-108) bind; the owner's
 decisions-2026-10-13-owner (O-N wins); decisions 1-99 still bind (48 replaced by 105 for the day loop, U5 only);
