@@ -2,11 +2,13 @@
 owner's decisions O-4, O-17, O-18; decisions 2026-10-12 22, 23, 25, 30; R-23;
 I-1, I-7, I-8, I-12).
 
-Stage 2, the dry run and the grid on W (decision 97), is built here; stages 1
-(static), 3 (determinism), 4 (activity) and 5 (correlation), and the function
-that runs the five in order, are added beside it (decision 98). Every stage
+:func:`validate` runs the five stages of DESIGN 12.2 in order and stops at
+the first failure, returning its stage (one of :data:`STAGES`) and an error
+text under decision 95 (e); on success it returns stage 2's outcome, whose
+:meth:`Outcome.result` is decision 97 (e)'s (decision 98 (d)). Every stage
 runs on W of the candidate's day ``D`` (DESIGN 4.1) and reads only W's bars
-and their context; nothing is written to the state directory.
+and their context; nothing is written to the state directory. Nothing calls
+it from ``run-day`` or ``replay`` in this step (decisions 98 (d), 99).
 
 The pieces a stage reads:
 
@@ -62,12 +64,50 @@ for a figure that is not a number), ``metrics_w`` (the fixed combination's
 shape: ``sharpe``, ``sharpe_2x``, ``total_return``, ``total_return_2x``, None
 for not a number, and ``avg_position``, each track instrument's ``hbar_i(W)``).
 Writing them to a trial row is step S3.2's (decision 99).
+
+Stage 1 (static, DESIGN 12.1) is ``validation.static.check`` on the source
+text, its rule and message the error text (``static [<rule>]: <message>``). A
+submission carrying a function object (the in-process backend, unit tests
+only) has no text and skips it: the design is silent, this is the simplest
+reading. A text is checked before its ``PARAMS`` and ``GRID`` are read, so that
+a text that does not parse fails the stage rather than the harness.
+
+Stage 3 (:func:`determinism`, decision 98 (a)): the fixed combination runs
+again on W in a new job of the same backend, mode ``positions``, and its
+targets must equal stage 2's exactly (rule ``rerun``); then one job in mode
+``reverse_sample`` calls the function, inside one process, on a sample of each
+instrument's window bars in descending time order, and its targets must equal
+stage 2's for those bars (rule ``reverse_sample``). The sample
+(:func:`reverse_sample`) is at most :data:`REVERSE_SAMPLE` window bars per
+instrument, drawn without replacement by ``numpy.random.default_rng`` seeded
+with the integer of the first 16 hex digits of the text's sha256
+(:func:`sample_seed`; a submission without a text uses the empty text's), the
+instruments taken in the track's order from one generator. A job that fails
+fails the stage with its rule, its text prefixed ``determinism: ``.
+
+Stage 4 (:func:`activity`, decision 98 (b), R-1): the count, summed over the
+basket, of the fixed combination's window bars with ``trade(u) >
+metrics.TRADE_FLOOR`` (1e-9, decision 25) is at least
+``validation.min_changes_w`` (rule ``min_changes_w``).
+
+Stage 5 (:func:`correlation_gate`, DESIGN 12.3, decision 98 (c)): each live
+and dormant approach (``correlation.compared``) is run from its frozen source
+and fixed parameters on the same W through the same backend and scored by the
+harness as stage 2 scores; its position series and the submission's
+(``correlation.position_series``) are correlated over the same bars, and an
+absolute correlation above ``validation.corr_max`` rejects the submission,
+rule ``duplicate``, naming the approach ``correlation.duplicate`` picks (an id
+is not a symbol or a date). An approach whose own run fails cannot be
+compared: that is the harness's failure, not the submission's, and raises
+:class:`ValidationError` naming the approach (the design is silent; this is
+the simplest reading). The approaches' series live for one validation only.
 """
 
 from __future__ import annotations
 
 import ast
 import dataclasses
+import hashlib
 import itertools
 import math
 from collections.abc import Callable, Mapping, Sequence
@@ -82,6 +122,8 @@ from discotrade import backtest, metrics, paper
 from discotrade.config import DateRange
 from discotrade.journal import Setup
 from discotrade.sandbox.base import Sandbox, SandboxJob, SandboxResult, build_job
+from discotrade.state import Approach
+from discotrade.validation import correlation, static
 
 #: The stages of DESIGN 12.2, in order (decision 98 (d)).
 STAGES = ("static", "dry_run", "determinism", "activity", "correlation")
@@ -89,6 +131,13 @@ STAGES = ("static", "dry_run", "determinism", "activity", "correlation")
 CALL_LIMITS_FLAG = "enforces_call_limits"
 #: The percentile of call times ``validation.call_p95_ms`` bounds (DESIGN 12.2).
 CALL_PERCENTILE = 95.0
+#: The most window bars per instrument the reverse sample calls (decision 98 (a)):
+#: a constant of the procedure, not a threshold.
+REVERSE_SAMPLE = 20
+
+
+class ValidationError(RuntimeError):
+    """A validation the harness cannot carry out (not a failure of the submission)."""
 
 
 @dataclass(frozen=True)
@@ -316,3 +365,142 @@ def dry_run_and_grid(ctx: Context, submission: Submission) -> Outcome:
                             for w in windows},
                    evaluations=tuple(scored[fixed]), grid=grid, metrics_w=metrics_w,
                    adjusted_w=adjusted_w)
+
+
+# ------------------------------------------------------------- stage 3, determinism
+
+
+def sample_seed(source: str | None) -> int:
+    """The integer of the first 16 hex digits of the sha256 of ``source`` (the
+    empty text for None), the seed of the reverse sample (decision 98 (a))."""
+    text = "" if source is None else source
+    return int(hashlib.sha256(text.encode("utf-8")).hexdigest()[:16], 16)
+
+
+def reverse_sample(source: str | None, counts: Mapping[str, int]) -> dict[str, tuple[int, ...]]:
+    """Per instrument of ``counts`` (its window bars, in the track's order), at
+    most :data:`REVERSE_SAMPLE` distinct window-bar indices, in descending order."""
+    rng = np.random.default_rng(sample_seed(source))
+    out = {}
+    for symbol, n in counts.items():
+        drawn = rng.choice(int(n), size=min(REVERSE_SAMPLE, int(n)), replace=False)
+        out[symbol] = tuple(sorted((int(i) for i in drawn), reverse=True))
+    return out
+
+
+def _first_difference(got: np.ndarray, want: np.ndarray) -> int:
+    """The first index at which ``got`` and ``want`` differ (their common length
+    when one is a prefix of the other)."""
+    n = min(len(got), len(want))
+    differ = np.flatnonzero(got[:n] != want[:n])
+    return int(differ[0]) if len(differ) else n
+
+
+def determinism(ctx: Context, submission: Submission, first: Outcome) -> Outcome | None:
+    """Stage 3 on the fixed combination of ``first`` (decision 98 (a)); None when it passes."""
+    fixed = [dict(first.params or {})]
+    again = ctx.backend.run(ctx.job(submission, fixed))
+    if again.error is not None:
+        return failed("determinism", again.error.rule, f"determinism: {again.error.text}")
+    for symbol, want in first.targets.items():
+        got = np.asarray(again.targets[(0, symbol)], dtype=np.float64)
+        if len(got) != len(want) or not np.array_equal(got, want):
+            return failed("determinism", "rerun",
+                          f"determinism [rerun]: a second run on W in a new sandbox gave "
+                          f"other positions, first at window bar "
+                          f"{_first_difference(got, want)}")
+    samples = reverse_sample(submission.source,
+                             {symbol: len(t) for symbol, t in first.targets.items()})
+    back = ctx.backend.run(ctx.job(submission, fixed, mode="reverse_sample", samples=samples))
+    if back.error is not None:
+        return failed("determinism", back.error.rule, f"determinism: {back.error.text}")
+    for symbol, want in first.targets.items():
+        called = np.asarray(back.bars[(0, symbol)], dtype=np.int64)
+        got = np.asarray(back.targets[(0, symbol)], dtype=np.float64)
+        for i, value in zip(called, got, strict=True):
+            if value != want[int(i)]:
+                return failed("determinism", "reverse_sample",
+                              f"determinism [reverse_sample]: calling a sample of bars in "
+                              f"reverse order inside one process gave another position at "
+                              f"window bar {int(i)} (the function keeps state between calls)")
+    return None
+
+
+# ------------------------------------------------------------- stage 4, activity
+
+
+def changes(evaluations: Sequence[backtest.Evaluation]) -> int:
+    """The window bars with ``trade(u) > metrics.TRADE_FLOOR``, summed over the basket."""
+    return sum(int((ev.rows["trade"].to_numpy(dtype=np.float64) > metrics.TRADE_FLOOR).sum())
+               for ev in evaluations)
+
+
+def activity(ctx: Context, first: Outcome) -> Outcome | None:
+    """Stage 4 on the fixed combination of ``first`` (decision 98 (b)); None when it passes."""
+    needed = int(ctx.threshold("validation.min_changes_w"))
+    made = changes(first.evaluations)
+    if made < needed:
+        return failed("activity", "min_changes_w",
+                      f"activity [min_changes_w]: {made} position changes on W summed over "
+                      f"the basket; at least min_changes_w ({needed}) are needed")
+    return None
+
+
+# ------------------------------------------------------------- stage 5, the correlation gate
+
+
+def approach_series(ctx: Context, approach: Approach,
+                    windows: Sequence[backtest.Window]) -> np.ndarray:
+    """``approach``'s position series on W, from its frozen source and fixed
+    parameters, run through ``ctx.backend`` and scored as stage 2 scores."""
+    sub = Submission(params=dict(approach.params), source=approach.source)
+    result = ctx.backend.run(ctx.job(sub, [sub.params]))
+    if result.error is not None:
+        raise ValidationError(f"approach {approach.id} could not be run on W for the "
+                              f"correlation gate: {result.error.text}")
+    evaluations = [backtest.score(win, [(approach.id,
+                                         result.targets[(0, win.instrument.symbol)], None)])[0]
+                   for win in windows]
+    return correlation.position_series(evaluations)
+
+
+def correlation_gate(ctx: Context, first: Outcome) -> Outcome | None:
+    """Stage 5 on the fixed combination of ``first`` (DESIGN 12.3, decision 98 (c));
+    None when it passes."""
+    approaches = correlation.compared(Path(ctx.state_dir), ctx.setup.track.name, ctx.day)
+    if not approaches:
+        return None
+    windows = ctx.windows()
+    others = {a.id: approach_series(ctx, a, windows) for a in approaches}
+    named = correlation.duplicate(correlation.position_series(first.evaluations), others,
+                                  float(ctx.threshold("validation.corr_max")))
+    if named is not None:
+        return failed("correlation", "duplicate",
+                      f"correlation [duplicate]: the position series on W has an absolute "
+                      f"correlation above corr_max with approach {named[0]}")
+    return None
+
+
+# ------------------------------------------------------------- the sequence
+
+
+def validate(ctx: Context, submission: Submission | str) -> Outcome:
+    """The five stages of DESIGN 12.2 in order on ``submission`` (a source text
+    or a :class:`Submission`), stopping at the first failure (decision 98 (d))."""
+    source = submission if isinstance(submission, str) else submission.source
+    if source is not None:
+        refusal = static.check(source, ctx.setup.thresholds)
+        if refusal is not None:
+            return failed("static", refusal.rule, f"static [{refusal.rule}]: {refusal.message}")
+    if isinstance(submission, str):
+        submission = Submission.from_source(submission)
+    first = dry_run_and_grid(ctx, submission)
+    if not first.ok:
+        return first
+    for stage in (lambda: determinism(ctx, submission, first),
+                  lambda: activity(ctx, first),
+                  lambda: correlation_gate(ctx, first)):
+        out = stage()
+        if out is not None:
+            return out
+    return first

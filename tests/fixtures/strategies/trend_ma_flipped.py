@@ -1,0 +1,26 @@
+"""``reference/trend_ma.py`` with its sign flipped, at the fixed parameters
+``fast`` 6 and ``slow`` 48: short (-1) where the reference is long, long (+1)
+where it is short. Its position series is the reference's negated, a
+correlation of -1, so the correlation gate rejects it as a duplicate of an
+approach admitted from the reference at those parameters (DESIGN 12.3;
+decision 2026-10-14-m12 98 (c)). A fixture of
+``tests/test_validation_sequence.py``.
+"""
+
+import indicators
+
+PARAMS = {"fast": 6, "slow": 48}
+
+
+def position(bars, params):
+    slow = int(params["slow"])
+    if len(bars) < slow:
+        return 0.0
+    close = bars["close"].iloc[-slow:]
+    fast_ma = indicators.sma(close, int(params["fast"])).iloc[-1]
+    slow_ma = indicators.sma(close, slow).iloc[-1]
+    if fast_ma > slow_ma:
+        return -1.0
+    if fast_ma < slow_ma:
+        return 1.0
+    return 0.0
