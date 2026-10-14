@@ -1,5 +1,5 @@
 """The table (DESIGN 10.4, 8, 11.2; decisions 2026-10-12 25, 30, 41, 60, 62, 63,
-69, 71; I-3, I-4, I-6).
+69, 71; decision 2026-10-14 88; owner's decision O-13; I-3, I-4, I-6).
 
 ``build(state_dir, setup, day, records, into=None)`` gives decision 71's table
 of the new day ``day``: one object holding ``track``, ``date`` (``day``),
@@ -33,10 +33,24 @@ with ``roll``, times 10000; not a number without turnover), the deflated
 figures over its paper days (``S`` its ``sharpe``, ``E_N`` from
 ``stats.control_moments`` over those days and ``stats.expected_max`` with
 ``N``, ``excess`` ``S - E_N``; decision 60) and ``state_history`` (its
-lifecycle rows, ``date``, ``from``, ``to``, ``reason``, in ledger order). The
-approach fields, ``state_history`` and the deflated figures are ``null`` for
-the controls and the portfolio series, and ``breakeven_cost`` for the
-portfolio series. A float that is not finite is ``null``.
+lifecycle rows, ``date``, ``from``, ``to``, ``reason``, in ledger order).
+
+Each approach row also holds the exposure-adjusted figures of decision
+2026-10-14 88 (O-13), beside the plain ones: ``adjusted_sharpe`` and
+``adjusted_sharpe_2x`` (``metrics.sharpe``, decision 30, of
+``paper.adjusted(..., column "net_1x")`` and ``"net_2x"`` over all its paper
+days, the staged records read with ``overlay`` ``into``), ``avg_position``
+(each instrument symbol of the track to its ``hbar_i`` over all its paper days,
+``paper.hbar`` on the derived position records; 0 with no row) and
+``adjusted_admission_score`` (``adjusted_t["sharpe"]`` of the trial row
+``admission_score`` reads; ``null`` where that is ``null`` or the row has no
+``adjusted_t``). The deflated figures stay on the plain paper ``net_1x`` (O-10
+item 4 puts O-7 in step S4.1).
+
+The approach fields, the adjusted figures, ``state_history`` and the deflated
+figures are ``null`` for the controls and the portfolio series, and
+``breakeven_cost`` for the portfolio series. A float that is not finite is
+``null``.
 
 The journal sums of ``breakeven_cost`` are kept per journal day in a cache of
 the process keyed by the day's content hash in the journal index (equal
@@ -48,7 +62,9 @@ changes no result.
 as ``ledger.line`` writes a row: keys sorted, no whitespace, a newline) and
 ``table.md`` (``render``: a title, ``N``, then one Markdown table per section
 in the order above, the same rows in the same order, every real number to
-four decimals, ``null`` as ``-``; no wall-clock time) under ``root``, each
+four decimals, ``avg_position`` as ``SYMBOL value`` pairs in symbol order,
+``null`` as ``-``; each figure column's heading labelled ``(plain)`` or
+``(adjusted)``, ``LABELS``; no wall-clock time) under ``root``, each
 atomically. The daily run writes them to the staging directory on a new day
 only, so a re-run of a finished day writes neither (I-6).
 """
@@ -78,12 +94,22 @@ SECTIONS = (LIVE, DORMANT, CONTROL, PORTFOLIO)
 _BPS = 10000.0
 #: The row's keys after ``section`` and ``subject``, in the order ``table.md`` shows them.
 FIELDS = ("cell", "description", "model_id", "model_version", "admitted", "admission_score",
-          "days", "clean_days", "sharpe", "sharpe_2x", "trades", "max_drawdown",
+          "adjusted_admission_score", "days", "clean_days", "sharpe", "sharpe_2x",
+          "adjusted_sharpe", "adjusted_sharpe_2x", "avg_position", "trades", "max_drawdown",
           "breakeven_cost", "S", "E_N", "excess", "state_history")
 _APPROACH_FIELDS = ("cell", "description", "model_id", "model_version", "admitted",
-                    "admission_score", "S", "E_N", "excess", "state_history")
-_REALS = frozenset(("admission_score", "sharpe", "sharpe_2x", "max_drawdown",
+                    "admission_score", "adjusted_admission_score", "adjusted_sharpe",
+                    "adjusted_sharpe_2x", "avg_position", "S", "E_N", "excess",
+                    "state_history")
+_REALS = frozenset(("admission_score", "adjusted_admission_score", "sharpe", "sharpe_2x",
+                    "adjusted_sharpe", "adjusted_sharpe_2x", "max_drawdown",
                     "breakeven_cost", "S", "E_N", "excess"))
+PLAIN, ADJUSTED = "plain", "adjusted"
+#: Decision 88: each figure column of ``table.md`` labelled as adjusted or plain.
+LABELS = {"admission_score": PLAIN, "adjusted_admission_score": ADJUSTED,
+          "sharpe": PLAIN, "sharpe_2x": PLAIN, "adjusted_sharpe": ADJUSTED,
+          "adjusted_sharpe_2x": ADJUSTED, "avg_position": ADJUSTED, "max_drawdown": PLAIN,
+          "breakeven_cost": PLAIN, "S": PLAIN, "E_N": PLAIN, "excess": PLAIN}
 
 #: (track, day, content hash) -> subject -> (gross, trade, rolled turnover) sums.
 _DAY_SUMS: dict[tuple[str, str, str], dict[str, tuple[float, float, float]]] = {}
@@ -173,6 +199,18 @@ def build(state_dir: Path, setup: Any, day: date, records: pd.DataFrame,
     groups = {str(s): g.sort_values("date", kind="mergesort")
               for s, g in records.groupby("subject", sort=False)}
     sums = journal_sums(state_dir, track, into)
+    symbols = [inst.symbol for inst in setup.instruments]
+    held: list[pd.DataFrame] = []
+
+    def positions() -> pd.DataFrame:
+        if not held:
+            frame = None if into is None else paper.read_positions(into, track)
+            if frame is None:
+                frame = paper.read_positions(state_dir, track)
+            if frame is None:
+                raise ValueError(f"{track} has no derived exposure records")
+            held.append(frame)
+        return held[0]
 
     live = sorted((str(by_id[a].meta["cell"]), a) for a, s in after.items() if s.state == LIVE)
     dormant = sorted(a for a, s in after.items() if s.state == DORMANT)
@@ -188,13 +226,23 @@ def build(state_dir: Path, setup: Any, day: date, records: pd.DataFrame,
         trial = [t for t in trials if t["id"] == aid and t["admitted"]]
         score = (float(trial[-1]["metrics_t"]["sharpe"])
                  if trial and trial[-1]["metrics_t"].get("sharpe") is not None else None)
+        adjusted_t = trial[-1].get("adjusted_t") if trial else None
+        adjusted_score = (float(adjusted_t["sharpe"]) if isinstance(adjusted_t, Mapping)
+                          and adjusted_t.get("sharpe") is not None else None)
         days = [] if mine is None else list(mine["date"])
+        adjusted = {c: sharpe(paper.adjusted(state_dir, setup, aid, days, c,
+                                             records=records, overlay=into))
+                    for c in ("net_1x", "net_2x")}
+        average = (paper.hbar(positions(), aid, symbols, days) if days
+                   else dict.fromkeys(symbols, 0.0))
         mu_c, sd_c = stats.control_moments(records, days)
         e_n = stats.expected_max(mu_c, sd_c, n)
         return {"section": section, "subject": aid, "cell": a.meta["cell"],
                 "description": a.meta["description"], "model_id": a.meta["model_id"],
                 "model_version": a.meta["model_version"], "admitted": a.meta["admitted"],
-                "admission_score": score, **record,
+                "admission_score": score, "adjusted_admission_score": adjusted_score,
+                **record, "adjusted_sharpe": adjusted["net_1x"],
+                "adjusted_sharpe_2x": adjusted["net_2x"], "avg_position": average,
                 "breakeven_cost": breakeven(sums.get(aid, [])),
                 "S": record["sharpe"], "E_N": e_n, "excess": stats.excess(record["sharpe"], e_n),
                 "state_history": [{"date": r["date"], "from": r["from"], "to": r["to"],
@@ -223,6 +271,8 @@ def _cell(name: str, value: Any) -> str:
     if name == "state_history":
         return "; ".join(f"{h['date']} {h['from']}>{h['to']} {h['reason']}"
                          for h in value) or "-"
+    if name == "avg_position":
+        return "; ".join(f"{s} {float(v):.4f}" for s, v in sorted(value.items())) or "-"
     return str(value).replace("|", "\\|").replace("\n", " ")
 
 
@@ -230,8 +280,9 @@ def render(table: Mapping[str, Any]) -> str:
     """``table.md``: the same rows, in the same order, one Markdown table per section."""
     lines = [f"# {table['track']} {table['date']}", "", f"N: {table['N']}", ""]
     head = ("subject",) + FIELDS
+    labelled = [f"{k} ({LABELS[k]})" if k in LABELS else k for k in head]
     for section in SECTIONS:
-        lines += [f"## {section}", "", "| " + " | ".join(head) + " |",
+        lines += [f"## {section}", "", "| " + " | ".join(labelled) + " |",
                   "|" + "---|" * len(head)]
         for row in table["rows"]:
             if row["section"] == section:

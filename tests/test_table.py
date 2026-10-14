@@ -38,6 +38,8 @@ replay's clock. Every git run is on local paths with ``GIT_ALLOW_PROTOCOL=file``
 (decision 47).
 """
 
+import dataclasses
+import functools
 import json
 import math
 import os
@@ -75,13 +77,24 @@ EARLY = [(REF / "trend_ma.py", "trend/short", None, 1.25),
          (REF / "zscore_reversal.py", "mean_reversion/short", None, 2.0),
          (BREAKS, "breakout/short", None, 1.0)]
 LATE_ONE = (REF / "trend_ma.py", "trend/short", {"fast": 6, "slow": 24}, 3.5)
-REALS = ("admission_score", "sharpe", "sharpe_2x", "max_drawdown", "breakeven_cost", "S",
+# Decision 2026-10-14 88 adds adjusted_admission_score, adjusted_sharpe,
+# adjusted_sharpe_2x and avg_position to the row (approach rows only).
+REALS = ("admission_score", "adjusted_admission_score", "sharpe", "sharpe_2x",
+         "adjusted_sharpe", "adjusted_sharpe_2x", "max_drawdown", "breakeven_cost", "S",
          "E_N", "excess")
 FIELDS = ("cell", "description", "model_id", "model_version", "admitted",
-          "admission_score", "days", "clean_days", "sharpe", "sharpe_2x", "trades",
+          "admission_score", "adjusted_admission_score", "days", "clean_days", "sharpe",
+          "sharpe_2x", "adjusted_sharpe", "adjusted_sharpe_2x", "avg_position", "trades",
           "max_drawdown", "breakeven_cost", "S", "E_N", "excess", "state_history")
 APPROACH_ONLY = ("cell", "description", "model_id", "model_version", "admitted",
-                 "admission_score", "S", "E_N", "excess", "state_history")
+                 "admission_score", "adjusted_admission_score", "adjusted_sharpe",
+                 "adjusted_sharpe_2x", "avg_position", "S", "E_N", "excess", "state_history")
+#: Decision 88: each figure column of table.md labelled as adjusted or plain.
+LABELS = {"admission_score": "plain", "adjusted_admission_score": "adjusted",
+          "sharpe": "plain", "sharpe_2x": "plain", "adjusted_sharpe": "adjusted",
+          "adjusted_sharpe_2x": "adjusted", "avg_position": "adjusted",
+          "max_drawdown": "plain", "breakeven_cost": "plain", "S": "plain", "E_N": "plain",
+          "excess": "plain"}
 
 
 def git(repo, *args) -> str:
@@ -227,10 +240,10 @@ def test_the_fixture_values(setup):
     assert int(setup.thresholds["lifecycle.dormant_window_days"]) == 30
 
 
-def own_states(state, day):
+def own_states(state, day, track=TRACK):
     """Each approach's state after ``day``'s steps: the ``to`` of its last
     lifecycle row dated on or before ``day``."""
-    rows = ledger.read(state, TRACK, ledger.LIFECYCLE)
+    rows = ledger.read(state, track, ledger.LIFECYCLE)
     out = {}
     for a in read_approaches(state):
         if a.admitted <= day:
@@ -241,11 +254,11 @@ def own_states(state, day):
     return out
 
 
-def own_journal_sums(state):
+def own_journal_sums(state, track=TRACK):
     """Per subject, sum of gross, sum of trade, and 2 * |prev_position| summed
     over its rows with a roll, from every journal file."""
     out = {}
-    for path in sorted((state / "journal" / TRACK).rglob("*.parquet")):
+    for path in sorted((state / "journal" / track).rglob("*.parquet")):
         for r in pq.read_table(path).to_pylist():
             s = out.setdefault(r["subject"], [0.0, 0.0, 0.0])
             s[0] += r["gross"]
@@ -255,14 +268,88 @@ def own_journal_sums(state):
     return out
 
 
-def own_expected_rows(state, setup, n):
-    states = own_states(state, LAST)
+# ------------------------------------------- the adjusted figures (decision 88)
+#
+# From the journal parquet files, the stored month bar files and the roll
+# records only (pyarrow, pandas, json), as tests/test_exposure.py computes
+# them, calling nothing in discotrade: per bar, the unit return ``(1 * (O(u) -
+# (C(u-1) + gap)) + 1 * (C(u) - O(u))) / O(u)`` with ``u-1`` the previous
+# stored bar and ``gap`` the recorded gap of a roll at ``u``; ``R_i(D)`` its
+# sum over the bars of the journal's trading date ``D``; ``hbar_i`` the mean
+# journal ``position`` of the subject on ``i`` over all its paper days (0 with
+# no row); the adjusted series the paper value (the journal column summed over
+# the day's rows, over the track's instrument count, decision 23) minus the
+# mean over the track's instruments of ``hbar_i * R_i(D)``.
+
+
+@functools.cache
+def own_journal(state, track) -> pd.DataFrame:
+    files_ = sorted((state / "journal" / track).rglob("*.parquet"))
+    return pd.concat([pq.read_table(f).to_pandas() for f in files_], ignore_index=True)
+
+
+@functools.cache
+def own_unit(state, track, symbol) -> dict:
+    """Per bar ts: the unit return, from the stored bars and the roll records."""
+    paths = sorted((state / "bars" / track / symbol).glob("*.parquet"))
+    bars = pd.concat([pq.read_table(f).to_pandas() for f in paths], ignore_index=True)
+    bars = bars.sort_values("ts").reset_index(drop=True)
+    gaps = {}
+    rolls = state / "rolls" / track / f"{symbol}.jsonl"
+    if rolls.exists():
+        for line in rolls.read_text(encoding="utf-8").splitlines():
+            r = json.loads(line)
+            gaps[(pd.Timestamp(r["ts"]), r["old"], r["new"])] = float(r["gap"])
+    out = {}
+    for k in range(len(bars)):
+        o, c = float(bars["open"][k]), float(bars["close"][k])
+        if k == 0:
+            out[bars["ts"][k]] = (c - o) / o
+            continue
+        gap = 0.0
+        if bars["contract"][k] != bars["contract"][k - 1]:
+            gap = gaps[(bars["ts"][k], bars["contract"][k - 1], bars["contract"][k])]
+        prev = float(bars["close"][k - 1]) + gap
+        out[bars["ts"][k]] = (1.0 * (o - prev) + 1.0 * (c - o)) / o
+    return out
+
+
+def own_adjusted(state, track, symbols, subject):
+    """``(days, net_1x adjusted, net_2x adjusted, hbar)`` over all the paper
+    days of ``subject`` (the dates of its journal rows)."""
+    rows = own_journal(state, track)
+    mine = rows[rows["subject"] == subject]
+    days = sorted(set(mine["date"]))
+    n = len(symbols)
+    hbar = {}
+    for s in symbols:
+        leg = mine[mine["instrument"] == s]
+        hbar[s] = float(leg["position"].mean()) if len(leg) else 0.0
+    units = {}
+    for s in symbols:
+        unit = own_unit(state, track, s)
+        theirs = rows[(rows["instrument"] == s) & rows["date"].isin(days)]
+        for d, ts in sorted(set(zip(theirs["date"], theirs["ts"], strict=True))):
+            units[(s, d)] = units.get((s, d), 0.0) + unit[ts]
+    series = {}
+    for column in ("net_1x", "net_2x"):
+        values = []
+        for d in days:
+            plain = float(mine[mine["date"] == d][column].sum()) / n
+            values.append(plain - sum(hbar[s] * units.get((s, d), 0.0) for s in symbols) / n)
+        series[column] = values
+    return days, series["net_1x"], series["net_2x"], hbar
+
+
+def own_expected_rows(state, setup, n, track=TRACK, last=LAST):
+    states = own_states(state, last, track)
     approaches = {a.id: a for a in read_approaches(state)}
-    held = paper.read(state, TRACK)
+    held = paper.read(state, track)
     held = held.sort_values(["subject", "date"], kind="mergesort")
-    life = ledger.read(state, TRACK, ledger.LIFECYCLE)
-    trials = ledger.read(state, TRACK, ledger.TRIALS)
-    sums = own_journal_sums(state)
+    life = ledger.read(state, track, ledger.LIFECYCLE)
+    trials = ledger.read(state, track, ledger.TRIALS)
+    sums = own_journal_sums(state, track)
+    symbols = [i.symbol for i in setup.instruments]
     pool = int(setup.thresholds["controls.random_pool"])
     slots = [f"rc:{k}" for k in range(pool)]
 
@@ -295,10 +382,16 @@ def own_expected_rows(state, setup, n):
         e_n = own_expected(mu, sd, n)
         s = math.nan if rec["sharpe"] is None else rec["sharpe"]
         trial = [t for t in trials if t["id"] == aid]
+        _, adj_1x, adj_2x, hbar = own_adjusted(state, track, sorted(symbols), aid)
+        adjusted_t = trial[-1].get("adjusted_t") or {}
         return {"section": section, "subject": aid, "cell": meta["cell"],
                 "description": meta["description"], "model_id": meta["model_id"],
                 "model_version": meta["model_version"], "admitted": meta["admitted"],
-                "admission_score": trial[-1]["metrics_t"]["sharpe"], **rec,
+                "admission_score": trial[-1]["metrics_t"]["sharpe"],
+                "adjusted_admission_score": adjusted_t.get("sharpe"),
+                "adjusted_sharpe": real(own_sharpe(adj_1x)),
+                "adjusted_sharpe_2x": real(own_sharpe(adj_2x)),
+                "avg_position": hbar, **rec,
                 "breakeven_cost": be(aid), "S": rec["sharpe"], "E_N": real(e_n),
                 "excess": real(s - e_n),
                 "state_history": [{k: r[k] for k in ("date", "from", "to", "reason")}
@@ -312,13 +405,25 @@ def own_expected_rows(state, setup, n):
     live = sorted((approaches[a].meta["cell"], a) for a, s in states.items() if s == "live")
     dormant = sorted(a for a, s in states.items() if s == "dormant")
     rows = [approach("live", a) for _, a in live] + [approach("dormant", a) for a in dormant]
-    rows += [other("control", f"bh:{s}") for s in SEEDS] + [other("control", s) for s in slots]
+    rows += [other("control", f"bh:{s}") for s in symbols] + [other("control", s) for s in slots]
     rows += [other("portfolio", "portfolio"), other("portfolio", "portfolio_clean")]
     return rows, states
 
 
-def table_json(state):
-    return json.loads((state / "table" / TRACK / "table.json").read_text(encoding="utf-8"))
+def table_json(state, track=TRACK):
+    return json.loads((state / "table" / track / "table.json").read_text(encoding="utf-8"))
+
+
+def same_row(g, w):
+    """Every field of the row equal, reals and the average positions by decision 39."""
+    for k in ("section", "subject", *FIELDS):
+        if k in REALS:
+            assert eq(g[k], w[k]), (g["subject"], k, g[k], w[k])
+        elif k == "avg_position" and w[k] is not None:
+            assert g[k] is not None and set(g[k]) == set(w[k]), (g["subject"], g[k], w[k])
+            assert all(eq(g[k][s], w[k][s]) for s in w[k]), (g["subject"], g[k], w[k])
+        else:
+            assert g[k] == w[k], (g["subject"], k, g[k], w[k])
 
 
 def test_table_json_holds_decision_71s_rows_in_order(ran, setup):
@@ -343,11 +448,7 @@ def test_table_json_holds_decision_71s_rows_in_order(ran, setup):
                                              "portfolio"].index)
     for g, w in zip(got["rows"], want, strict=True):
         assert set(g) == {"section", "subject", *FIELDS}, g["subject"]
-        for k in ("section", "subject", *FIELDS):
-            if k in REALS:
-                assert eq(g[k], w[k]), (g["subject"], k, g[k], w[k])
-            else:
-                assert g[k] == w[k], (g["subject"], k, g[k], w[k])
+        same_row(g, w)
     # Nulls where decision 71 says, and real values where the data allow.
     by = {r["subject"]: r for r in got["rows"]}
     for s in ("bh:SYNA", "rc:0", "portfolio", "portfolio_clean"):
@@ -377,6 +478,8 @@ def own_cell(key, value):
         return f"{float(value):.4f}"
     if key == "state_history":
         return "; ".join(f"{h['date']} {h['from']}>{h['to']} {h['reason']}" for h in value)
+    if key == "avg_position":
+        return "; ".join(f"{s} {float(v):.4f}" for s, v in sorted(value.items()))
     return str(value).replace("|", "\\|")
 
 
@@ -449,3 +552,174 @@ def test_every_control_slot_is_listed_in_slot_order_at_the_production_pool(tmp_p
     assert got["N"] == 0
     assert all(r["days"] == 0 and r["sharpe"] != r["sharpe"] and r["max_drawdown"] == 0.0
                for r in got["rows"])
+
+
+# ------------------------------------------------ the adjusted figures on test_mixed
+#
+# Decision 2026-10-14 88 (O-13): ``discotrade replay`` in-process on the fixture
+# track ``test_mixed`` (SYNA rolls on 2019-06-14 and has no weekend bars, SYNL
+# has none either, SYNX trades every day; seeds ``MIXED_SEEDS``, asserted), the
+# same configuration copy as above (``controls.random_pool`` 4), from
+# ``MIXED_FIRST`` to ``MIXED_LAST``. Two approaches are admitted by
+# ``lifecycle.admit`` on ``MIXED_ADMITTED`` into free slots of two cells, with
+# adjusted Sharpes on T (``adjusted_t``) that differ from their plain ones
+# (``metrics_t``), so that the two columns are told apart. Every adjusted figure
+# is the test's own (``own_adjusted`` above). No other random draw is made.
+
+MIXED = "test_mixed"
+MIXED_SEEDS = {"SYNA": 101, "SYNL": 105, "SYNX": 106}
+MIXED_ADMITTED = date(2019, 6, 11)
+MIXED_FIRST = date(2019, 6, 12)
+MIXED_LAST = date(2019, 6, 16)
+#: (file, cell, plain score on T, adjusted score on T)
+MIXED_SPECS = [(REF / "trend_ma.py", "trend/short", 1.25, 0.8),
+               (REF / "zscore_reversal.py", "mean_reversion/short", 2.0, 1.5)]
+ADJUSTED_FIELDS = ("adjusted_admission_score", "adjusted_sharpe", "adjusted_sharpe_2x",
+                   "avg_position")
+
+
+@pytest.fixture(scope="module")
+def mixed_setup(config):
+    return journal.Setup.load(config, MIXED)
+
+
+@pytest.fixture(scope="module")
+def mixed(tmp_path_factory, config, mixed_setup):
+    state = tmp_path_factory.mktemp("tbmixed") / "state"
+    assert main(["init-state", "--state", str(state), "--as-of", INIT_AS_OF]) == 0
+    ids = []
+    for path, cell, score, adjusted in MIXED_SPECS:
+        strat = load_strategy_file(path, mixed_setup.thresholds)
+        got = lifecycle.admit(state, mixed_setup, lifecycle.Candidate(
+            source=path.read_text(encoding="utf-8"), params=strat.params, cell=cell,
+            model_id="test-model", model_version="test-model-v0", cutoff=CUTOFF,
+            description=f"{path.stem} | {cell}", profile_version="w-test",
+            metrics_t={"sharpe": score, "trades": 40},
+            adjusted_t={"sharpe": adjusted, "sharpe_2x": None, "total_return": None,
+                        "total_return_2x": None,
+                        "avg_position": {i.symbol: 0.0 for i in mixed_setup.instruments}},
+            t_days=[]), MIXED_ADMITTED)
+        assert got.admitted
+        ids.append(got.id)
+    assert main(["--state", str(state), "--config", str(config), "--track", MIXED, "replay",
+                 "--from", MIXED_FIRST.isoformat(), "--to", MIXED_LAST.isoformat()]) == 0
+    return state, ids
+
+
+def test_mixed_fixture_values(mixed_setup):
+    assert {i.symbol: i.source.get("seed") for i in mixed_setup.instruments} == MIXED_SEEDS
+    assert int(mixed_setup.thresholds["lifecycle.dormant_window_days"]) == 30
+
+
+def test_each_approach_row_holds_its_adjusted_figures_over_all_its_paper_days(
+        mixed, mixed_setup):
+    state, ids = mixed
+    got = table_json(state, MIXED)
+    n = len(ledger.read(state, MIXED, ledger.TRIALS))
+    want, _ = own_expected_rows(state, mixed_setup, n, MIXED, MIXED_LAST)
+    assert [r["subject"] for r in got["rows"]] == [r["subject"] for r in want]
+    assert sorted(r["subject"] for r in got["rows"] if r["section"] in ("live", "dormant")) \
+        == sorted(ids)
+    for g, w in zip(got["rows"], want, strict=True):
+        assert set(g) == {"section", "subject", *FIELDS}, g["subject"]
+        same_row(g, w)
+    by = {r["subject"]: r for r in got["rows"]}
+    symbols = sorted(MIXED_SEEDS)
+    trials = ledger.read(state, MIXED, ledger.TRIALS)
+    for aid, (_, _, score, adjusted) in zip(ids, MIXED_SPECS, strict=True):
+        row = by[aid]
+        days, adj_1x, adj_2x, hbar = own_adjusted(state, MIXED, symbols, aid)
+        # All its paper days, more than one, the whole record of the row.
+        assert len(days) == row["days"] > 1
+        assert eq(row["adjusted_sharpe"], real(own_sharpe(adj_1x)))
+        assert eq(row["adjusted_sharpe_2x"], real(own_sharpe(adj_2x)))
+        assert sorted(row["avg_position"]) == symbols
+        assert all(eq(row["avg_position"][s], hbar[s]) for s in symbols)
+        assert any(abs(hbar[s]) > 1e-9 for s in symbols)
+        assert row["adjusted_admission_score"] == adjusted
+        assert row["admission_score"] == score
+        assert [t["adjusted_t"]["sharpe"] for t in trials if t["id"] == aid] == [adjusted]
+        # The columns are told apart: adjusted and plain differ, 1x and 2x differ.
+        assert row["adjusted_sharpe"] is not None and row["adjusted_sharpe_2x"] is not None
+        assert not eq(row["adjusted_sharpe"], row["sharpe"])
+        assert not eq(row["adjusted_sharpe_2x"], row["sharpe_2x"])
+        assert not eq(row["adjusted_sharpe"], row["adjusted_sharpe_2x"])
+        # The deflated S stays on the plain paper net_1x (decision 88; O-10 item 4).
+        assert eq(row["S"], row["sharpe"]) and not eq(row["S"], row["adjusted_sharpe"])
+    for s in [f"bh:{x}" for x in MIXED_SEEDS] + [f"rc:{k}" for k in range(4)] \
+            + ["portfolio", "portfolio_clean"]:
+        assert all(by[s][k] is None for k in ADJUSTED_FIELDS), s
+        assert by[s]["sharpe"] is not None, s
+
+
+def test_avg_position_does_not_follow_the_dormant_window(mixed, mixed_setup):
+    """The table's average position is over the whole paper record, not the
+    last ``lifecycle.dormant_window_days`` rows: built again from the stored
+    state with that threshold set to 2 in a copy of the setup, every row is the
+    same."""
+    state, ids = mixed
+    values = tuple((k, 2 if k == "lifecycle.dormant_window_days" else v)
+                   for k, v in mixed_setup.thresholds.values)
+    short = dataclasses.replace(mixed_setup, thresholds=dataclasses.replace(
+        mixed_setup.thresholds, values=values))
+    assert int(short.thresholds["lifecycle.dormant_window_days"]) == 2
+    got = table.build(state, short, MIXED_LAST, paper.read(state, MIXED))
+    held = table_json(state, MIXED)
+    for g, w in zip(json.loads(ledger.line(got))["rows"], held["rows"], strict=True):
+        same_row(g, w)
+    for aid in ids:
+        days, _, _, _ = own_adjusted(state, MIXED, sorted(MIXED_SEEDS), aid)
+        assert len(days) > 2
+
+
+def test_adjusted_admission_score_is_null_where_the_trial_row_has_no_adjusted_t(
+        tmp_path, mixed, mixed_setup):
+    """A trial row written before decision 86 (here: the first approach's row,
+    its ``adjusted_t`` key removed in a copy of the state) gives a null
+    ``adjusted_admission_score``; ``admission_score`` and every other field stay."""
+    state = tmp_path / "state"
+    shutil.copytree(mixed[0], state)
+    ids = mixed[1]
+    path = ledger.ledger_path(state, MIXED, ledger.TRIALS)
+    lines = []
+    for line in path.read_text(encoding="utf-8").splitlines():
+        row = json.loads(line)
+        if row["id"] == ids[0]:
+            del row["adjusted_t"]
+        lines.append(ledger.line(row))
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    got = {r["subject"]: r for r in json.loads(ledger.line(table.build(
+        state, mixed_setup, MIXED_LAST, paper.read(state, MIXED))))["rows"]}
+    held = {r["subject"]: r for r in table_json(mixed[0], MIXED)["rows"]}
+    assert held[ids[0]]["adjusted_admission_score"] is not None
+    assert got[ids[0]]["adjusted_admission_score"] is None
+    assert got[ids[0]]["admission_score"] == held[ids[0]]["admission_score"]
+    same_row(got[ids[1]], held[ids[1]])
+    for k in FIELDS:
+        if k != "adjusted_admission_score":
+            assert got[ids[0]][k] == held[ids[0]][k], k
+
+
+def test_table_md_labels_each_figure_column_adjusted_or_plain(mixed):
+    state, _ = mixed
+    text = (state / "table" / MIXED / "table.md").read_text(encoding="utf-8")
+    head = "| " + " | ".join(
+        ["subject"] + [f"{k} ({LABELS[k]})" if k in LABELS else k for k in FIELDS]) + " |"
+    heads = [line for line in text.splitlines() if line.startswith("| subject |")]
+    assert heads == [head] * 4
+    got = table_json(state, MIXED)
+    rows = [line for line in text.splitlines()
+            if line.startswith("| ") and not line.startswith("| subject |")]
+    assert len(rows) == len(got["rows"])
+    for line, r in zip(rows, got["rows"], strict=True):
+        cells = re.split(r"(?<!\\) \| ", line[2:-2])
+        assert cells == [own_cell(k, r[k]) for k in ("subject", *FIELDS)], r["subject"]
+
+
+def test_a_rerun_of_the_mixed_replay_writes_nothing(tmp_path, mixed, config):
+    state = tmp_path / "state"
+    shutil.copytree(mixed[0], state)
+    before, head = files(state), git(state, "rev-parse", "HEAD")
+    assert main(["--state", str(state), "--config", str(config), "--track", MIXED, "replay",
+                 "--from", MIXED_LAST.isoformat(), "--to", MIXED_LAST.isoformat()]) == 0
+    assert files(state) == before and git(state, "rev-parse", "HEAD") == head
