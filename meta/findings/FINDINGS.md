@@ -392,6 +392,26 @@ whole `replay` or test process (one process per replay, not per day), or the
 Status: open
 Status: decided meta/decisions/decisions-2026-10-15-owner.md (O-20)
 
+### D-013 — a `./scripts/check` run took 910 s at mission 13 U5c, above HF-006's 15 minutes
+
+Severity: low · Component: the test suite's run time (`./scripts/check`,
+HF-006, HF-008) · Found: 2026-10-15, mission 13 U5c.
+
+Symptom. U5c's three `./scripts/check` runs, each its own foreground call
+with a 20-minute timeout, took 877 s, 910 s and 881 s, all green (2044
+passed). The second is above the 15 minutes the brief and HF-006 set for a
+run. U5b's runs took 858 to 881 s; U5c adds about 25 s a run (its new
+`container` tests, `tests/test_sandbox_limits.py` about 23 s, of which about
+11 s is `wall_wait.py`'s run under the production limits and about 4 s its
+run under the short one; the probe's limit findings under a second). The
+machine has four cores; its load average was near 2.0 during the runs.
+
+Direction (for the architect). The suite sits at the 15-minute line with
+nothing more added; whether the line moves, or which tests the check keeps,
+before U6's gate files and later missions add to it.
+
+Status: open
+
 ---
 
 ## hands findings

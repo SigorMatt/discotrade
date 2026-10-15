@@ -29,7 +29,10 @@ def test_milestone_without_gate_tests_fails():
     assert proc.returncode != 0
     lines = proc.stdout.splitlines()
     assert lines[-1] == "gate M2: FAIL"
-    for item in ("G2.1", "G2.2", "G2.3", "G2.4"):
+    # Five items for M2: G2.5 added by O-22 item 4 (decisions-2026-10-15-owner).
+    items = [line.split()[0] for line in lines[:-1] if line.startswith("G2.")]
+    assert items == ["G2.1", "G2.2", "G2.3", "G2.4", "G2.5"], lines
+    for item in items:
         assert any(line.startswith(f"{item} FAIL") for line in lines), item
 
 

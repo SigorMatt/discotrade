@@ -51,7 +51,10 @@ The probe (decision 103): :meth:`ContainerSandbox.run_probe` starts
 ``sandbox/probe.py``, copied into the image (an input of its tag), through
 :meth:`ContainerSandbox.run_program` and so with exactly a job's options, its
 mount the input directory of a real job. :func:`judge` is the harness's
-judgement of its report; a create outside ``/tmp`` passes only when it failed
+judgement of its report, the limits the probe read from inside included (O-22
+item 3 of decisions-2026-10-15-owner: each compared with :func:`required_limits`,
+the values of ``run.toml``, never the command's; a limit missing, unlimited or
+wider fails); a create outside ``/tmp`` passes only when it failed
 with ``EROFS``, since the container's user is not root and a create under a
 writable root would fail too, with ``EACCES`` (DESIGN 18.3 G2.3: "a read-only
 root"). The mount carries no timestamp (``write_job``), so "no bar after W" is
@@ -74,7 +77,7 @@ import subprocess
 import tempfile
 import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
@@ -242,14 +245,21 @@ def _no_image(ref: str) -> str:
 # ------------------------------------------------------------------ the options
 
 
+def cpu_rlimit(limits: SandboxLimits) -> int:
+    """The soft CPU-time limit (RLIMIT_CPU, whole seconds) a container's processes get:
+    ``cpu_seconds`` rounded up, or the wall-clock limit's when it is None. The hard
+    limit is one second more."""
+    cpu = limits.wall_seconds if limits.cpu_seconds is None else limits.cpu_seconds
+    return math.ceil(cpu)
+
+
 def run_command(runtime: str, ref: str, name: str, input_dir: Path, limits: SandboxLimits,
                 settings: SandboxSettings, argv: Sequence[str]) -> list[str]:
     """The command that starts one container (decision 102 (b)); every run uses it."""
     source = str(Path(input_dir))
     if "," in source or "=" in source:
         raise ValueError(f"a mount source may hold no ',' or '=': {source}")
-    cpu = limits.wall_seconds if limits.cpu_seconds is None else limits.cpu_seconds
-    seconds = math.ceil(cpu)
+    seconds = cpu_rlimit(limits)
     options = [
         "--name", name,
         "--pull", "never",
@@ -364,12 +374,15 @@ class ContainerSandbox:
                         break
                     if not sel.select(remaining):
                         continue
-                    chunk = os.read(fd, _READ)
+                    # Never more than one byte past the cap is read, and that byte,
+                    # which shows the cap breached, is not kept (O-22 item 4).
+                    chunk = os.read(fd, min(_READ, limits.output_bytes + 1 - len(out)))
                     if not chunk:
                         break
                     out += chunk
                     if len(out) > limits.output_bytes:
                         breach = "output"
+                        del out[limits.output_bytes:]
                         break
             if breach is None:
                 try:
@@ -524,6 +537,28 @@ class Expected:
     w_end: datetime
 
 
+@dataclass(frozen=True)
+class Required:
+    """The limits a container must run under (decision 102 (b), O-22 item 3 of
+    decisions-2026-10-15-owner): at most ``pids`` processes, at most ``memory_bytes``
+    of memory with no swap beyond it, at most ``cpus`` CPUs, and an RLIMIT_CPU of at
+    most ``cpu_soft`` seconds, hard at most ``cpu_hard``."""
+
+    pids: int
+    memory_bytes: int
+    cpus: float
+    cpu_soft: int
+    cpu_hard: int
+
+
+def required_limits(limits: SandboxLimits, settings: SandboxSettings) -> Required:
+    """What ``run.toml`` requires of a job run under ``limits``: its own values, never
+    read from the command that started the container."""
+    soft = cpu_rlimit(limits)
+    return Required(pids=settings.pids, memory_bytes=limits.memory_bytes,
+                    cpus=settings.cpus, cpu_soft=soft, cpu_hard=soft + 1)
+
+
 def expected_mount(job: SandboxJob, instruments: Sequence[Instrument],
                    calendars: dict[str, Calendar], window: DateRange) -> list[Expected]:
     """Per instrument of ``job`` (in ``instruments``' order), what its mount holds."""
@@ -559,9 +594,52 @@ def _instant(text: Any) -> datetime | None:
     return value if value.tzinfo is not None else None
 
 
-def judge(report: Any, expected: Sequence[Expected]) -> list[Finding]:
-    """The harness's judgement of a probe report (decision 103 (b)), one finding per
-    rule, in a fixed order; a part missing or malformed fails its findings."""
+def _count(value: Any) -> int | None:
+    """A cgroup or rlimit value as a whole number; None when it is missing, unlimited
+    (``max``, null) or not a number."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, str) and value.strip().isdigit():
+        return int(value.strip())
+    return None
+
+
+def _judge_limits(report: Any, required: Required,
+                  add: Callable[[str, bool, str], None]) -> None:
+    """The four limit findings (O-22 item 3): each value read from inside must be
+    present, limited, and no wider than ``required``."""
+    lim = _get(report, "limits")
+    pids = _count(_get(lim, "pids.max"))
+    ok = pids is not None and pids <= required.pids
+    add("limits.pids", ok, f"pids.max {_get(lim, 'pids.max')!r}, required at most "
+        f"{required.pids}" + ("" if ok else ": missing, unlimited or wider"))
+    mem, swap = _count(_get(lim, "memory.max")), _count(_get(lim, "memory.swap.max"))
+    ok = mem is not None and mem <= required.memory_bytes and swap == 0
+    add("limits.memory", ok, f"memory.max {_get(lim, 'memory.max')!r}, memory.swap.max "
+        f"{_get(lim, 'memory.swap.max')!r}, required at most {required.memory_bytes} "
+        f"with no swap" + ("" if ok else ": missing, unlimited or wider"))
+    cpu = _get(lim, "cpu.max")
+    parts = cpu.split() if isinstance(cpu, str) else []
+    quota, period = (_count(parts[0]), _count(parts[1])) if len(parts) == 2 else (None, None)
+    ok = quota is not None and bool(period) and quota <= required.cpus * period + 1e-9
+    add("limits.cpu", ok, f"cpu.max {cpu!r}, required at most {required.cpus:g} CPU"
+        + ("" if ok else ": missing, unlimited or wider"))
+    rl = _get(lim, "rlimit_cpu")
+    soft, hard = ((_count(rl[0]), _count(rl[1])) if isinstance(rl, list) and len(rl) == 2
+                  else (None, None))
+    ok = (soft is not None and hard is not None and soft <= required.cpu_soft
+          and hard <= required.cpu_hard)
+    add("limits.cpu_time", ok, f"RLIMIT_CPU {rl!r} s, required at most "
+        f"[{required.cpu_soft}, {required.cpu_hard}]"
+        + ("" if ok else ": missing, unlimited or wider"))
+
+
+def judge(report: Any, expected: Sequence[Expected], required: Required) -> list[Finding]:
+    """The harness's judgement of a probe report (decision 103 (b); the limits, O-22
+    item 3), one finding per rule, in a fixed order; a part missing or malformed
+    fails its findings."""
     found: list[Finding] = []
 
     def add(name: str, ok: bool, detail: str) -> None:
@@ -600,6 +678,7 @@ def judge(report: Any, expected: Sequence[Expected]) -> list[Finding]:
         caps = None
     add("user.capabilities", caps == 0,
         f"effective capability set {cap}" + (" (empty)" if caps == 0 else ", not empty"))
+    _judge_limits(report, required, add)
     mounted = _get(report, "mount", "instruments")
     mounted = mounted if isinstance(mounted, list) else None
     n = None if mounted is None else len(mounted)
@@ -666,7 +745,7 @@ def selftest(ctx: Any, out: TextIO, err: TextIO, command: str = "sandbox selftes
             report = backend.run_probe(job)
         except (SandboxUnavailable, ProbeFailed, OSError) as exc:
             return fail(exc)
-    findings = judge(report, expected)
+    findings = judge(report, expected, required_limits(job.limits, settings))
     for f in findings:
         print(f"{'PASS' if f.ok else 'FAIL'} {f.name}: {f.detail}", file=out)
     bad = sum(1 for f in findings if not f.ok)

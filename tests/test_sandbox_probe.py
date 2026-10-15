@@ -8,12 +8,18 @@ the image of the current tag built beforehand by ``discotrade sandbox build``), 
 probe run on the job of ``test_synth``'s W of ``DAY`` reports no route, loopback
 only and a failed connection; every create outside ``/tmp`` failed because the file
 system is read-only (``EROFS``) and the one under ``/tmp`` succeeded; a non-zero
-user id and an empty effective capability set; and per instrument the window's
-bars and context, counted here from the store itself, with no bar after W's last
-day. ``sandbox selftest`` on that state prints one PASS line per finding and exits
-0. The judgement fails each finding on a report written here by hand with that
-finding wrong. With an empty ``PATH``, ``sandbox selftest`` exits 1 naming that no
-container runtime was found and starts nothing.
+user id and an empty effective capability set; the limits the runtime set, read
+from inside (the cgroup's ``pids.max``, ``memory.max`` with ``memory.swap.max``
+and ``cpu.max``, and the probe's own ``RLIMIT_CPU``), each equal to the value the
+copied ``run.toml`` and decision 102 (b) require (O-22 item 3 of
+decisions-2026-10-15-owner); and per instrument the window's bars and context,
+counted here from the store itself, with no bar after W's last day. ``sandbox
+selftest`` on that state prints one PASS line per finding and exits 0. The
+judgement fails each finding on a report written here by hand with that finding
+wrong, a limit missing, unlimited or wider than required among them. The probe
+attempts nothing against a limit: it reads them only. With an empty ``PATH``,
+``sandbox selftest`` exits 1 naming that no container runtime was found and starts
+nothing.
 
 Why ``EROFS``: the container's user is not root, so without ``--read-only`` a
 create under ``/`` still fails, with ``EACCES``; only the error says the root is
@@ -31,6 +37,7 @@ command) and no container a test started remains.
 import ast
 import copy
 import json
+import math
 import shutil
 import sys
 import tempfile
@@ -40,11 +47,11 @@ import pytest
 
 from discotrade.bars.store import BarStore
 from discotrade.cli import REPO_ROOT, main
-from discotrade.config import load_calendar, load_track_config
+from discotrade.config import load_calendar, load_run, load_track_config
 from discotrade.daily import closed_day
 from discotrade.sandbox import container
-from discotrade.sandbox.base import build_job
-from discotrade.sandbox.container import ContainerSandbox, Expected, judge
+from discotrade.sandbox.base import build_job, limits_from_config
+from discotrade.sandbox.container import ContainerSandbox, Expected, Required, judge
 from discotrade.tradingcal import trading_date
 
 PROBE = REPO_ROOT / "sandbox" / "probe.py"
@@ -103,6 +110,12 @@ EXPECTED = [
 ]
 
 
+#: The limits required, by hand: those of tests/fixtures/config/run.toml (pids 64,
+#: memory_bytes 2 GiB with no swap, cpus 1.0, cpu_seconds 1200: a soft RLIMIT_CPU of
+#: 1200 s and a hard one of 1201 s, as run_command sets them).
+REQUIRED = Required(pids=64, memory_bytes=2147483648, cpus=1.0, cpu_soft=1200, cpu_hard=1201)
+
+
 def good_report():
     """A report, by hand, on which every finding passes."""
     def inst(i, n):
@@ -118,6 +131,9 @@ def good_report():
                     {"under": "/tmp", "created": True, "error": None}],
         "identity": {"uid": 10001, "euid": 10001, "gid": 10001, "egid": 10001,
                      "cap_eff": "0000000000000000"},
+        "limits": {"cgroup": "/sys/fs/cgroup", "pids.max": "64", "memory.max": "2147483648",
+                   "memory.swap.max": "0", "cpu.max": "100000 100000",
+                   "rlimit_cpu": [1200, 1201]},
         "mount": {"path": "/job", "files": [], "instruments": [inst(0, 912), inst(1, 900)]},
     }
 
@@ -128,11 +144,12 @@ def names(findings):
 
 ALL = ["network.routes", "network.interfaces", "network.connect", "create /",
        "create /usr", "create /home", "create /job", "create /tmp", "user.uid",
-       "user.capabilities", "mount.instruments", "mount.SYNA", "mount.SYNB"]
+       "user.capabilities", "limits.pids", "limits.memory", "limits.cpu", "limits.cpu_time",
+       "mount.instruments", "mount.SYNA", "mount.SYNB"]
 
 
 def test_on_a_good_report_every_finding_passes():
-    findings = judge(good_report(), EXPECTED)
+    findings = judge(good_report(), EXPECTED, REQUIRED)
     assert names(findings) == ALL
     assert all(f.ok for f in findings), [f for f in findings if not f.ok]
 
@@ -200,6 +217,15 @@ def _missing_bar(r):
     r["mount"]["instruments"][1]["count"] = 899
 
 
+def _limit(key, value):
+    def change(r):
+        if value is None:
+            del r["limits"][key]
+        else:
+            r["limits"][key] = value
+    return change
+
+
 WRONG = {
     "a route": (_route, "network.routes"),
     "an interface": (_interface, "network.interfaces"),
@@ -216,7 +242,38 @@ WRONG = {
     "a bar after W": (_bar_after_w, "mount.SYNA"),
     "a latest open after W": (_open_after_w, "mount.SYNB"),
     "a bar missing": (_missing_bar, "mount.SYNB"),
+    "no process limit": (_limit("pids.max", None), "limits.pids"),
+    "an unlimited process count": (_limit("pids.max", "max"), "limits.pids"),
+    "a process limit wider than required": (_limit("pids.max", "65"), "limits.pids"),
+    "no memory limit": (_limit("memory.max", None), "limits.memory"),
+    "an unlimited memory": (_limit("memory.max", "max"), "limits.memory"),
+    "a memory limit wider than required": (_limit("memory.max", "2147487744"),
+                                           "limits.memory"),
+    "swap beyond the memory limit": (_limit("memory.swap.max", "max"), "limits.memory"),
+    "no swap value": (_limit("memory.swap.max", None), "limits.memory"),
+    "no CPU limit": (_limit("cpu.max", None), "limits.cpu"),
+    "an unlimited CPU": (_limit("cpu.max", "max 100000"), "limits.cpu"),
+    "a CPU limit wider than required": (_limit("cpu.max", "150000 100000"), "limits.cpu"),
+    "no CPU-time limit": (_limit("rlimit_cpu", None), "limits.cpu_time"),
+    "an unlimited CPU time": (_limit("rlimit_cpu", [None, None]), "limits.cpu_time"),
+    "a CPU-time limit wider than required": (_limit("rlimit_cpu", [1201, 1202]),
+                                             "limits.cpu_time"),
+    "a hard CPU-time limit left unlimited": (_limit("rlimit_cpu", [1200, None]),
+                                             "limits.cpu_time"),
 }
+
+
+def test_narrower_limits_than_required_pass():
+    report = good_report()
+    report["limits"].update({"pids.max": "32", "memory.max": "1073741824",
+                             "cpu.max": "50000 100000", "rlimit_cpu": [600, 601]})
+    assert all(f.ok for f in judge(report, EXPECTED, REQUIRED))
+
+
+def test_the_required_limits_are_those_of_run_toml_as_run_command_sets_them():
+    settings = load_run(FIXTURE_CONFIG).sandbox
+    limits = limits_from_config(FIXTURE_CONFIG)
+    assert container.required_limits(limits, settings) == REQUIRED
 
 
 @pytest.mark.parametrize("what", sorted(WRONG))
@@ -224,7 +281,7 @@ def test_the_judgement_fails_exactly_the_finding_a_report_has_wrong(what):
     change, name = WRONG[what]
     report = good_report()
     change(report)
-    findings = judge(report, EXPECTED)
+    findings = judge(report, EXPECTED, REQUIRED)
     assert [f.name for f in findings if not f.ok] == [name], findings
 
 
@@ -232,15 +289,15 @@ def test_a_job_bar_after_w_fails_the_instrument_even_when_the_mount_matches_the_
     late = [Expected("SYNA", count=912, window=433,
                      last_open=datetime(2019, 7, 9, 13, tzinfo=UTC), w_end=W_END),
             EXPECTED[1]]
-    failed = [f.name for f in judge(good_report(), late) if not f.ok]
+    failed = [f.name for f in judge(good_report(), late, REQUIRED) if not f.ok]
     assert failed == ["mount.SYNA"]
 
 
-@pytest.mark.parametrize("part", ["network", "creates", "identity", "mount"])
+@pytest.mark.parametrize("part", ["network", "creates", "identity", "limits", "mount"])
 def test_a_report_missing_a_part_fails_its_findings_and_never_raises(part):
     report = good_report()
     del report[part]
-    findings = judge(report, EXPECTED)
+    findings = judge(report, EXPECTED, REQUIRED)
     assert names(findings) == ALL
     assert any(not f.ok for f in findings)
 
@@ -393,7 +450,17 @@ def test_a_probe_run_on_ws_job_reports_the_isolation_and_ws_bars_only(
     expected = container.expected_mount(job, tc.instruments, calendars, window)
     assert [(e.count, e.window) for e in expected] == [
         (sum(counts[i.symbol][:2]), counts[i.symbol][0]) for i in tc.instruments]
-    findings = judge(report, expected)
+    # The limits the runtime set, read from inside, are the copied run.toml's.
+    settings = load_run(config).sandbox
+    lim = report["limits"]
+    assert lim["pids.max"] == str(settings.pids)
+    assert lim["memory.max"] == str(job.limits.memory_bytes)
+    assert lim["memory.swap.max"] == "0"
+    quota, period = (int(v) for v in lim["cpu.max"].split())
+    assert quota == round(settings.cpus * period)
+    assert lim["rlimit_cpu"] == [1200, 1201] == [math.ceil(job.limits.cpu_seconds),
+                                                 math.ceil(job.limits.cpu_seconds) + 1]
+    findings = judge(report, expected, container.required_limits(job.limits, settings))
     assert all(f.ok for f in findings), [f for f in findings if not f.ok]
     assert b.started and not any(container.container_exists(b.runtime(), n)
                                  for n in b.started)

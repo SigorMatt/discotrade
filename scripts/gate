@@ -22,11 +22,12 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[1]
 GATES = REPO / "tests" / "gates"
 
-# The gate items of DESIGN 18.3, per milestone.
+# The gate items of DESIGN 18.3, per milestone; M2 has five (G2.5 added by O-22
+# item 4 of meta/decisions/decisions-2026-10-15-owner.md).
 ITEMS = {
     "M0": 4,
     "M1": 4,
-    "M2": 4,
+    "M2": 5,
     "M3": 3,
     "M4": 6,
     "M5": 4,

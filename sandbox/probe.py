@@ -13,7 +13,13 @@ with a one-second timeout, to an address of RFC 5737's TEST-NET-1, so that
 nothing is reached even if isolation failed; the outcome of creating a file
 under ``/``, ``/usr``, ``/home``, the mount and ``/tmp`` (a file it created is
 removed at once); its user and group ids and its effective capability set
-(``/proc/self/status``); and the files of the mount with, per instrument of
+(``/proc/self/status``); the limits the runtime set, read only and never
+attempted (O-22 item 3 of decisions-2026-10-15-owner): the values of its cgroup
+(version 2, the directory ``/proc/self/cgroup`` names under ``/sys/fs/cgroup``)
+for the process count (``pids.max``), memory (``memory.max`` and
+``memory.swap.max``) and CPU (``cpu.max``), each as its file holds it, null when
+it cannot be read, and its own CPU-time resource limit (``RLIMIT_CPU``, soft and
+hard, null for unlimited); and the files of the mount with, per instrument of
 ``job.json``, the number of bars each array holds and the latest open time of
 the bars when the mount carries one (a ``ts`` array; a job written by
 ``sandbox.base.write_job`` carries none, so it is then null).
@@ -26,6 +32,7 @@ import ast
 import errno
 import json
 import os
+import resource
 import socket
 import struct
 import sys
@@ -38,6 +45,9 @@ CONNECT_SECONDS = 1.0
 #: The directories under which a file is created, the mount's added at run time.
 CREATE_UNDER = ("/", "/usr", "/home", "/tmp")
 PROBE_FILE = "discotrade-probe"
+#: Where the cgroup (version 2) file system is mounted, and the files read there.
+CGROUP_ROOT = "/sys/fs/cgroup"
+CGROUP_FILES = ("pids.max", "memory.max", "memory.swap.max", "cpu.max")
 JOB_FILE = "job.json"
 _NPY_MAGIC = b"\x93NUMPY"
 _UNITS = {"s": 1, "ms": 10**3, "us": 10**6, "ns": 10**9}
@@ -107,6 +117,41 @@ def identity():
                     out["cap_eff"] = line.split(":", 1)[1].strip()
     except OSError as exc:
         out["cap_eff_error"] = _error(exc)
+    return out
+
+
+def _cgroup_dir():
+    """The directory of this process's cgroup (version 2): the path of the ``0::``
+    line of ``/proc/self/cgroup`` under :data:`CGROUP_ROOT`."""
+    with open("/proc/self/cgroup", encoding="ascii") as handle:
+        for line in handle:
+            if line.startswith("0::"):
+                return os.path.join(CGROUP_ROOT, line[3:].strip().lstrip("/"))
+    raise ValueError("no cgroup version 2 line")
+
+
+def _rlimit(value):
+    return None if value == resource.RLIM_INFINITY else value
+
+
+def limits():
+    """The limits the runtime set, read from inside; nothing is attempted against one."""
+    out = {"cgroup": None, **{name: None for name in CGROUP_FILES}, "rlimit_cpu": None,
+           "errors": {}}
+    try:
+        directory = _cgroup_dir()
+    except (OSError, ValueError) as exc:
+        out["errors"]["cgroup"] = _error(exc)
+    else:
+        out["cgroup"] = directory
+        for name in CGROUP_FILES:
+            try:
+                with open(os.path.join(directory, name), encoding="ascii") as handle:
+                    out[name] = handle.read().strip()
+            except OSError as exc:
+                out["errors"][name] = _error(exc)
+    soft, hard = resource.getrlimit(resource.RLIMIT_CPU)
+    out["rlimit_cpu"] = [_rlimit(soft), _rlimit(hard)]
     return out
 
 
@@ -195,6 +240,7 @@ def report(mount):
         "network": net,
         "creates": [create(d) for d in under],
         "identity": identity(),
+        "limits": limits(),
         "mount": mount_report(mount),
     }
 
