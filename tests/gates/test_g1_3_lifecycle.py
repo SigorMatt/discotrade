@@ -126,8 +126,12 @@ LIFECYCLE = [
     ("2019-06-07", BREAK13, "candidate", "live", "admitted"),
     ("2019-06-11", TREND, "candidate", "live", "admitted"),       # displacing the weakest
     ("2019-06-11", FLAT, "live", "dormant", "displaced"),
-    ("2019-06-13", BREAK12, "live", "retired", fail(16)),        # 12:00 New York
-    ("2019-06-13", BREAK13, "live", "retired", fail(17)),
+    ("2019-06-13", BREAK12, "live", "retired",                  # 12:00 New York
+     "failure: dry_run [out_of_range]: position returned a number outside [-1, 1] "
+     "at window bar 18 (parameter set 0)"),
+    ("2019-06-13", BREAK13, "live", "retired",
+     "failure: dry_run [out_of_range]: position returned a number outside [-1, 1] "
+     "at window bar 19 (parameter set 0)"),
     ("2019-07-02", TREND, "live", "dormant", "dormant"),          # step 2
     ("2019-08-12", TREND, "dormant", "live", "returned"),         # step 3
     ("2019-08-13", TREND, "live", "dormant", "dormant"),
