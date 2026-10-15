@@ -124,3 +124,4 @@
 - 2026-10-15 mission 13 resumed under decisions-2026-10-15-owner (47ebf8d): D-011 decided (O-19), D-012 decided (O-20), HF-009 filed, U4 open as the rejection suite (O-22), U5b and U5c added, U6 unblocked.
 - 2026-10-15 mission 13 U4 done ad1b588: rejection suite tests/fixtures/rejected/ (29 entries), rejection pass on container green, process.py excludes rejected/; no static rule added; check 3/3 (1051-1204 s, above 15 min as D-012 records).
 - 2026-10-15 mission 13 U5b done 8b9f9be: one fork server per harness process (O-20), restart notice; 30-day journal identical; 1.885 s/replay day (parent 2.466), G1.3 projected ~621-694 s; check 3/3 (858-881 s).
+- 2026-10-15 mission 13 U5c done 8b923fd: probe limit findings (pids, memory, cpu, cpu_time), selftest 19 PASS, G2.5 limit tests, output-cap overrun fixed, scripts/gate M2 five items, image discotrade-sandbox:1edd0f8558cb; D-013 filed (check run 910 s); check 3/3 (877-910 s).
