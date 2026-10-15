@@ -642,3 +642,75 @@ D-010 status (appended 2026-10-14, mission 12 U0): Status: answered meta/decisio
 D-006 status (appended 2026-10-14, mission 12 U0): Status: taken by mission 12 U3 (decision 44; meta/decisions/decisions-2026-10-14-m12.md item 95)
 
 HF-008 status (appended 2026-10-14, mission 13 U0): REVIEW-12 note 10: with `./scripts/check` near 660 s, per-commit reviewers had to run one at a time, and a reviewer's endless-loop mutant left an orphaned runner child it killed by hand. Status: open (meta/decisions/decisions-2026-10-14-m13.md item 108)
+
+### D-014 — gate G1.3 ran above O-3's 10 minutes in REVIEW-13
+
+Severity: low · Component: gate M1 item G1.3 (`tests/gates/test_g1_3_lifecycle.py`)
+with O-3's 10-minute target, O-20 and decision 2026-10-15-m14 113 (a) · Found:
+2026-10-15, REVIEW-13 (should-fix 5), recorded by mission 14 U0.
+
+Symptom. REVIEW-13 ran `./scripts/gate M1 G1.3` at 618 s at 42cea0f's parent
+and 607 s at 42cea0f, each one call with nothing else running, where mission
+13's builder measured 576 s at 68bee5f. The item passes; its margin under
+O-3's 10 minutes depends on the machine's load.
+
+Direction (for the owner). O-3's target for G1.3. O-20 says the gate is run as
+it is and nothing is weakened; each later mission's G1.3 time is appended here.
+
+Status: open
+
+### D-015 — O-22 item 1's copies under `tests/fixtures/rejected/` against decision 104 (d)'s exclusion
+
+Severity: low · Component: `tests/fixtures/rejected/` and its manifest, with
+O-22 item 1 and decision 2026-10-14-m13 104 (d) · Found: 2026-10-15, REVIEW-13
+(should-fix 6), recorded by mission 14 U0 (decision 113 (b)).
+
+Symptom. O-22 item 1 asks that a run-time entry's existing text be copied under
+`tests/fixtures/rejected/` with its manifest entry pointing at the copy. A
+byte-identical copy has the hash of its trusted original, so decision 104
+(d)'s exclusion by hash would either accept the copy or refuse the original.
+Mission 13 U4 (ad1b588) pointed the four entries at the originals under
+`tests/fixtures/strategies/`, which keeps both 104 (d) and the item's purpose
+(no new text where one exists).
+
+Direction (for the owner). Confirm the manifest as built, or say another form.
+Until the owner rules, the manifest stays as built.
+
+Status: open
+
+## hands findings (continued)
+
+### HF-010 — stale git worktrees of earlier aux sessions are left on the machine
+
+Severity: low · Component: hands' session lifecycle (aux sessions, aborted
+sessions) · Found: 2026-10-15, REVIEW-13 (`hands:` note 12), recorded by
+mission 14 U0 (decision 113 (c)).
+
+Symptom. Git worktrees of earlier aux sessions (`/tmp/rv13-8b9f9be`,
+`/tmp/u5/parent`) were left on the machine; nothing in hands cleans up after
+an aborted session.
+
+Direction (for the hands Project). A cleanup of a session's worktrees when it
+ends or is aborted, or a sweep at the next session's start.
+
+What this project does meanwhile: nothing in product code.
+
+Status: open
+
+### HF-011 — a `journal:` commit prefix the review protocol's skip list does not name
+
+Severity: low · Component: the review protocol's skip list (`meta/REVIEW-PROTOCOL.md`
+and hands' templates) · Found: 2026-10-15, REVIEW-13 (`hands:` note 15),
+recorded by mission 14 U0 (decision 113 (d)).
+
+Symptom. The commit 8bae433, `journal: architect consult ...`, carries a
+prefix the review protocol's list of commits a reviewer skips does not name.
+
+Direction (for the hands Project). Name the `journal:` prefix in the skip list,
+or have hands write its journal lines under a prefix the list names.
+
+What this project does meanwhile: nothing in product code.
+
+Status: open
+
+D-013 status (appended 2026-10-15, mission 14 U0): Status: taken by mission 14 U2 (meta/decisions/decisions-2026-10-15-m14.md item 114)
