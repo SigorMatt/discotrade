@@ -16,11 +16,12 @@ U5b 8b9f9be (fork server per process; 1.885 s per replay day, G1.3 projected ~62
 U5c 8b923fd (probe limit findings, G2.5 tests, scripts/gate M2 five items; image discotrade-sandbox:1edd0f8558cb; D-013;
 check 3/3 877-910 s).
 
-Unit in progress: U6, the gate tests of M2 and the gate runs (decisions 106, 100 (b); O-19, O-20, O-22). Intent: first a
-commit changing only G1.3's two expected reasons as O-19 says (body quotes O-19); then tests/gates/test_g2_1..g2_5 as
-O-22 states G2.1, G2.3 and G2.5; then sandbox build, ./scripts/gate M2 (one call), gate M1 G1.1..G1.4 (one call each),
-gate M0 once, all at the pushed tip, outputs verbatim with wall times. Done means: both commits pushed, gate outputs
-kept in meta/drafts/. Then U7.
+U6 42cea0f (O-19), 68bee5f (M2 gate tests); gate M2 PASS 157 s, M1 G1.1-G1.4 PASS (457/200/576/1 s), M0 PASS 266 s at
+68bee5f; outputs in meta/drafts/gate-runs-13.md.
+
+Unit in progress: U7, the final report meta/FINAL-REPORT-13.md (drafted under meta/drafts/), as the brief says, naming
+O-19, O-20, O-22 under decisions applied, stating 104 (c) was dropped by O-22 and what proves the boundary instead
+(O-22 item 5), with G2.3's limit findings and G2.5's results quoted. Done means: committed and pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-14-m13 (100-108) bind; the owner's
 decisions-2026-10-13-owner (O-N wins); decisions-2026-10-15-owner (O-19, O-20, O-22 win over 104, 105 (e), 106 (b)); decisions 1-99 still bind (48 replaced by 105 for the day loop, U5 only);
