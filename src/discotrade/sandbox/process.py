@@ -51,13 +51,23 @@ descriptor, enters the scratch directory and runs :func:`runner.main` on the
 job, then exits; a child is never reused for a second job. The backend reads
 the pipe with the same wall-clock limit and output cap, kills the child's
 session on a breach, and only then lets the server reap it and report its exit
-status, which is judged as a plain child's is. The server ends when the
-backend is closed (:meth:`ProcessSandbox.close`) or the backend's process
-ends (its end of the socket pair closes).
+status, which is judged as a plain child's is.
+
+One server per harness process (O-20 of 2026-10-15, which changes 105 (e)'s
+"one process per run of the day loop"): the server is shared by every fork-server
+backend of the process. It starts on the first job and lives for the whole
+``replay``, ``run-day``, ``journal recompute`` or test process; it is stopped
+when that process ends (:func:`stop_server`, registered with ``atexit``; its end
+of the socket pair also closes when the process dies) and by any fork-server
+backend's :meth:`ProcessSandbox.close`. A server that has died (found ended
+before a job, or failing a job) is started again on the next job, and
+:func:`restarts` counts each such start, from which the day run writes a
+health notice (:data:`discotrade.daily.SANDBOX_RESTARTED`).
 """
 
 from __future__ import annotations
 
+import atexit
 import hashlib
 import json
 import math
@@ -290,6 +300,81 @@ class _ForkServer:
             self.proc.wait()
 
 
+#: The process's one fork server (O-20), None before its first job and once stopped.
+_SERVER: _ForkServer | None = None
+#: Whether the last server ended without being stopped (it died, or failed a job).
+_LOST = False
+#: How many times a server was started again after one had died.
+_RESTARTS = 0
+
+
+def _shared_server() -> _ForkServer:
+    """The process's fork server: the running one, else a new one; a new one
+    replacing a server that died counts as a restart (:func:`restarts`)."""
+    global _SERVER, _RESTARTS
+    if _SERVER is not None and _SERVER.proc.poll() is not None:
+        _discard()
+    if _SERVER is None:
+        _SERVER = _ForkServer()
+        if _LOST:
+            _RESTARTS += 1
+    return _SERVER
+
+
+def _discard() -> None:
+    """End the server that died or failed a job; the next job starts a new one."""
+    global _SERVER, _LOST
+    server, _SERVER = _SERVER, None
+    _LOST = True
+    if server is not None:
+        server.close()
+
+
+def stop_server() -> None:
+    """Stop the process's fork server, if one is running (at the process's end,
+    and by a fork-server backend's close)."""
+    global _SERVER, _LOST
+    server, _SERVER = _SERVER, None
+    _LOST = False
+    if server is not None:
+        server.close()
+
+
+atexit.register(stop_server)
+
+
+def server_pid() -> int | None:
+    """The pid of the process's running fork server, None when none runs."""
+    return None if _SERVER is None else _SERVER.proc.pid
+
+
+def restarts() -> int:
+    """How many times this process started a fork server again after one had died."""
+    return _RESTARTS
+
+
+def _launch(job_dir: Path, work: Path, limits: SandboxLimits) -> tuple[_ForkServer, int, int]:
+    """The job of ``job_dir`` started by the process's fork server: the server, the
+    child's pid and the read end of the child's output pipe. A server that fails to
+    take the job (it died after the check of :func:`_shared_server`) is replaced
+    once, the job sent again over a fresh pipe."""
+    for attempt in (1, 2):
+        server = _shared_server()
+        read_end, write_end = os.pipe()
+        try:
+            pid = server.start(job_dir, work, limits, write_end)
+        except OSError:
+            os.close(read_end)
+            _discard()
+            if attempt == 2:
+                raise
+            continue
+        finally:
+            os.close(write_end)
+        return server, pid, read_end
+    raise AssertionError("unreachable")
+
+
 def _end(pid: int) -> None:
     """Kill the unreaped child ``pid`` and its session."""
     for kill in (os.killpg, os.kill):
@@ -306,18 +391,18 @@ def _limit(job: SandboxJob, rule: str, what: str) -> SandboxResult:
 class ProcessSandbox:
     """The child-process backend; job directories go under ``scratch``. With
     ``fork_server`` (the day loop's, decision 105 (e)) its children are forked by
-    one fork server started at its first job and ended by :meth:`close`."""
+    the process's one fork server (O-20), started at the first job of any such
+    backend and stopped by :meth:`close` or at the process's end."""
 
     def __init__(self, scratch: Path, fork_server: bool = False) -> None:
         self.scratch = Path(scratch)
         self.fork_server = fork_server
-        self._server: _ForkServer | None = None
 
     def close(self) -> None:
-        """End the fork server, if one was started."""
-        if self._server is not None:
-            server, self._server = self._server, None
-            server.close()
+        """Stop the process's fork server, if this is a fork-server backend and
+        one is running (:func:`stop_server`)."""
+        if self.fork_server:
+            stop_server()
 
     def run(self, job: SandboxJob) -> SandboxResult:
         if job.source is None:
@@ -367,15 +452,12 @@ class ProcessSandbox:
     def _run_forked(self, job: SandboxJob, job_dir: Path, work: Path) -> SandboxResult:
         """The job run by a child of the fork server (decision 105 (e))."""
         limits = job.limits
-        if self._server is None:
-            self._server = _ForkServer()
-        server = self._server
-        read_end, write_end = os.pipe()
         try:
-            try:
-                pid = server.start(job_dir, work, limits, write_end)
-            finally:
-                os.close(write_end)
+            server, pid, read_end = _launch(job_dir, work, limits)
+        except OSError as exc:
+            raise SandboxUnavailable(f"the fork server of the child-process backend "
+                                     f"failed: {exc}") from exc
+        try:
             # The deadline is the one measured time; it decides a kill, never a value (I-12).
             deadline = time.monotonic() + limits.wall_seconds
             out, breach = _read(read_end, deadline, limits.output_bytes)
@@ -391,7 +473,7 @@ class ProcessSandbox:
                     returncode = server.answer()
             server.reap()
         except OSError as exc:
-            self.close()
+            _discard()
             raise SandboxUnavailable(f"the fork server of the child-process backend "
                                      f"failed: {exc}") from exc
         finally:

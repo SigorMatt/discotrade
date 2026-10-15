@@ -368,7 +368,9 @@ def backend(setup: Setup, sandbox: Sandbox | str | None = None) -> Iterator[Sand
     """The sandbox approaches run on (decision 105): ``sandbox`` itself when it is
     a backend, else the one :func:`~discotrade.sandbox.base.choose_backend` gives
     for the track's instruments and the name ``sandbox`` (None: the default), its
-    job directories under a temporary directory removed on exit."""
+    job directories under a temporary directory removed on exit. The backend is
+    not closed here: the process backend's fork server lives for the whole
+    process (O-20 of 2026-10-15), stopped at its end."""
     if sandbox is not None and not isinstance(sandbox, str):
         yield sandbox
         return
@@ -377,13 +379,7 @@ def backend(setup: Setup, sandbox: Sandbox | str | None = None) -> Iterator[Sand
         raise JournalError("the setup names no configuration directory, whose run.toml "
                            "the sandbox's limits come from")
     with tempfile.TemporaryDirectory(prefix="discotrade-jobs-") as scratch:
-        box = open_backend(name, Path(scratch), setup.config_dir)
-        try:
-            yield box
-        finally:
-            close = getattr(box, "close", None)
-            if close is not None:
-                close()
+        yield open_backend(name, Path(scratch), setup.config_dir)
 
 
 def approach_targets(box: Sandbox, setup: Setup, subject: str, source: str,

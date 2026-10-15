@@ -77,6 +77,11 @@ releasing it on success and on failure:
   ledger, which appends no line it holds. One whose rows differ moves nothing,
   appends its ``journal_mismatch`` events and fails (the design is silent on
   the exit status; a failure is the simplest way the owner sees it).
+- When step 2's sandbox jobs had to start the process's fork server again
+  because the one before had died (O-20 of 2026-10-15;
+  ``sandbox.process.restarts``), a ``sandbox_restarted`` notice (subject the
+  track, detail the backend and the number of restarts) is appended to the
+  health log, whether the day then succeeds or fails.
 - A failure in either step discards the staging directory and moves nothing.
   A reader that refuses a revised data point appends a ``revised_data`` alert
   (subject the track, the reader's message as detail) and the day fails.
@@ -113,12 +118,15 @@ from discotrade.bars.store import BarStore, BarStoreError, day_run, finite_rows
 from discotrade.clock import Clock
 from discotrade.config import Calendar, TrackConfig, load_track_config
 from discotrade.rolls import update_rolls
+from discotrade.sandbox import process
 from discotrade.sandbox.base import Sandbox, choose_backend
 from discotrade.sources.base import BarSource
 from discotrade.state import HealthEvent
 from discotrade.tradingcal import expected_bars
 
 REVISED_DATA = "revised_data"
+#: The notice of a fork server started again after one died (O-20 of 2026-10-15).
+SANDBOX_RESTARTED = "sandbox_restarted"
 #: The phrase by which the bar store's errors name a revised data point.
 _REVISED = "a revised data point"
 
@@ -331,7 +339,15 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
         appended += state.append_health(state_dir, track, events)
         shutil.rmtree(staging, ignore_errors=True)
         staging.mkdir()
-        result = journal.journal_day(state_dir, setup, d, into=staging, sandbox=sandbox)
+        before = process.restarts()
+        try:
+            result = journal.journal_day(state_dir, setup, d, into=staging, sandbox=sandbox)
+        finally:
+            restarted = process.restarts() - before
+            if restarted:
+                appended += state.append_health(state_dir, track, [HealthEvent(
+                    d, "notice", SANDBOX_RESTARTED, track,
+                    {"backend": "process", "restarts": restarted})])
         if result.status == journal.MISMATCH:
             appended += state.append_health(state_dir, track, result.events)
             raise DailyError(f"{d.isoformat()}: the recomputed rows differ from the journal "

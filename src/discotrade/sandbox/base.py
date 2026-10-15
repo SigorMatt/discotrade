@@ -171,8 +171,9 @@ def choose_backend(instruments: Sequence[Instrument], asked: str | None = None) 
 def open_backend(name: str, scratch: Path, config_dir: Path) -> Sandbox:
     """The backend ``name`` of :data:`BACKENDS` for the day loop, the replay and
     ``journal recompute``, its job directories under ``scratch``, its settings from
-    ``<config_dir>/run.toml``; ``process`` forks its children from a fork server
-    (decision 105 (e)), which the caller ends with the backend's ``close``."""
+    ``<config_dir>/run.toml``; ``process`` forks its children from the process's
+    one fork server (decision 105 (e), O-20 of 2026-10-15), which lives until the
+    process ends or the backend's ``close`` stops it."""
     if name == "process":
         from discotrade.sandbox.process import ProcessSandbox
         return ProcessSandbox(Path(scratch), fork_server=True)

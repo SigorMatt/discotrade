@@ -22,7 +22,10 @@ directory, and leaves none behind.
 
 import contextlib
 import io
+import json
+import os
 import shutil
+import signal
 from datetime import UTC, date, datetime
 from pathlib import Path
 
@@ -34,8 +37,9 @@ from discotrade.backtest import _strategy_targets, read_window
 from discotrade.cli import REPO_ROOT, main
 from discotrade.clock import FixedClock
 from discotrade.config import DateRange, load_track_config
+from discotrade.daily import SANDBOX_RESTARTED
 from discotrade.daily import run_day as day_function
-from discotrade.sandbox import container
+from discotrade.sandbox import container, process
 from discotrade.sandbox.base import (
     SandboxChoiceError,
     SandboxResult,
@@ -44,7 +48,7 @@ from discotrade.sandbox.base import (
 )
 from discotrade.sandbox.container import ContainerSandbox
 from discotrade.sandbox.process import ProcessSandbox
-from discotrade.state import LOCK, STAGING, write_approach
+from discotrade.state import LOCK, STAGING, health_path, write_approach
 
 FIXTURE_CONFIG = REPO_ROOT / "tests" / "fixtures" / "config"
 TRACK = "test_synth"
@@ -407,6 +411,80 @@ def test_a_harness_error_fails_the_day_naming_the_approach(tmp_path, setup, conf
     assert trend in str(raised.value) and says in str(raised.value)
     assert nothing_of_the_day(state, APPROACH_DAYS[0]) == before
     assert before["journal"] is False
+
+
+# ------------------------------------------------------------------ O-20: one fork server
+
+
+def alive(pid: int) -> bool:
+    """Whether a process ``pid`` exists (a zombie counts)."""
+    return Path(f"/proc/{pid}").exists()
+
+
+@pytest.fixture
+def counted(monkeypatch):
+    """The fork servers started during the test, by pid; none running at its start
+    (a test before it may have left the process's server running, O-20) and none
+    left at its end (stopped by the backend's close)."""
+    ProcessSandbox(Path("/nonexistent"), fork_server=True).close()
+    assert process.server_pid() is None
+    started: list[int] = []
+    real = process._ForkServer
+
+    class Counting(real):
+        def __init__(self):
+            super().__init__()
+            started.append(self.proc.pid)
+
+    monkeypatch.setattr(process, "_ForkServer", Counting)
+    yield started
+    ProcessSandbox(Path("/nonexistent"), fork_server=True).close()
+    assert process.server_pid() is None
+    assert not any(alive(pid) for pid in started), started
+
+
+def test_a_replay_over_several_days_starts_the_fork_server_once(tmp_path, setup, config,
+                                                                counted):
+    # O-20 of 2026-10-15: the server starts on the first job and lives for the
+    # whole process; a replay's second and third approach days start none.
+    state = init(tmp_path / "state")
+    trend = admit(state, setup, TREND)
+    status, out, err = replay_cli(state, config)
+    assert status == 0, err
+    for d in APPROACH_DAYS:
+        assert set(approach_rows(state, d)["subject"]) == {trend}, d
+    assert len(counted) == 1, counted
+    [pid] = counted
+    assert process.server_pid() == pid and alive(pid)  # it outlives the replay
+    ProcessSandbox(tmp_path / "scratch", fork_server=True).close()
+    assert process.server_pid() is None and not alive(pid)
+
+
+def test_a_job_after_the_server_died_gets_a_fresh_one_with_a_health_notice(
+        tmp_path, setup, config, counted):
+    state = init(tmp_path / "state")
+    trend = admit(state, setup, TREND)
+    assert replay_cli(state, config, FIRST, APPROACH_DAYS[0])[0] == 0
+    [old] = counted
+    os.kill(old, signal.SIGKILL)   # the server dies between two days
+    day = APPROACH_DAYS[1]
+    status, out, err = run_day(state, config, day)
+    assert status == 0, err
+    assert set(approach_rows(state, day)["subject"]) == {trend}
+    assert len(counted) == 2 and counted[1] != old, counted
+    assert process.server_pid() == counted[1] and not alive(old)
+    notice = {"date": day.isoformat(), "level": "notice", "kind": SANDBOX_RESTARTED,
+              "subject": TRACK, "detail": {"backend": "process", "restarts": 1}}
+    log = [json.loads(line) for line in
+           health_path(state, TRACK).read_text(encoding="utf-8").splitlines()]
+    assert log.count(notice) == 1, log
+    assert f"notice {json.dumps(notice, sort_keys=True)}" in out.splitlines(), out
+    # The next day's job reuses the fresh server and writes no notice.
+    assert run_day(state, config, APPROACH_DAYS[2])[0] == 0
+    assert len(counted) == 2
+    assert not any(e["kind"] == SANDBOX_RESTARTED and e["date"] == APPROACH_DAYS[2].isoformat()
+                   for e in (json.loads(line) for line in health_path(state, TRACK)
+                             .read_text(encoding="utf-8").splitlines()))
 
 
 # ------------------------------------------------------------------ 105 (d): the container
