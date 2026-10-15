@@ -11,12 +11,15 @@ Resumed under meta/decisions/decisions-2026-10-15-owner.md (O-19 D-011, O-20 D-0
 
 U4 ad1b588 (rejection suite, 29 entries, no miss; check 3/3 1051-1204 s).
 
-Unit in progress: U5b, the fork server per harness process (O-20; decision 105 (e); 80 (d)). Intent: the subprocess
-backend's fork server starts on its first job and lives for the whole replay, run-day, journal recompute or test
-process, stopped at process end and by the backend's close; a dead server is restarted on the next job with a health
-notice. Done means: tests that a second replay day starts no new server and a job after a dead server gets a fresh one;
-seconds per replay day of G1.3's first 30 days at parent and commit in the body; check 3/3; pushed.
-Then U5c, U6, U7.
+U5b 8b9f9be (fork server per process; 1.885 s per replay day, G1.3 projected ~621-694 s; check 3/3 858-881 s).
+
+Unit in progress: U5c, the probe's limit findings and gate item G2.5 (O-22 items 3 and 4). Intent: the probe reports
+the cgroup process-count, memory and CPU limits and its own CPU-time rlimit from inside; container.py's judge compares
+each with run.toml / decision 102 (b) and fails a missing or wider limit; sandbox selftest and doctor --live sandbox
+report them; G2.5's trusted bounded fixtures (wall clock, output cap, memory) under tests/fixtures/strategies/ with
+container tests at short limits and at production limits; scripts/gate counts five items for M2. Done means: seen to
+fail with the container started without its process limit (G2.3 inspection red) and with the short wall limit not
+enforced (G2.5 red); check 3/3; pushed. Then U6, U7.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-14-m13 (100-108) bind; the owner's
 decisions-2026-10-13-owner (O-N wins); decisions-2026-10-15-owner (O-19, O-20, O-22 win over 104, 105 (e), 106 (b)); decisions 1-99 still bind (48 replaced by 105 for the day loop, U5 only);

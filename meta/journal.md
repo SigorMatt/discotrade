@@ -123,3 +123,4 @@
 2026-10-14T23:11:20.339Z  consult 0mv8q0p4o-x318 (architect done) on aux.done of aux job 0mv8q0d8z-5leb: VERDICT: escalate shape: the hostile suite gate G2.1 needs cannot be written by any agent in this series; the human must supply it or reshape the gate
 - 2026-10-15 mission 13 resumed under decisions-2026-10-15-owner (47ebf8d): D-011 decided (O-19), D-012 decided (O-20), HF-009 filed, U4 open as the rejection suite (O-22), U5b and U5c added, U6 unblocked.
 - 2026-10-15 mission 13 U4 done ad1b588: rejection suite tests/fixtures/rejected/ (29 entries), rejection pass on container green, process.py excludes rejected/; no static rule added; check 3/3 (1051-1204 s, above 15 min as D-012 records).
+- 2026-10-15 mission 13 U5b done 8b9f9be: one fork server per harness process (O-20), restart notice; 30-day journal identical; 1.885 s/replay day (parent 2.466), G1.3 projected ~621-694 s; check 3/3 (858-881 s).
