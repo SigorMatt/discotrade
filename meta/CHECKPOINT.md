@@ -9,15 +9,14 @@ U3 0823a2d (probe, selftest, doctor --live sandbox; tag discotrade-sandbox:edeee
 U5 bb27c90 (approaches behind the sandbox; fork server per day; findings D-011, D-012; check 3/3 970-1422 s under load).
 Resumed under meta/decisions/decisions-2026-10-15-owner.md (O-19 D-011, O-20 D-012, O-22 U4's block; 47ebf8d).
 
-Unit in progress: U4, the rejection suite (O-22 items 1 and 2; decision 104 as narrowed; DESIGN §12.5, §12.1, §12.2,
-§12.4; I-7, I-14). Intent: tests/fixtures/rejected/ (one validation fixture per §12.5 entry plus REVIEW-12's two, each
-the smallest text tripping its stage and rule; run-time entries reuse tests/fixtures/strategies/ texts by path where
-one exists) with manifest.toml (file, entry, stage, rule for static; no containment field); process.py leaves
-tests/fixtures/rejected/ out of the sources it accepts; tests/test_rejected_suite.py runs 104 (b)'s rejection pass on
-the container backend against §12.5's literal list, misses attributed as O-22 item 2 says. Done means: committed and
-pushed, ./scripts/check green 3/3, seen to fail with a static rule the suite relies on removed. No containment pass
-(104 (c) dropped). Then U5b (O-20), U5c (O-22 items 3, 4), U6 (O-19 commit first, then G2.1-G2.5 and the gate runs of
-106 (f)), U7.
+U4 ad1b588 (rejection suite, 29 entries, no miss; check 3/3 1051-1204 s).
+
+Unit in progress: U5b, the fork server per harness process (O-20; decision 105 (e); 80 (d)). Intent: the subprocess
+backend's fork server starts on its first job and lives for the whole replay, run-day, journal recompute or test
+process, stopped at process end and by the backend's close; a dead server is restarted on the next job with a health
+notice. Done means: tests that a second replay day starts no new server and a job after a dead server gets a fresh one;
+seconds per replay day of G1.3's first 30 days at parent and commit in the body; check 3/3; pushed.
+Then U5c, U6, U7.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-14-m13 (100-108) bind; the owner's
 decisions-2026-10-13-owner (O-N wins); decisions-2026-10-15-owner (O-19, O-20, O-22 win over 104, 105 (e), 106 (b)); decisions 1-99 still bind (48 replaced by 105 for the day loop, U5 only);
