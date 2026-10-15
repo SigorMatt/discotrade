@@ -3,9 +3,14 @@
 Mission: 14 (`meta/BUILDER-14-PROMPT.md`), roadmap step S3.1. Does not close a milestone. Base 1267318.
 Container runtime: docker (mission 13: server Engine 29.1.3, API 1.52). Image at base: discotrade-sandbox:1edd0f8558cb.
 
-Unit in progress: U0 Plan. Intent: write meta/plan.md, this file, a journal line, and in meta/findings/FINDINGS.md
-the entries D-014, D-015, HF-010, HF-011 and a D-013 status line naming decision 114 (decision 113). Done means:
-the four files committed and pushed in one `plan:` commit.
+Done: U0 53401fd (plan, findings D-014, D-015, HF-010, HF-011, D-013 status).
+U1 ad53fad (mount vs store, last_close, zero remaining time, float in catch-all, builtins tuple, removal ends client,
+notice only on a written day; image discotrade-sandbox:3b7d75c39621; check 3/3 890-912 s).
+
+Unit in progress: U2 ./scripts/check under 12 minutes (decision 114, D-013). Intent: share identical expensive
+setup through module/session fixtures (writers get copies), drop repeated unasserted work, cache trusted_hashes
+keyed so a changed file is hashed again. Done means: same collected node ids at parent and commit, durations and
+wall times at both in the body, no assertion moved, check 3/3 green, one commit pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-15-m14 (109-117) bind; the owner's
 decisions-2026-10-15-owner (O-19, O-20, O-22) and decisions-2026-10-13-owner (O-16..O-18 bind every new module) win;

@@ -129,3 +129,4 @@
 - 2026-10-15 mission 13 U7 done: final report; mission finished.
 2026-10-15T20:58:18.706Z  consult 0mva0hw01-yjfg (architect done) on aux.done of aux job 0mv9tnytw-2879: VERDICT: next kit mission-14-kit
 - 2026-10-15 mission 14 U0: plan, checkpoint; findings D-014, D-015, HF-010, HF-011 and a D-013 status line (decisions 113, 114).
+- 2026-10-16 mission 14 U1 done ad53fad: mount judged against the store (last_close), zero remaining time is limit [wall_clock], float inside the catch-all, builtins tuple, removal ends client, notice only on a written day; image discotrade-sandbox:3b7d75c39621; G2.3 PASS; check 3/3 (890-912 s).
