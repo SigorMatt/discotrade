@@ -357,6 +357,7 @@ Direction (for the architect). Either a decision lets G1.3's expected
 reasons become the sandbox's text, or one says another reason form.
 
 Status: open
+Status: decided meta/decisions/decisions-2026-10-15-owner.md (O-19)
 
 ### D-012 — G1.3 projected at about 812 s with approaches behind the sandbox, above O-3's 10 minutes
 
@@ -389,6 +390,7 @@ whole `replay` or test process (one process per replay, not per day), or the
 10-minute target of G1.3 and the check time move.
 
 Status: open
+Status: decided meta/decisions/decisions-2026-10-15-owner.md (O-20)
 
 ---
 
@@ -590,6 +592,22 @@ cap.
 What this project does meanwhile: nothing in product code.
 
 Status: open
+
+### HF-009 — a sub-agent cannot be assumed to write whatever a unit asks
+
+Severity: medium · Component: the plan and escalation model of hands
+(the builder's unit dispatch, the architect role's escalation conditions)
+· Found: 2026-10-14, mission 13 U4, recorded by mission 13 under
+meta/decisions/decisions-2026-10-15-owner.md (O-22).
+
+Symptom. The plan assumed a sub-agent writes whatever a unit asks. For the
+texts of decision 104 a safety classifier stopped two sub-agents and the
+phone architect, and no escalation condition anticipated it.
+
+Resolved for this project by O-22 (the suite narrowed to rejection texts,
+the limits proven by inspection and trusted bounded fixtures).
+
+Status: open (for the hands Project)
 
 D-004 status (appended 2026-10-12, mission 6 U0): Status: answered meta/decisions/decisions-2026-10-12.md (item 41)
 
