@@ -20,6 +20,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 import pytest
+from conftest import RAN_ADMITTED, RAN_AS_OF, RAN_DAYS, RAN_FILES, copy_template
 
 from discotrade import journal, ledger, lifecycle, paper
 from discotrade.bars.store import BarStore
@@ -123,11 +124,14 @@ def setup(config):
 
 
 @pytest.fixture(scope="module")
-def ran(tmp_path_factory, config, setup):
-    """A state directory run for ``DAYS``; tests copy it and never change it."""
-    state = fresh(tmp_path_factory.mktemp("dran") / "state", setup)
-    run_days(state, config, DAYS)
-    return state
+def ran(tmp_path_factory, mixed_ran_template):
+    """A state directory run for ``DAYS``; tests copy it and never change it. It is
+    this module's copy of conftest's ``mixed_ran_template`` (``fresh`` and
+    ``run_days`` over ``DAYS`` at ``AS_OF``, shared with
+    tests/test_journal_recompute.py, decision 114)."""
+    assert (RAN_AS_OF, RAN_ADMITTED, RAN_DAYS) == (AS_OF, ADMITTED, DAYS)
+    assert RAN_FILES == ("trend_ma.py", "hour_of_day.py")
+    return copy_template(mixed_ran_template, tmp_path_factory.mktemp("dran") / "state")
 
 
 @pytest.fixture

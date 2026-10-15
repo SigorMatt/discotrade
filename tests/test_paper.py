@@ -179,6 +179,10 @@ def ran(tmp_path_factory, config, setup):
                      "--as-of", AS_OF, "run-day", "--day", d.isoformat()]) == 0
         after.append((d, paper.paper_path(state, TRACK).read_bytes(),
                       paper.rebuild(state, TRACK, len(setup.instruments))))
+        if d == HEAL_DAYS[-1]:
+            # ``short``'s state: the same commands up to here (decision 2026-10-15-m14 114).
+            SHORT[:] = [shutil.copytree(state, tmp_path_factory.mktemp("pshort") / "state",
+                                        symlinks=True)]
     AFTER_EACH_DAY[:] = after
     return state, {first: ("trend_ma.py", FIRST), second: ("zscore_reversal.py", LATER)}
 
@@ -293,15 +297,18 @@ def every_file(root) -> dict[str, bytes]:
             if p.is_file() and ".git" not in p.relative_to(root).parts}
 
 
+#: Filled by ``ran``: a copy of its state taken right after the last of ``HEAL_DAYS``.
+SHORT: list = []
+
+
 @pytest.fixture(scope="module")
-def short(tmp_path_factory, config, setup):
-    """A state directory run for ``HEAL_DAYS``; tests copy it and never change it."""
-    state = tmp_path_factory.mktemp("pshort") / "state"
-    assert main(["init-state", "--state", str(state), "--as-of", AS_OF]) == 0
-    admit(state, setup, "trend_ma.py", FIRST)
-    admit(state, setup, "zscore_reversal.py", LATER)
-    for d in HEAL_DAYS:
-        assert run_day(state, config, d) == 0
+def short(ran):
+    """A state directory run for ``HEAL_DAYS``; tests copy it and never change it.
+    ``ran`` makes it: init-state at ``AS_OF``, trend_ma.py admitted ``FIRST`` and
+    zscore_reversal.py ``LATER``, run-day over ``HEAL_DAYS``, the first commands of
+    its own run copied there (decision 2026-10-15-m14 114)."""
+    assert HEAL_DAYS == DAYS[:len(HEAL_DAYS)]
+    [state] = SHORT
     return state
 
 

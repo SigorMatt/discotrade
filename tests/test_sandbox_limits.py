@@ -44,8 +44,10 @@ import tomllib
 from datetime import date
 
 import pytest
+from conftest import MIXED_AS_OF as TEMPLATE_MIXED_AS_OF
+from conftest import copy_template
 
-from discotrade.cli import REPO_ROOT, main
+from discotrade.cli import REPO_ROOT
 from discotrade.config import DateRange, load_calendar, load_run, load_track_config
 from discotrade.sandbox import container
 from discotrade.sandbox.base import build_job
@@ -110,12 +112,11 @@ def calendars(production):
 
 
 @pytest.fixture(scope="module")
-def mixed_state(tmp_path_factory, production):
-    path = tmp_path_factory.mktemp("mixed") / "state"
-    path.mkdir()
-    assert main(["--state", str(path), "--config", str(production), "--track", MIXED,
-                 "--as-of", MIXED_AS_OF, "bars", "fetch"]) == 0
-    return path
+def mixed_state(tmp_path_factory, mixed_bars_template):
+    """test_mixed's bars fetched at ``MIXED_AS_OF``: this module's copy of conftest's
+    ``mixed_bars_template`` (decision 2026-10-15-m14 114)."""
+    assert (TEMPLATE_MIXED_AS_OF, MIXED) == (MIXED_AS_OF, "test_mixed")
+    return copy_template(mixed_bars_template, tmp_path_factory.mktemp("mixed") / "state")
 
 
 def text(name):

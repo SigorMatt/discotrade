@@ -44,6 +44,9 @@ from datetime import UTC, date, datetime
 
 import numpy as np
 import pytest
+from conftest import MIXED_AS_OF as TEMPLATE_MIXED_AS_OF
+from conftest import SYNTH_AS_OF as TEMPLATE_SYNTH_AS_OF
+from conftest import SYNTH_DAY, copy_template
 from error_texts import assert_clean, forbidden_words
 
 from discotrade import state as state_mod
@@ -152,12 +155,11 @@ def calendars(config):
 
 
 @pytest.fixture(scope="module")
-def mixed_state(tmp_path_factory, config):
-    path = tmp_path_factory.mktemp("mixed") / "state"
-    path.mkdir()
-    assert main(["--state", str(path), "--config", str(config), "--track", MIXED,
-                 "--as-of", MIXED_AS_OF, "bars", "fetch"]) == 0
-    return path
+def mixed_state(tmp_path_factory, mixed_bars_template):
+    """test_mixed's bars fetched at ``MIXED_AS_OF``: this module's copy of conftest's
+    ``mixed_bars_template`` (decision 2026-10-15-m14 114)."""
+    assert (TEMPLATE_MIXED_AS_OF, MIXED) == (MIXED_AS_OF, "test_mixed")
+    return copy_template(mixed_bars_template, tmp_path_factory.mktemp("mixed") / "state")
 
 
 def job_for(state, tc, calendars, config, source, param_sets, window=WINDOW,
@@ -673,16 +675,14 @@ def synth_setup(config):
 
 
 @pytest.fixture(scope="module")
-def synth_state(tmp_path_factory, config):
-    """A state directory with ``test_synth``'s bars, committed."""
-    path = tmp_path_factory.mktemp("synth") / "state"
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setenv("GIT_ALLOW_PROTOCOL", "file")
-        assert main(["init-state", "--state", str(path), "--as-of", SYNTH_AS_OF]) == 0
-        assert main(["--state", str(path), "--config", str(config), "--track", SYNTH,
-                     "--as-of", SYNTH_AS_OF, "bars", "fetch"]) == 0
-        state_mod.commit(path, SYNTH, DAY, COMMIT_CLOCK)
-    return path
+def synth_state(tmp_path_factory, synth_committed_template):
+    """A state directory with ``test_synth``'s bars, committed: this module's copy of
+    conftest's ``synth_committed_template`` (init-state and bars fetch at
+    ``SYNTH_AS_OF``, committed for ``DAY`` at ``COMMIT_CLOCK``; decision
+    2026-10-15-m14 114)."""
+    assert (TEMPLATE_SYNTH_AS_OF, SYNTH_DAY, SYNTH) == (SYNTH_AS_OF, DAY, "test_synth")
+    assert COMMIT_CLOCK.now() == datetime(2019, 7, 25, tzinfo=UTC)
+    return copy_template(synth_committed_template, tmp_path_factory.mktemp("synth") / "state")
 
 
 def test_the_production_call_time_thresholds_are_the_ones_written_here(synth_setup):

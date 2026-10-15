@@ -9,7 +9,8 @@ admission), from the repository's ``reference/`` files with their ``PARAMS``.
 The span ``DAYS`` (2019-06-08 to 2019-06-19) holds the SYNA roll of
 2019-06-14, which a test asserts. The synthetic instruments' seeds are those
 of their fixture records (``SEEDS``, asserted); no other random draw is made.
-Time comes only from ``--as-of``.
+Time comes only from ``--as-of``. The span tests read one journaled copy per
+reference file (``spans``), which no test writes to.
 """
 
 import hashlib
@@ -87,6 +88,25 @@ def state(tmp_path, bars_state):
     return path
 
 
+@pytest.fixture(scope="module")
+def spans(tmp_path_factory, bars_state, setup):
+    """Per reference file: a copy of ``bars_state`` with it admitted and ``DAYS``
+    journaled, and its approach id; built on first use, then only read by the tests
+    (decision 2026-10-15-m14 114: the span tests journal the same span alike)."""
+    built: dict[str, tuple] = {}
+
+    def journaled(name):
+        if name not in built:
+            path = tmp_path_factory.mktemp("jspan") / "state"
+            shutil.copytree(bars_state, path)
+            aid = admit(path, setup, name)
+            journal_days(path, setup, DAYS)
+            built[name] = (path, aid)
+        return built[name]
+
+    return journaled
+
+
 def admit(state, setup, name="trend_ma.py", source=None, admitted=ADMITTED):
     path = REPO_ROOT / "reference" / name
     strat = load_strategy_file(path, setup.thresholds)
@@ -131,9 +151,8 @@ def test_seeds_are_the_fixture_records(setup):
     assert {i.symbol: i.source.get("seed") for i in setup.instruments} == SEEDS
 
 
-def test_the_span_holds_the_syna_roll(state, setup):
-    admit(state, setup)
-    journal_days(state, setup, DAYS)
+def test_the_span_holds_the_syna_roll(spans):
+    state, _ = spans("trend_ma.py")
     rows = all_rows(state, DAYS)
     syna = rows[rows["instrument"] == "SYNA"]
     assert syna["roll"].any()
@@ -319,9 +338,8 @@ def test_an_approach_is_journaled_only_after_its_admission_date(state, setup):
 
 
 @pytest.mark.parametrize("name", FILES)
-def test_journal_equals_the_module_evaluation_over_the_span(state, setup, name):
-    aid = admit(state, setup, name)
-    journal_days(state, setup, DAYS)
+def test_journal_equals_the_module_evaluation_over_the_span(spans, setup, name):
+    state, aid = spans(name)
     rows = approach_rows(all_rows(state, DAYS))
     assert (rows["subject"] == aid).all()
     strat = load_strategy_file(REPO_ROOT / "reference" / name, setup.thresholds)
@@ -338,3 +356,66 @@ def test_journal_equals_the_module_evaluation_over_the_span(state, setup, name):
             column = AS_JOURNAL.get(field, field)
             for k, (a, b) in enumerate(zip(mine[column], ev.rows[field], strict=True)):
                 assert eq(a, b), f"{name} {inst.symbol} row {k} {field}: {a!r} != {b!r}"
+
+
+# ------------------------------------------------------------------ the trusted_hashes cache
+
+
+class _CountingHashlib:
+    """``hashlib`` as ``journal`` sees it, counting the texts ``sha256`` is given."""
+
+    def __init__(self):
+        self.hashed: list[bytes] = []
+
+    def sha256(self, data=b""):
+        self.hashed.append(bytes(data))
+        return hashlib.sha256(data)
+
+
+def test_trusted_hashes_hashes_a_file_again_after_it_changes(tmp_path, monkeypatch):
+    # REVIEW-12 note 4, decision 114 of 2026-10-15-m14: the hashes are cached per
+    # file, keyed so that a changed file is hashed again. The tree is the test's
+    # own, under its tmp directory; the times set are fixed values.
+    (tmp_path / "reference").mkdir()
+    (tmp_path / "tests" / "fixtures" / "rejected").mkdir(parents=True)
+    a, b = tmp_path / "reference" / "a.py", tmp_path / "tests" / "fixtures" / "b.txt"
+    c = tmp_path / "tests" / "fixtures" / "rejected" / "c.py"
+    a.write_bytes(b"PARAMS = {}\n")
+    b.write_bytes(b"first text\n")
+    c.write_bytes(b"rejected\n")
+
+    def sha(data):
+        return hashlib.sha256(data).hexdigest()
+
+    counting = _CountingHashlib()
+    monkeypatch.setattr(journal, "hashlib", counting)
+    first = journal.trusted_hashes(tmp_path)
+    assert first == {sha(b"PARAMS = {}\n"), sha(b"first text\n"), sha(b"rejected\n")}
+    assert sorted(counting.hashed) == [b"PARAMS = {}\n", b"first text\n", b"rejected\n"]
+    # Nothing changed: every hash comes from the cache, none is computed again.
+    counting.hashed.clear()
+    assert journal.trusted_hashes(tmp_path) == first
+    assert journal.trusted_hashes(tmp_path, exclude=("tests/fixtures/rejected",)) == \
+        first - {sha(b"rejected\n")}
+    assert counting.hashed == []
+    # A changed text of another length: that file alone is hashed again.
+    b.write_bytes(b"a second, longer text\n")
+    after = journal.trusted_hashes(tmp_path)
+    assert after == {sha(b"PARAMS = {}\n"), sha(b"a second, longer text\n"), sha(b"rejected\n")}
+    assert counting.hashed == [b"a second, longer text\n"]
+    # A changed text of the same length and inode, its modification time set to a fixed
+    # value (2019-07-15 00:00 UTC): hashed again.
+    counting.hashed.clear()
+    old = os.stat(a)
+    a.write_bytes(b"PARAMS = []\n")
+    fixed = 1_563_148_800 * 10**9
+    os.utime(a, ns=(fixed, fixed))
+    assert (os.stat(a).st_size, os.stat(a).st_ino) == (old.st_size, old.st_ino)
+    assert journal.trusted_hashes(tmp_path) == \
+        {sha(b"PARAMS = []\n"), sha(b"a second, longer text\n"), sha(b"rejected\n")}
+    assert counting.hashed == [b"PARAMS = []\n"]
+    # A file removed is gone from the set, and nothing is hashed for it.
+    counting.hashed.clear()
+    b.unlink()
+    assert journal.trusted_hashes(tmp_path) == {sha(b"PARAMS = []\n"), sha(b"rejected\n")}
+    assert counting.hashed == []

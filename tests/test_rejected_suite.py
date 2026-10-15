@@ -39,10 +39,11 @@ import tomllib
 from datetime import UTC, date, datetime
 
 import pytest
+from conftest import SYNTH_AS_OF, SYNTH_DAY, copy_template
 from error_texts import assert_clean, forbidden_words
 
 from discotrade import state as state_mod
-from discotrade.cli import REPO_ROOT, main
+from discotrade.cli import REPO_ROOT
 from discotrade.clock import FixedClock
 from discotrade.journal import Setup
 from discotrade.ledger import LEDGER_DIR
@@ -237,16 +238,14 @@ def test_each_static_text_is_refused_at_its_rule_and_each_run_time_text_passes_t
 
 
 @pytest.fixture(scope="module")
-def synth_state(tmp_path_factory, config):
-    """A state directory with ``test_synth``'s bars and no approach, committed."""
-    path = tmp_path_factory.mktemp("synth") / "state"
-    with pytest.MonkeyPatch.context() as mp:
-        mp.setenv("GIT_ALLOW_PROTOCOL", "file")
-        assert main(["init-state", "--state", str(path), "--as-of", AS_OF]) == 0
-        assert main(["--state", str(path), "--config", str(config), "--track", TRACK,
-                     "--as-of", AS_OF, "bars", "fetch"]) == 0
-        state_mod.commit(path, TRACK, DAY, COMMIT_CLOCK)
-    return path
+def synth_state(tmp_path_factory, synth_committed_template):
+    """A state directory with ``test_synth``'s bars and no approach, committed: this
+    module's copy of conftest's ``synth_committed_template`` (init-state and bars
+    fetch at ``AS_OF``, committed for ``DAY`` at ``COMMIT_CLOCK``; decision
+    2026-10-15-m14 114)."""
+    assert (SYNTH_AS_OF, SYNTH_DAY, TRACK) == (AS_OF, DAY, "test_synth")
+    assert COMMIT_CLOCK.now() == datetime(2019, 7, 25, tzinfo=UTC)
+    return copy_template(synth_committed_template, tmp_path_factory.mktemp("synth") / "state")
 
 
 def test_the_synthetic_seeds_are_the_ones_written_here(setup):

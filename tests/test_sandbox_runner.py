@@ -29,10 +29,11 @@ from datetime import date
 import numpy as np
 import pandas as pd
 import pytest
+from conftest import MIXED_AS_OF, copy_template
 from error_texts import assert_clean, forbidden_words
 
 from discotrade.backtest import evaluate
-from discotrade.cli import REPO_ROOT, main
+from discotrade.cli import REPO_ROOT
 from discotrade.config import DateRange, load_calendar, load_thresholds, load_track_config
 from discotrade.sandbox import runner
 from discotrade.sandbox.base import (
@@ -91,11 +92,11 @@ def calendars(config):
 
 
 @pytest.fixture(scope="module")
-def state(tmp_path_factory, config):
-    path = tmp_path_factory.mktemp("state")
-    assert main(["--state", str(path), "--config", str(config), "--track", TRACK,
-                 "--as-of", AS_OF, "bars", "fetch"]) == 0
-    return path
+def state(tmp_path_factory, mixed_bars_template):
+    """test_mixed's bars fetched at ``AS_OF``: this module's copy of conftest's
+    ``mixed_bars_template`` (decision 2026-10-15-m14 114)."""
+    assert (MIXED_AS_OF, TRACK) == (AS_OF, "test_mixed")
+    return copy_template(mixed_bars_template, tmp_path_factory.mktemp("state"))
 
 
 def job_for(state, tc, calendars, *, source=None, function=None, param_sets, window=WINDOW,

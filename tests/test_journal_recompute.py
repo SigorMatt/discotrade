@@ -15,7 +15,9 @@ the test of fewer pairs than the sample a copy whose value is ``LARGE`` (the
 controls of decision 64 journal more than 20 pairs every day).
 The expected pairs are those the stored journal holds: each day with each
 subject that has a row that day (approaches and controls, decision 64).
-No git is run here.
+No git is run here. The run state ``ran`` is this module's copy of
+``tests/conftest.py``'s ``mixed_ran_template``, built once per session the same way
+(decision 2026-10-15-m14 114).
 """
 
 import json
@@ -25,11 +27,11 @@ from datetime import date, timedelta
 import numpy as np
 import pandas as pd
 import pytest
+from conftest import RAN_ADMITTED, RAN_AS_OF, RAN_DAYS, RAN_FILES, copy_template
 
 from discotrade import journal
 from discotrade.cli import REPO_ROOT, main
-from discotrade.state import LOCK, canonical_json, content_hash, read_approaches, write_approach
-from discotrade.strategy import load_strategy_file
+from discotrade.state import LOCK, canonical_json, content_hash, read_approaches
 
 FIXTURE_CONFIG = REPO_ROOT / "tests" / "fixtures" / "config"
 TRACK = "test_mixed"
@@ -47,17 +49,6 @@ LARGE = 1000
 
 def seed_of(day: date) -> int:
     return int(day.strftime("%Y%m%d"))
-
-
-def admit(state, setup, name):
-    path = REPO_ROOT / "reference" / name
-    strat = load_strategy_file(path, setup.thresholds)
-    return write_approach(
-        state, source=path.read_text(encoding="utf-8"), params=strat.params,
-        cell="trend/short", model_id="test-model", model_version="test-model-v0",
-        cutoff=date(2019, 1, 1), description=f"the reference strategy {name}",
-        profile_version="w-test", admitted=ADMITTED, instruments=setup.instruments,
-        spread_tables=setup.spread_tables)
 
 
 def files(root) -> dict[str, tuple[bytes, int]]:
@@ -129,16 +120,14 @@ def setup(config):
 
 
 @pytest.fixture(scope="module")
-def ran(tmp_path_factory, config, setup):
-    """A state directory run for ``DAYS``; tests copy it and never change it."""
-    state = tmp_path_factory.mktemp("rran") / "state"
-    assert main(["init-state", "--state", str(state), "--as-of", AS_OF]) == 0
-    admit(state, setup, "trend_ma.py")
-    admit(state, setup, "hour_of_day.py")
-    for d in DAYS:
-        assert main(["--state", str(state), "--config", str(config), "--track", TRACK,
-                     "--as-of", AS_OF, "run-day", "--day", d.isoformat()]) == 0, d
-    return state
+def ran(tmp_path_factory, mixed_ran_template):
+    """A state directory run for ``DAYS``; tests copy it and never change it. It is
+    this module's copy of conftest's ``mixed_ran_template`` (init-state at
+    ``AS_OF``, trend_ma.py and hour_of_day.py admitted ``ADMITTED``, run-day over
+    ``DAYS``; shared with tests/test_daily.py, decision 114)."""
+    assert (RAN_AS_OF, RAN_ADMITTED, RAN_DAYS) == (AS_OF, ADMITTED, DAYS)
+    assert RAN_FILES == ("trend_ma.py", "hour_of_day.py")
+    return copy_template(mixed_ran_template, tmp_path_factory.mktemp("rran") / "state")
 
 
 @pytest.fixture

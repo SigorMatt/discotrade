@@ -254,16 +254,35 @@ def read_day(state_dir: Path, track: str, day: date) -> pd.DataFrame | None:
 
 # --- the rows of a day -------------------------------------------------------------------
 
+#: Per file path: the key of its ``os.stat`` when last hashed, and its sha256
+#: (REVIEW-12 note 4, decision 114 of 2026-10-15-m14). A file whose device, inode,
+#: size, modification or change time differs from the key is read and hashed again.
+_DIGESTS: dict[Path, tuple[tuple[int, ...], str]] = {}
+
+
+def _digest(path: Path) -> str:
+    """The sha256 of ``path``'s bytes, from the cache while its stat key is unchanged."""
+    st = path.stat()
+    key = (st.st_dev, st.st_ino, st.st_size, st.st_mtime_ns, st.st_ctime_ns)
+    known = _DIGESTS.get(path)
+    if known is not None and known[0] == key:
+        return known[1]
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    _DIGESTS[path] = (key, digest)
+    return digest
+
+
 def trusted_hashes(root: Path = REPO_ROOT, exclude: Sequence[str] = ()) -> frozenset[str]:
     """The sha256 of every file under ``reference/`` and ``tests/fixtures/`` of ``root``,
-    leaving out every file under a directory of ``exclude`` (paths relative to ``root``)."""
+    leaving out every file under a directory of ``exclude`` (paths relative to ``root``).
+    Each file's hash is cached against its stat key (:func:`_digest`)."""
     left_out = [root / name for name in exclude]
     out = set()
     for name in TRUSTED_DIRS:
         for path in sorted((root / name).rglob("*")):
             if (path.is_file() and "__pycache__" not in path.parts
                     and not any(path.is_relative_to(d) for d in left_out)):
-                out.add(hashlib.sha256(path.read_bytes()).hexdigest())
+                out.add(_digest(path))
     return frozenset(out)
 
 

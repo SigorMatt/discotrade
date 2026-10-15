@@ -33,11 +33,23 @@ reason then names ``discotrade sandbox build``), as
 :func:`discotrade.sandbox.container.unavailable` finds for the repository's
 ``config/run.toml`` (DESIGN 18.1; decision 102 (g) of 2026-10-14-m13). Under
 ``DISCOTRADE_GATE=1`` that skip is a failure, like every other.
+
+State templates (decision 114 of meta/decisions/decisions-2026-10-15-m14.md,
+finding D-013): a state directory that several test modules build the same way
+is built once per session by a session-scoped fixture below, from
+``tests/fixtures/config/`` with the production ``config/thresholds.toml`` copied
+under the session's temporary directory, with the commands, seeds, dates and
+clocks those modules used. No test is given a template itself: each module
+fixture copies it with :func:`copy_template` into its own temporary directory,
+so that a test writing into its module's state never reaches the template or
+another module's copy.
 """
 
 import _socket
 import os
+import shutil
 import socket
+from datetime import UTC, date, datetime
 from pathlib import Path
 
 import pytest
@@ -226,3 +238,116 @@ def pytest_runtest_makereport(item, call):
         reason = report.longrepr[2] if isinstance(report.longrepr, tuple) else report.longrepr
         report.outcome = "failed"
         report.longrepr = f"skipped under {GATE_ENV}=1, which is a failure: {reason}"
+
+
+# ------------------------------------------------------------------ state templates
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+FIXTURE_CONFIG = REPO_ROOT / "tests" / "fixtures" / "config"
+#: test_synth's day D 2019-07-15 (W 2019-06-11..07-08, T 07-09..07-15) and the
+#: ``--as-of`` its bars are fetched at; test_mixed's ``--as-of`` instants.
+SYNTH_AS_OF = "2019-07-25T00:00:00+00:00"
+SYNTH_DAY = date(2019, 7, 15)
+MIXED_AS_OF = "2019-06-21T00:00:00+00:00"
+MIXED_TWO_YEARS = "2021-01-07T00:00:00+00:00"
+#: The run of ``mixed_ran_template``: two reference approaches admitted 2019-06-07,
+#: run-day over 2019-06-08..06-12 at ``--as-of`` 2019-06-26.
+RAN_AS_OF = "2019-06-26T00:00:00+00:00"
+RAN_ADMITTED = date(2019, 6, 7)
+RAN_DAYS = tuple(date(2019, 6, 8 + k) for k in range(5))
+RAN_FILES = ("trend_ma.py", "hour_of_day.py")
+
+
+def copy_template(template: Path, dest: Path) -> Path:
+    """A copy of ``template`` at ``dest`` (which may exist, empty), for one module."""
+    shutil.copytree(template, dest, symlinks=True, dirs_exist_ok=True)
+    return dest
+
+
+def _cli(*argv: str) -> None:
+    from discotrade.cli import main
+
+    assert main(list(argv)) == 0, argv
+
+
+def _fetch(state: Path, config: Path, track: str, as_of: str) -> None:
+    _cli("--state", str(state), "--config", str(config), "--track", track, "--as-of", as_of,
+         "bars", "fetch")
+
+
+@pytest.fixture(scope="session")
+def template_config(tmp_path_factory):
+    """The configuration the templates are built with; no test is given it."""
+    path = tmp_path_factory.mktemp("template-cfg") / "config"
+    shutil.copytree(FIXTURE_CONFIG, path)
+    shutil.copy(REPO_ROOT / "config" / "thresholds.toml", path / "thresholds.toml")
+    return path
+
+
+@pytest.fixture(scope="session")
+def synth_bars_template(tmp_path_factory, template_config):
+    """test_synth's bars fetched at ``SYNTH_AS_OF``; no state repository."""
+    path = tmp_path_factory.mktemp("template-synth-bars") / "state"
+    path.mkdir()
+    _fetch(path, template_config, "test_synth", SYNTH_AS_OF)
+    return path
+
+
+@pytest.fixture(scope="session")
+def synth_committed_template(tmp_path_factory, template_config):
+    """init-state at ``SYNTH_AS_OF``, test_synth's bars fetched at it, committed for
+    ``SYNTH_DAY`` with the clock at ``SYNTH_AS_OF``."""
+    from discotrade import state as state_mod
+    from discotrade.clock import FixedClock
+
+    path = tmp_path_factory.mktemp("template-synth-committed") / "state"
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("GIT_ALLOW_PROTOCOL", "file")
+        _cli("init-state", "--state", str(path), "--as-of", SYNTH_AS_OF)
+        _fetch(path, template_config, "test_synth", SYNTH_AS_OF)
+        state_mod.commit(path, "test_synth", SYNTH_DAY,
+                         FixedClock(datetime(2019, 7, 25, tzinfo=UTC)))
+    return path
+
+
+@pytest.fixture(scope="session")
+def mixed_bars_template(tmp_path_factory, template_config):
+    """test_mixed's bars fetched at ``MIXED_AS_OF``; no state repository."""
+    path = tmp_path_factory.mktemp("template-mixed-bars") / "state"
+    path.mkdir()
+    _fetch(path, template_config, "test_mixed", MIXED_AS_OF)
+    return path
+
+
+@pytest.fixture(scope="session")
+def mixed_two_years_template(tmp_path_factory, template_config):
+    """test_mixed's bars fetched at ``MIXED_TWO_YEARS``; no state repository."""
+    path = tmp_path_factory.mktemp("template-mixed-two-years") / "state"
+    _fetch(path, template_config, "test_mixed", MIXED_TWO_YEARS)
+    return path
+
+
+@pytest.fixture(scope="session")
+def mixed_ran_template(tmp_path_factory, template_config):
+    """init-state at ``RAN_AS_OF``, ``RAN_FILES`` from reference/ written admitted
+    ``RAN_ADMITTED`` (decision 48), and run-day over ``RAN_DAYS`` on test_mixed."""
+    from discotrade import journal
+    from discotrade.state import write_approach
+    from discotrade.strategy import load_strategy_file
+
+    setup = journal.Setup.load(template_config, "test_mixed")
+    path = tmp_path_factory.mktemp("template-mixed-ran") / "state"
+    _cli("init-state", "--state", str(path), "--as-of", RAN_AS_OF)
+    for name in RAN_FILES:
+        source = REPO_ROOT / "reference" / name
+        strat = load_strategy_file(source, setup.thresholds)
+        write_approach(
+            path, source=source.read_text(encoding="utf-8"), params=strat.params,
+            cell="trend/short", model_id="test-model", model_version="test-model-v0",
+            cutoff=date(2019, 1, 1), description=f"the reference strategy {name}",
+            profile_version="w-test", admitted=RAN_ADMITTED, instruments=setup.instruments,
+            spread_tables=setup.spread_tables)
+    for d in RAN_DAYS:
+        _cli("--state", str(path), "--config", str(template_config), "--track", "test_mixed",
+             "--as-of", RAN_AS_OF, "run-day", "--day", d.isoformat())
+    return path

@@ -42,10 +42,11 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 import pytest
+from conftest import SYNTH_AS_OF, copy_template
 from error_texts import assert_clean, forbidden_words
 
 from discotrade import backtest, journal
-from discotrade.cli import REPO_ROOT, main
+from discotrade.cli import REPO_ROOT
 from discotrade.sandbox.inprocess import InProcessSandbox
 from discotrade.sandbox.process import ProcessSandbox
 from discotrade.strategy import load_strategy_file
@@ -87,11 +88,11 @@ def setup(config):
 
 
 @pytest.fixture(scope="module")
-def state(tmp_path_factory, config):
-    path = tmp_path_factory.mktemp("state")
-    assert main(["--state", str(path), "--config", str(config), "--track", TRACK,
-                 "--as-of", AS_OF, "bars", "fetch"]) == 0
-    return path
+def state(tmp_path_factory, synth_bars_template):
+    """test_synth's bars fetched at ``AS_OF``: this module's copy of conftest's
+    ``synth_bars_template`` (decision 2026-10-15-m14 114)."""
+    assert (SYNTH_AS_OF, TRACK) == (AS_OF, "test_synth")
+    return copy_template(synth_bars_template, tmp_path_factory.mktemp("state"))
 
 
 @pytest.fixture(scope="module")

@@ -18,6 +18,7 @@ from datetime import UTC, date, datetime, timedelta
 import numpy as np
 import pandas as pd
 import pytest
+from conftest import MIXED_TWO_YEARS, copy_template
 
 import discotrade.sources as sources
 from discotrade.bars.store import BarStore, BarStoreError
@@ -80,10 +81,11 @@ def iso(ts):
 
 
 @pytest.fixture(scope="module")
-def long_state(tmp_path_factory, config):
-    state = tmp_path_factory.mktemp("long") / "state"
-    assert fetch(state, config, TWO_YEARS) == 0
-    return state
+def long_state(tmp_path_factory, mixed_two_years_template):
+    """test_mixed's bars fetched at ``TWO_YEARS``: this module's copy of conftest's
+    ``mixed_two_years_template`` (decision 2026-10-15-m14 114)."""
+    assert (MIXED_TWO_YEARS, TRACK) == (TWO_YEARS, "test_mixed")
+    return copy_template(mixed_two_years_template, tmp_path_factory.mktemp("long") / "state")
 
 
 @pytest.fixture(scope="module")

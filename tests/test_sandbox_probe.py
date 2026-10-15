@@ -58,6 +58,8 @@ from datetime import UTC, date, datetime, time
 
 import pandas as pd
 import pytest
+from conftest import SYNTH_AS_OF as TEMPLATE_SYNTH_AS_OF
+from conftest import copy_template
 
 from discotrade.bars.gaps import day_end
 from discotrade.bars.store import BarStore
@@ -377,12 +379,11 @@ def calendars(config):
 
 
 @pytest.fixture(scope="module")
-def synth_state(tmp_path_factory, config):
-    path = tmp_path_factory.mktemp("synth") / "state"
-    path.mkdir()
-    assert main(["--state", str(path), "--config", str(config), "--track", SYNTH,
-                 "--as-of", SYNTH_AS_OF, "bars", "fetch"]) == 0
-    return path
+def synth_state(tmp_path_factory, synth_bars_template):
+    """test_synth's bars fetched at ``SYNTH_AS_OF``: this module's copy of conftest's
+    ``synth_bars_template`` (decision 2026-10-15-m14 114)."""
+    assert (TEMPLATE_SYNTH_AS_OF, SYNTH) == (SYNTH_AS_OF, "test_synth")
+    return copy_template(synth_bars_template, tmp_path_factory.mktemp("synth") / "state")
 
 
 def test_the_fixture_facts_written_here(tc, calendars):

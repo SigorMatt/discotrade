@@ -70,6 +70,16 @@ def outputs(state, config):
     return out
 
 
+@pytest.fixture(scope="module")
+def plain(state, config):
+    """The exit status and plain (not ``--json``) output text of ``trend_ma.py``, run
+    once; two tests read it (decision 2026-10-15-m14 114)."""
+    buf = io.StringIO()
+    with contextlib.redirect_stdout(buf):
+        code = backtest(state, config, REPO_ROOT / "reference" / "trend_ma.py")
+    return code, buf.getvalue()
+
+
 def test_window_holds_at_least_sixty_trading_days(config):
     cal = load_calendar(config / "calendars" / "synth_week.toml")
     days = pd.date_range(FIRST, LAST, freq="D", tz="UTC")
@@ -194,10 +204,9 @@ def test_a_refused_bar_file_exits_1(tmp_path, config, state, capsys):
     assert "SYNL" in capsys.readouterr().err
 
 
-def test_plain_output_prints_no_gross_figure_without_the_net_ones(state, config, capsys):
-    capsys.readouterr()
-    assert backtest(state, config, REPO_ROOT / "reference" / "trend_ma.py") == 0
-    out = capsys.readouterr().out
+def test_plain_output_prints_no_gross_figure_without_the_net_ones(plain):
+    code, out = plain
+    assert code == 0
     lines = out.splitlines()
     assert any("breakeven_cost" in line for line in lines)
     for line in lines:
@@ -346,16 +355,16 @@ def test_a_roll_record_with_the_right_ts_and_other_contracts_exits_1(
     assert roll_ts in err
 
 
-def test_plain_output_labels_subject_and_instrument_cost_lines(state, config, outputs, capsys):
+def test_plain_output_labels_subject_and_instrument_cost_lines(plain, outputs):
     # Decision 2026-10-12 38: the subject's cost totals (divided by N) are labelled
     # as the subject's, each per-instrument line as its undivided sum; the figures
     # are those of --json.
     from discotrade.cli import _fmt
 
     result = json.loads(outputs["trend_ma.py"])
-    capsys.readouterr()
-    assert backtest(state, config, REPO_ROOT / "reference" / "trend_ma.py") == 0
-    lines = capsys.readouterr().out.splitlines()
+    code, out = plain
+    assert code == 0
+    lines = out.splitlines()
     n = len(SYMBOLS)
     subject = [ln for ln in lines if "costs at 1x" in ln]
     assert subject == [
