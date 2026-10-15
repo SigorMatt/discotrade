@@ -22,6 +22,7 @@ Seeds: the synthetic bars come from the fixture records' seeds, written here in
 ``SEEDS`` and checked against them. No random draw is made here.
 """
 
+import dataclasses
 import shutil
 import sys
 import threading
@@ -46,6 +47,7 @@ from discotrade.sandbox.process import CHILD_ENV, ProcessSandbox, child_command,
 
 FIXTURE_CONFIG = REPO_ROOT / "tests" / "fixtures" / "config"
 STRATEGIES = REPO_ROOT / "tests" / "fixtures" / "strategies"
+REJECTED = REPO_ROOT / "tests" / "fixtures" / "rejected"
 TREND = REPO_ROOT / "reference" / "trend_ma.py"
 TRACK = "test_mixed"
 SEEDS = {"SYNA": 101, "SYNL": 105, "SYNX": 106}
@@ -250,6 +252,28 @@ def test_a_source_not_in_the_repository_is_refused_naming_the_rule(tmp_path, sta
         ProcessSandbox(tmp_path).run(job)
     assert info.value.rule == "repository_source"
     assert list(tmp_path.iterdir()) == []  # nothing ran, nothing was written
+
+
+@pytest.mark.parametrize("fork_server", [False, True])
+def test_a_text_of_the_rejection_suite_is_refused_though_it_is_under_tests_fixtures(
+        tmp_path, state, tc, calendars, config, fork_server):
+    # Decision 104 (d) of 2026-10-14-m13 (O-22 item 1): the backend leaves
+    # tests/fixtures/rejected/ out of the sources it accepts. Every text there is
+    # refused before anything is written or started; none of them runs.
+    texts = sorted(REJECTED.glob("*.py"))
+    assert texts, "no text under tests/fixtures/rejected/"
+    job = job_for(state, tc, calendars, config, TREND.read_text(encoding="utf-8"), [{}],
+                  window=SHORT, instruments=tc.instruments[:1])
+    backend = ProcessSandbox(tmp_path / "scratch", fork_server=fork_server)
+    try:
+        for path in texts:
+            source = path.read_text(encoding="utf-8")
+            with pytest.raises(SandboxRefused, match=r"\[repository_source\]") as info:
+                backend.run(dataclasses.replace(job, source=source))
+            assert info.value.rule == "repository_source", path.name
+        assert not (tmp_path / "scratch").exists()  # nothing ran, nothing was written
+    finally:
+        backend.close()
 
 
 def test_a_job_carrying_a_function_object_is_refused(tmp_path, state, tc, calendars, config):

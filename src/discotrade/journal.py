@@ -254,12 +254,15 @@ def read_day(state_dir: Path, track: str, day: date) -> pd.DataFrame | None:
 
 # --- the rows of a day -------------------------------------------------------------------
 
-def trusted_hashes(root: Path = REPO_ROOT) -> frozenset[str]:
-    """The sha256 of every file under ``reference/`` and ``tests/fixtures/`` of ``root``."""
+def trusted_hashes(root: Path = REPO_ROOT, exclude: Sequence[str] = ()) -> frozenset[str]:
+    """The sha256 of every file under ``reference/`` and ``tests/fixtures/`` of ``root``,
+    leaving out every file under a directory of ``exclude`` (paths relative to ``root``)."""
+    left_out = [root / name for name in exclude]
     out = set()
     for name in TRUSTED_DIRS:
         for path in sorted((root / name).rglob("*")):
-            if path.is_file() and "__pycache__" not in path.parts:
+            if (path.is_file() and "__pycache__" not in path.parts
+                    and not any(path.is_relative_to(d) for d in left_out)):
                 out.add(hashlib.sha256(path.read_bytes()).hexdigest())
     return frozenset(out)
 

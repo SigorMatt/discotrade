@@ -1,0 +1,174 @@
+# The rejection suite (DESIGN 12.5; decision 104 (a) of 2026-10-14-m13 as the
+# owner's O-22 of 2026-10-15 narrows it; read by tests/test_rejected_suite.py).
+#
+# One validation fixture per entry of DESIGN 12.5's list and REVIEW-12's two:
+# `file` (relative to the repository's root), the `entry` it covers, the `stage`
+# of DESIGN 12.2 that rejects it (decision 98 (d)) and, for the static stage, the
+# `rule` of DESIGN 12.1 (validation.static.RULES). A run-time entry reuses a text
+# of tests/fixtures/strategies/ where one exists. The child-process backend leaves
+# this directory out of the sources it accepts (decision 104 (d)).
+
+[[entry]]
+file = "tests/fixtures/rejected/network_access.py"
+entry = "network access"
+stage = "static"
+rule = "import"
+
+[[entry]]
+file = "tests/fixtures/rejected/writing_a_file.py"
+entry = "writing a file"
+stage = "static"
+rule = "forbidden_attribute"
+
+[[entry]]
+file = "tests/fixtures/rejected/reading_outside_the_mount.py"
+entry = "reading a file outside the mount"
+stage = "static"
+rule = "forbidden_name"
+
+[[entry]]
+file = "tests/fixtures/rejected/reading_the_mounted_bars.py"
+entry = "reading the mounted bars directly"
+stage = "static"
+rule = "forbidden_attribute"
+
+[[entry]]
+file = "tests/fixtures/rejected/fork_bomb.py"
+entry = "a fork bomb"
+stage = "static"
+rule = "import"
+
+[[entry]]
+file = "tests/fixtures/strategies/endless_loop.py"
+entry = "an endless loop"
+stage = "dry_run"
+
+[[entry]]
+file = "tests/fixtures/strategies/memory_bomb.py"
+entry = "a memory bomb"
+stage = "dry_run"
+
+[[entry]]
+file = "tests/fixtures/rejected/forbidden_import.py"
+entry = "forbidden imports"
+stage = "static"
+rule = "import"
+
+[[entry]]
+file = "tests/fixtures/rejected/dunder_import.py"
+entry = "__import__"
+stage = "static"
+rule = "underscore"
+
+[[entry]]
+file = "tests/fixtures/rejected/attribute_walk.py"
+entry = "an attribute walk from a literal to object"
+stage = "static"
+rule = "underscore"
+
+[[entry]]
+file = "tests/fixtures/rejected/eval_name.py"
+entry = "eval"
+stage = "static"
+rule = "forbidden_name"
+
+[[entry]]
+file = "tests/fixtures/rejected/exec_name.py"
+entry = "exec"
+stage = "static"
+rule = "forbidden_name"
+
+[[entry]]
+file = "tests/fixtures/strategies/keeps_state.py"
+entry = "state kept between calls by a module-level cache"
+stage = "determinism"
+
+[[entry]]
+file = "tests/fixtures/rejected/mutable_default.py"
+entry = "state kept between calls by a mutable default argument"
+stage = "determinism"
+
+[[entry]]
+file = "tests/fixtures/rejected/randomness.py"
+entry = "randomness"
+stage = "static"
+rule = "forbidden_attribute"
+
+[[entry]]
+file = "tests/fixtures/rejected/the_clock.py"
+entry = "the clock"
+stage = "static"
+rule = "forbidden_attribute"
+
+[[entry]]
+file = "tests/fixtures/rejected/too_many_lines.py"
+entry = "too many lines"
+stage = "static"
+rule = "max_lines"
+
+[[entry]]
+file = "tests/fixtures/rejected/too_many_params.py"
+entry = "too many parameters"
+stage = "static"
+rule = "max_params"
+
+[[entry]]
+file = "tests/fixtures/rejected/nonnumeric_param.py"
+entry = "a non-numeric parameter"
+stage = "static"
+rule = "param_value"
+
+[[entry]]
+file = "tests/fixtures/rejected/not_a_number.py"
+entry = "a result that is not a number"
+stage = "dry_run"
+
+[[entry]]
+file = "tests/fixtures/rejected/not_finite.py"
+entry = "a result that is not finite"
+stage = "dry_run"
+
+[[entry]]
+file = "tests/fixtures/strategies/grid_out_of_range.py"
+entry = "a result out of range"
+stage = "dry_run"
+
+[[entry]]
+file = "tests/fixtures/rejected/huge_output.py"
+entry = "a huge output"
+stage = "static"
+rule = "forbidden_name"
+
+[[entry]]
+file = "tests/fixtures/rejected/changes_bars_in_place.py"
+entry = "changing bars in place"
+stage = "activity"
+
+[[entry]]
+file = "tests/fixtures/rejected/numpy_io.py"
+entry = "the IO functions of numpy"
+stage = "static"
+rule = "forbidden_attribute"
+
+[[entry]]
+file = "tests/fixtures/rejected/pandas_io.py"
+entry = "the IO functions of pandas"
+stage = "static"
+rule = "forbidden_attribute"
+
+[[entry]]
+file = "tests/fixtures/rejected/slow_function.py"
+entry = "a slow function"
+stage = "dry_run"
+
+[[entry]]
+file = "tests/fixtures/rejected/class_named_from_the_data.py"
+entry = "a class named from the data"
+stage = "static"
+rule = "construct"
+
+[[entry]]
+file = "tests/fixtures/rejected/forged_result_on_descriptor_1.py"
+entry = "a forged result written to descriptor 1"
+stage = "static"
+rule = "import"

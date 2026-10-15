@@ -8,7 +8,9 @@ standard input empty and its standard error discarded. It is not a security
 boundary: it exists so that long replays in tests are fast, and it runs only
 a source text whose sha256 is that of a file under this repository's
 ``reference/`` or ``tests/fixtures/`` (:func:`discotrade.journal.trusted_hashes`,
-the rule decision 48 gives the day loop); any other text is refused with
+the rule decision 48 gives the day loop), leaving out the rejection suite's
+directory :data:`REJECTED_DIR` (decision 104 (d) of 2026-10-14-m13, O-22 of
+2026-10-15: no text of it ever runs here); any other text is refused with
 :class:`~discotrade.sandbox.base.SandboxRefused`, rule ``repository_source``,
 before anything is written or started. A job carrying a function object is
 refused, rule ``function``.
@@ -95,6 +97,15 @@ CHILD_ENV: dict[str, str] = {
     "MKL_NUM_THREADS": "1",
 }
 _READ = 1 << 16
+#: The rejection suite's validation fixtures (DESIGN 12.5; decision 104 (d)): under
+#: ``tests/fixtures/``, yet no source this backend accepts.
+REJECTED_DIR = "tests/fixtures/rejected"
+
+
+def accepted_hashes(root: Path = REPO_ROOT) -> frozenset[str]:
+    """The sha256 of every source text this backend accepts: the files under
+    ``reference/`` and ``tests/fixtures/`` of ``root``, but :data:`REJECTED_DIR`'s."""
+    return trusted_hashes(root, exclude=(REJECTED_DIR,))
 
 
 def child_env() -> dict[str, str]:
@@ -313,11 +324,12 @@ class ProcessSandbox:
             raise SandboxRefused("function", "the child-process backend runs a source text; "
                                  "a function object runs only in the in-process backend")
         digest = hashlib.sha256(job.source.encode("utf-8")).hexdigest()
-        if digest not in trusted_hashes(REPO_ROOT):
+        if digest not in accepted_hashes(REPO_ROOT):
             raise SandboxRefused(
                 "repository_source",
                 f"the source text (sha256 {digest}) is not that of a file under the "
-                f"repository's {' or '.join(d + '/' for d in TRUSTED_DIRS)} (DESIGN 12.4)")
+                f"repository's {' or '.join(d + '/' for d in TRUSTED_DIRS)} outside "
+                f"{REJECTED_DIR}/ (DESIGN 12.4)")
         self.scratch.mkdir(parents=True, exist_ok=True)
         base = Path(tempfile.mkdtemp(prefix="job-", dir=self.scratch))
         try:
