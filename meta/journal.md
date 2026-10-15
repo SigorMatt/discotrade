@@ -126,3 +126,4 @@
 - 2026-10-15 mission 13 U5b done 8b9f9be: one fork server per harness process (O-20), restart notice; 30-day journal identical; 1.885 s/replay day (parent 2.466), G1.3 projected ~621-694 s; check 3/3 (858-881 s).
 - 2026-10-15 mission 13 U5c done 8b923fd: probe limit findings (pids, memory, cpu, cpu_time), selftest 19 PASS, G2.5 limit tests, output-cap overrun fixed, scripts/gate M2 five items, image discotrade-sandbox:1edd0f8558cb; D-013 filed (check run 910 s); check 3/3 (877-910 s).
 - 2026-10-15 mission 13 U6 done 42cea0f, 68bee5f: G1.3 reasons per O-19; G2.1-G2.5 gate tests; at 68bee5f gate M2 PASS (157 s), M1 G1.1 457 s, G1.2 200 s, G1.3 576 s, G1.4 1 s all PASS, M0 PASS (266 s); check 3/3 (814-887 s); no finding due.
+- 2026-10-15 mission 13 U7 done: final report; mission finished.

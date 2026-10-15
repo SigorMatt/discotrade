@@ -19,9 +19,7 @@ check 3/3 877-910 s).
 U6 42cea0f (O-19), 68bee5f (M2 gate tests); gate M2 PASS 157 s, M1 G1.1-G1.4 PASS (457/200/576/1 s), M0 PASS 266 s at
 68bee5f; outputs in meta/drafts/gate-runs-13.md.
 
-Unit in progress: U7, the final report meta/FINAL-REPORT-13.md (drafted under meta/drafts/), as the brief says, naming
-O-19, O-20, O-22 under decisions applied, stating 104 (c) was dropped by O-22 and what proves the boundary instead
-(O-22 item 5), with G2.3's limit findings and G2.5's results quoted. Done means: committed and pushed.
+Unit in progress: none. Mission 13 finished; final report meta/FINAL-REPORT-13.md.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-14-m13 (100-108) bind; the owner's
 decisions-2026-10-13-owner (O-N wins); decisions-2026-10-15-owner (O-19, O-20, O-22 win over 104, 105 (e), 106 (b)); decisions 1-99 still bind (48 replaced by 105 for the day loop, U5 only);
