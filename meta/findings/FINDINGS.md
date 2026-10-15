@@ -714,3 +714,5 @@ What this project does meanwhile: nothing in product code.
 Status: open
 
 D-013 status (appended 2026-10-15, mission 14 U0): Status: taken by mission 14 U2 (meta/decisions/decisions-2026-10-15-m14.md item 114)
+
+D-013 times (appended 2026-10-16, mission 14 U1): U1's three `./scripts/check` runs, each its own foreground call with a 20-minute timeout, all green (2067 passed, `container` tests run, image discotrade-sandbox:3b7d75c39621), took 911 s, 890 s and 912 s; the first and third are above HF-006's 15 minutes. U1's new tests take about 12 s together (three probe or self-test container runs, one re-run day, the process, runner and judgement tests); no test was dropped. Status: taken by mission 14 U2 (meta/decisions/decisions-2026-10-15-m14.md item 114)

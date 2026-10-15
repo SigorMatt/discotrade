@@ -20,9 +20,12 @@ for the process count (``pids.max``), memory (``memory.max`` and
 ``memory.swap.max``) and CPU (``cpu.max``), each as its file holds it, null when
 it cannot be read, and its own CPU-time resource limit (``RLIMIT_CPU``, soft and
 hard, null for unlimited); and the files of the mount with, per instrument of
-``job.json``, the number of bars each array holds and the latest open time of
+``job.json``, the number of bars each array holds, the latest open time of
 the bars when the mount carries one (a ``ts`` array; a job written by
-``sandbox.base.write_job`` carries none, so it is then null).
+``sandbox.base.write_job`` carries none, so it is then null) and the ``close``
+of the last row of its ``close`` array (``last_close``, the float as read, null
+with no row; decision 110 (a) of 2026-10-15-m14), which the harness compares
+with the raw close of W's last stored bar.
 
 It imports only the standard library (a test reads its imports with ``ast``).
 Usage: ``python -I probe.py <mount>``.
@@ -188,11 +191,25 @@ def _latest_open(data):
     return instant.isoformat()
 
 
+def _last_float(data):
+    """The last value of a one-dimensional float64 array, as read; None with no row
+    or another type."""
+    shape, descr, offset = _npy(data)
+    if len(shape) != 1 or shape[0] == 0 or descr[1:] != "f8":
+        return None
+    fmt = ">d" if descr[0] == ">" else "<d"
+    start = offset + 8 * (shape[0] - 1)
+    (value,) = struct.unpack(fmt, data[start:start + 8])
+    return value
+
+
 def instrument(mount, index, meta):
     """One instrument of ``job.json``: its bars file, the length of each array, the
-    bar count (the common length) and the latest open time when a ``ts`` is there."""
+    bar count (the common length), the latest open time when a ``ts`` is there and
+    the close of the last row."""
     name = meta.get("bars") if isinstance(meta, dict) else None
-    out = {"index": index, "file": name, "arrays": {}, "count": None, "latest_open": None}
+    out = {"index": index, "file": name, "arrays": {}, "count": None, "latest_open": None,
+           "last_close": None}
     try:
         with zipfile.ZipFile(os.path.join(mount, str(name))) as archive:
             for member in sorted(archive.namelist()):
@@ -202,7 +219,10 @@ def instrument(mount, index, meta):
                 out["arrays"][key] = shape[0] if shape else None
                 if key == "ts":
                     out["latest_open"] = _latest_open(data)
-    except (OSError, ValueError, KeyError, SyntaxError, zipfile.BadZipFile) as exc:
+                elif key == "close":
+                    out["last_close"] = _last_float(data)
+    except (OSError, ValueError, KeyError, SyntaxError, struct.error,
+            zipfile.BadZipFile) as exc:
         out["error"] = _error(exc)
         return out
     lengths = set(out["arrays"].values())

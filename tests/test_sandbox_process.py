@@ -24,9 +24,11 @@ Seeds: the synthetic bars come from the fixture records' seeds, written here in
 
 import dataclasses
 import shutil
+import socket
 import sys
 import threading
 import tomllib
+import types
 from datetime import date
 
 import numpy as np
@@ -41,7 +43,7 @@ from discotrade.config import (
     load_run,
     load_track_config,
 )
-from discotrade.sandbox import runner
+from discotrade.sandbox import process, runner
 from discotrade.sandbox.base import SandboxRefused, build_job, job_arrays, job_doc, result_from_doc
 from discotrade.sandbox.process import CHILD_ENV, ProcessSandbox, child_command, child_env
 
@@ -377,3 +379,71 @@ def test_what_a_text_writes_to_descriptor_1_or_prints_never_reaches_the_result(
     assert result.ok, result.error
     targets = result.targets[(0, tc.instruments[0].symbol)]
     assert len(targets) > 1 and np.all(targets == 0.0)
+
+
+# ------------------------------------------------------------------ decision 111 (a)
+
+
+def test_a_remaining_time_of_zero_at_the_fork_servers_read_is_the_wall_clock_limit(
+        tmp_path, monkeypatch, state, tc, calendars, config):
+    """Decision 111 (a) of 2026-10-15-m14, REVIEW-13 should-fix 3: the monotonic clock
+    is replaced so that, once the child's output has been read, it stands exactly at
+    the deadline (no sleep). The job's result is ``limit [wall_clock]``, never
+    ``SandboxUnavailable``; the server is kept (no restart) and takes the next job;
+    and its answer is never awaited with a zero timeout."""
+    ProcessSandbox(tmp_path / "none", fork_server=True).close()
+    real_time = process.time
+    at = {}
+    clock = types.SimpleNamespace(monotonic=lambda: at.get("now", real_time.monotonic()))
+    monkeypatch.setattr(process, "time", clock)
+    real_read = process._read
+
+    def read_then_expire(fd, deadline, cap):
+        got = real_read(fd, deadline, cap)
+        at["now"] = deadline          # the remaining time is now exactly zero
+        return got
+
+    monkeypatch.setattr(process, "_read", read_then_expire)
+    timeouts = []
+    real_line = process._ForkServer._line
+
+    def line(self, timeout=None):
+        timeouts.append(timeout)
+        return real_line(self, timeout)
+
+    monkeypatch.setattr(process._ForkServer, "_line", line)
+    backend = ProcessSandbox(tmp_path / "scratch", fork_server=True)
+    try:
+        source = TREND.read_text(encoding="utf-8")
+        job = job_for(state, tc, calendars, config, source, [TREND_PARAMS], window=SHORT)
+        restarts = process.restarts()
+        got = bounded(lambda: backend.run(job))
+        assert got.error is not None, got
+        assert (got.error.stage, got.error.rule) == ("limit", "wall_clock"), got.error
+        pid = process.server_pid()
+        assert pid is not None and process.restarts() == restarts
+        assert not [t for t in timeouts if t is not None and t <= 0], timeouts
+        # The kept server takes the next job, the clock real again.
+        monkeypatch.setattr(process, "time", real_time)
+        monkeypatch.setattr(process, "_read", real_read)
+        again = bounded(lambda: backend.run(job))
+        assert again.ok, again.error
+        assert process.server_pid() == pid and process.restarts() == restarts
+    finally:
+        backend.close()
+    assert process.server_pid() is None
+
+
+def test_a_blocking_read_of_the_servers_answer_is_the_timeout():
+    """Decision 111 (a): a ``BlockingIOError`` from the read of the server's answer
+    is treated as the timeout (here a zero timeout reaches the socket directly)."""
+    mine, theirs = socket.socketpair(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        server = process._ForkServer.__new__(process._ForkServer)
+        server.sock, server._buf = mine, b""
+        with pytest.raises(TimeoutError):
+            server._line(0.0)
+        assert mine.gettimeout() is None
+    finally:
+        mine.close()
+        theirs.close()

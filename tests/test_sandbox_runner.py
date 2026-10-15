@@ -400,6 +400,74 @@ def test_a_base_exception_while_loading_or_in_a_call_is_an_error_of_its_stage(
     assert_clean([err.text], words)
 
 
+# ------------------------------------------- decision 111 (b), (c) of 2026-10-15-m14
+
+
+#: A real number whose conversion to ``float`` raises (REVIEW-13 note 3): a ``float``
+#: subclass with a ``__float__`` that divides by zero, built without writing the
+#: dunder name (the static check, which refuses it, is not run here).
+CONVERSION_RAISES = _position(
+    "F = type('F', (float,), {'_'*2 + 'float' + '_'*2: lambda self: 1 / 0})",
+    "return F(0.5)")
+#: The same with a class whose ``__float__`` raises one named from the data.
+CONVERSION_RAISES_NAMED = _position(
+    "c = bars['close'].iloc[-1]",
+    "E = type('SYNA_' + repr(float(c)), (Exception,), {})",
+    "def boom(self):",
+    "    raise E()",
+    "F = type('F', (float,), {'_'*2 + 'float' + '_'*2: boom})",
+    "return F(0.5)")
+
+
+@pytest.mark.parametrize("source, raised", [(CONVERSION_RAISES, "ZeroDivisionError"),
+                                            (CONVERSION_RAISES_NAMED, "an exception")],
+                         ids=["zero-division", "class-named-from-the-data"])
+def test_a_result_whose_float_conversion_raises_is_a_dry_run_error(
+        source, raised, state, tc, calendars, tmp_path, capfd, words):
+    """Decision 111 (b): past the static check (the runner called directly), the
+    range check's conversion to ``float`` is inside the runner's catch-all, so the
+    raise is an error of stage ``dry_run`` under decision 101 (a), not an escape."""
+    job = _one_instrument_job(state, tc, calendars, source)
+    result = run_runner(job, tmp_path / "job", capfd)
+    err = result.error
+    assert err is not None and not result.targets
+    assert (err.stage, err.rule, err.bar, err.param_set) == ("dry_run", "not_a_number", 0, 0)
+    assert err.text == (f"dry_run [not_a_number]: position returned an object whose "
+                        f"conversion to a number raised {raised} at window bar 0 "
+                        f"(parameter set 0)")
+    assert_clean([err.text], words)
+
+
+def test_execute_returns_the_error_when_the_conversion_raises():
+    """The same through ``execute`` alone: it returns a document, it does not raise."""
+    class Raises(float):
+        def __float__(self):
+            raise OverflowError
+
+    arrays = {name: np.zeros(3) for name in runner.ARRAYS}
+    arrays["rolled"] = np.zeros(3, dtype=bool)
+    job = {"mode": "positions", "history_cap_bars": 3, "params": [{}],
+           "instruments": [{"first": 2, "shorting": True, "sample": None}]}
+    doc = runner.execute(job, [arrays], lambda: lambda bars, params: Raises(0.5))
+    assert doc == runner.error_doc("dry_run", "not_a_number", "position returned an object "
+                                   "whose conversion to a number raised OverflowError", 0, 0)
+
+
+def test_the_built_in_exception_tuple_is_every_exception_class_of_builtins():
+    """Decision 111 (c), REVIEW-13 note 4: the ``Warning`` family, ``ExceptionGroup``
+    and ``BaseExceptionGroup`` included."""
+    import builtins
+    want = {v for v in vars(builtins).values()
+            if isinstance(v, type) and issubclass(v, BaseException)}
+    assert set(runner.BUILTIN_EXCEPTIONS) == want
+    assert len(runner.BUILTIN_EXCEPTIONS) == len(set(runner.BUILTIN_EXCEPTIONS))
+    for exc in (Warning(), UserWarning(), DeprecationWarning(),
+                ExceptionGroup("x", [ValueError()]),
+                BaseExceptionGroup("x", [KeyboardInterrupt()])):
+        assert runner.exception_name(exc) == type(exc).__name__
+    assert type(BaseExceptionGroup("x", [KeyboardInterrupt()])) is BaseExceptionGroup
+
+
 # ------------------------------------------------- D-006, a fresh load
 
 

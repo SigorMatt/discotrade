@@ -21,6 +21,18 @@ attempts nothing against a limit: it reads them only. With an empty ``PATH``,
 ``sandbox selftest`` exits 1 naming that no container runtime was found and starts
 nothing.
 
+Decision 110 of 2026-10-15-m14 (REVIEW-13 should-fix 1 and 2): the probe also
+reports each instrument's last mounted ``close`` (``last_close``); the expectation
+read from the store itself (``container.expected_from_store``, with no job) is W's
+bar count, its context and the raw close of W's last stored bar, checked here
+against the test's own reading of the stored bars; a mount finding fails on a W of
+0 bars or on another last close. On the container backend, a probe run on W's job
+reports each last close and passes against the store; ``sandbox selftest`` on a job
+with SYNA's earliest context bar dropped and the first bar after W added (same
+count, the harness's ``ts`` labels left as they were) fails exactly ``mount.SYNA``
+and exits 1; on a state with no bars it fails every instrument's mount finding and
+exits 1. ``tests/gates/test_g2_3_probe.py`` is not changed (O-19).
+
 Why ``EROFS``: the container's user is not root, so without ``--read-only`` a
 create under ``/`` still fails, with ``EACCES``; only the error says the root is
 read-only (DESIGN 18.3 G2.3: "a read-only root").
@@ -36,6 +48,7 @@ command) and no container a test started remains.
 
 import ast
 import copy
+import dataclasses
 import json
 import math
 import shutil
@@ -43,14 +56,16 @@ import sys
 import tempfile
 from datetime import UTC, date, datetime, time
 
+import pandas as pd
 import pytest
 
+from discotrade.bars.gaps import day_end
 from discotrade.bars.store import BarStore
 from discotrade.cli import REPO_ROOT, main
-from discotrade.config import load_calendar, load_run, load_track_config
+from discotrade.config import DateRange, load_calendar, load_run, load_track_config
 from discotrade.daily import closed_day
 from discotrade.sandbox import container
-from discotrade.sandbox.base import build_job, limits_from_config
+from discotrade.sandbox.base import JobInstrument, build_job, limits_from_config
 from discotrade.sandbox.container import ContainerSandbox, Expected, Required, judge
 from discotrade.tradingcal import trading_date
 
@@ -524,3 +539,218 @@ def test_the_probe_runs_on_the_host_and_reports_a_json_document(tmp_path, monkey
     assert all(list(d.iterdir()) == [] for d in under)  # each created file removed
     assert not (job / probe.PROBE_FILE).exists()
     assert sorted(f["name"] for f in report["mount"]["files"]) == ["bars-0.npz", "job.json"]
+
+
+# ------------------------------------------------------------------ decision 110: the content
+
+
+def _probe_module():
+    """The probe's text compiled here as a module (no container, no new process)."""
+    import types
+    probe = types.ModuleType("probe_under_test")
+    exec(compile(PROBE.read_text(encoding="utf-8"), str(PROBE), "exec"), probe.__dict__)
+    return probe
+
+
+def test_the_probe_reports_the_close_of_the_last_mounted_row_and_null_with_no_row(tmp_path):
+    # Decision 110 (a) of 2026-10-15-m14: per instrument, the close of the last row the
+    # probe finds in the mount, the float as read; null with no row.
+    import numpy as np
+    probe = _probe_module()
+    job = tmp_path / "job"
+    job.mkdir()
+    np.savez(job / "bars-0.npz", close=np.array([4125.25, 4130.5, 4127.75]),
+             open=np.array([1.0, 2.0, 3.0]))
+    np.savez(job / "bars-1.npz", close=np.zeros(0), open=np.zeros(0))
+    (job / "job.json").write_text(json.dumps({"instruments": [{"bars": "bars-0.npz"},
+                                                              {"bars": "bars-1.npz"}]}),
+                                  encoding="utf-8")
+    report = json.loads(json.dumps(probe.mount_report(str(job))))
+    first, empty = report["instruments"]
+    assert first["last_close"] == 4127.75 and first["count"] == 3
+    assert first["latest_open"] is None
+    assert empty["last_close"] is None and empty["count"] == 0
+
+
+def _expected_with_close(close):
+    return [Expected("SYNA", count=912, window=433, last_open=datetime(2019, 7, 8, 20,
+                                                                      tzinfo=UTC),
+                     w_end=W_END, last_close=close), EXPECTED[1]]
+
+
+def _with_last_close(report, value):
+    report["mount"]["instruments"][0]["last_close"] = value
+    return report
+
+
+def test_a_mounted_last_close_equal_to_the_expected_one_passes():
+    findings = judge(_with_last_close(good_report(), 4127.75), _expected_with_close(4127.75),
+                     REQUIRED)
+    assert all(f.ok for f in findings), [f for f in findings if not f.ok]
+
+
+@pytest.mark.parametrize("mounted", [4130.5, None, "4127.75", float("nan")])
+def test_a_mounted_last_close_other_than_ws_last_stored_close_fails_the_instrument(mounted):
+    # Decision 110 (c): the same count with another last close (a later bar mounted,
+    # an earlier one dropped) fails that instrument's finding, and only it.
+    findings = judge(_with_last_close(good_report(), mounted), _expected_with_close(4127.75),
+                     REQUIRED)
+    assert [f.name for f in findings if not f.ok] == ["mount.SYNA"]
+    [bad] = [f for f in findings if not f.ok]
+    assert "close" in bad.detail
+
+
+def test_an_expectation_with_no_w_bar_fails_the_instruments_finding():
+    # Decision 110 (c), REVIEW-13 should-fix 2: a W of 0 bars fails, even when the
+    # mount holds exactly what is expected (here: nothing).
+    report = good_report()
+    report["mount"]["instruments"][1].update(
+        count=0, arrays={k: 0 for k in report["mount"]["instruments"][1]["arrays"]})
+    empty = [EXPECTED[0], Expected("SYNB", count=0, window=0, last_open=None, w_end=W_END)]
+    assert [f.name for f in judge(report, empty, REQUIRED) if not f.ok] == ["mount.SYNB"]
+
+
+def store_mount(state, tc, calendars):
+    """Per instrument, from the stored bars themselves: W's bar count, the context
+    count (up to history_cap_bars - 1, none before trusted_from) and the raw close of
+    W's last stored bar."""
+    out = {}
+    store = BarStore(state, SYNTH, tc.track.bar_seconds)
+    for inst in tc.instruments:
+        cal = calendars[inst.calendar]
+        start = datetime.combine(inst.trusted_from, time(), tzinfo=UTC)
+        bars = store.read_range(inst.symbol, start, datetime(2030, 1, 1, tzinfo=UTC))
+        dates = [trading_date(cal, ts.to_pydatetime()) for ts in bars["ts"]]
+        inside = [i for i, d in enumerate(dates) if W_FIRST <= d <= W_LAST]
+        before = sum(1 for d in dates if d < W_FIRST)
+        out[inst.symbol] = (len(inside), min(before, tc.track.history_cap_bars - 1),
+                            float(bars["close"].iloc[inside[-1]]) if inside else None)
+    return out
+
+
+def test_the_expectation_read_from_the_store_is_ws_bars_context_and_last_close(
+        synth_state, tc, calendars):
+    window = tc.track.windows(DAY).w
+    got = container.expected_from_store(synth_state, tc.track, tc.instruments, calendars,
+                                        window)
+    want = store_mount(synth_state, tc, calendars)
+    assert [e.symbol for e in got] == [i.symbol for i in tc.instruments]
+    for e in got:
+        w, context, close = want[e.symbol]
+        assert w > 0 and close is not None
+        assert (e.count, e.window, e.last_close) == (w + context, w, close), e
+        assert e.last_open is not None and e.last_open < e.w_end
+
+
+def test_the_expectation_from_the_store_does_not_build_a_job(monkeypatch, synth_state, tc,
+                                                              calendars):
+    def refuse(*args, **kwargs):
+        raise AssertionError("the store's expectation went through a job")
+    monkeypatch.setattr(container, "build_job", refuse)
+    monkeypatch.setattr(container, "write_job", refuse)
+    window = tc.track.windows(DAY).w
+    assert len(container.expected_from_store(synth_state, tc.track, tc.instruments,
+                                             calendars, window)) == len(tc.instruments)
+
+
+def test_expected_mount_keeps_its_counts_and_gains_the_jobs_last_close(synth_state, tc,
+                                                                       calendars, config):
+    window = tc.track.windows(DAY).w
+    job = build_job(synth_state, tc.track, tc.instruments, calendars, window,
+                    source=container.PROBE_SOURCE, param_sets=[{}], config_dir=config)
+    want = store_mount(synth_state, tc, calendars)
+    got = container.expected_mount(job, tc.instruments, calendars, window)
+    assert [(e.count, e.window, e.last_close) for e in got] == [
+        (want[i.symbol][0] + want[i.symbol][1], want[i.symbol][0], want[i.symbol][2])
+        for i in tc.instruments]
+
+
+def test_with_no_bar_stored_the_expectation_has_no_w_bar(tmp_path, tc, calendars):
+    window = tc.track.windows(DAY).w
+    got = container.expected_from_store(tmp_path, tc.track, tc.instruments, calendars, window)
+    assert [(e.count, e.window, e.last_close) for e in got] == [(0, 0, None)] * len(
+        tc.instruments)
+
+
+def tampered(job, state, tc, calendars, window):
+    """``job`` with its first instrument's earliest context bar dropped and the first
+    stored bar after W added: the same count, other content. Its ``ts`` column, which
+    stays with the harness and is never mounted, is left as it was, so that the job's
+    own labels show nothing after W and only the mounted content tells."""
+    after = DateRange(window.first, date(2019, 7, 9))   # W and the next trading date
+    longer = build_job(state, tc.track, tc.instruments[:1], calendars, after,
+                       source=job.source, param_sets=list(job.param_sets),
+                       limits=job.limits)
+    ji, lj = job.instruments[0], longer.instruments[0]
+    extra = lj.bars.iloc[len(ji.bars):len(ji.bars) + 1]
+    w_end = day_end(calendars[tc.instruments[0].calendar], window.last)
+    assert extra["ts"].iloc[0].to_pydatetime() >= w_end, "not a bar after W"
+    assert ji.first >= 1, "no context bar to drop"
+    bars = pd.concat([ji.bars.iloc[1:], extra], ignore_index=True)
+    assert len(bars) == len(ji.bars)
+    bars["ts"] = ji.bars["ts"].to_numpy()
+    assert float(bars["close"].iloc[-1]) != float(ji.bars["close"].iloc[-1])
+    changed = JobInstrument(ji.symbol, bars, ji.first - 1, ji.shorting)
+    return dataclasses.replace(job, instruments=(changed, *job.instruments[1:]))
+
+
+@pytest.mark.container
+def test_a_probe_run_reports_each_last_close_and_passes_against_the_store(
+        backends, tmp_path, synth_state, tc, calendars, config):
+    window = tc.track.windows(DAY).w
+    job = build_job(synth_state, tc.track, tc.instruments, calendars, window,
+                    source=container.PROBE_SOURCE, param_sets=[{}], config_dir=config)
+    b = container.ContainerSandbox(tmp_path / "scratch", config)
+    report = b.run_probe(job)
+    want = store_mount(synth_state, tc, calendars)
+    mounted = report["mount"]["instruments"]
+    for inst, m in zip(tc.instruments, mounted, strict=True):
+        assert m["last_close"] == want[inst.symbol][2], inst.symbol
+    expected = container.expected_from_store(synth_state, tc.track, tc.instruments,
+                                             calendars, window)
+    findings = judge(report, expected, container.required_limits(job.limits,
+                                                                 load_run(config).sandbox))
+    mount = [f for f in findings if f.name.startswith("mount.")]
+    assert [f.name for f in mount] == ["mount.instruments",
+                                       *(f"mount.{i.symbol}" for i in tc.instruments)]
+    assert all(f.ok for f in findings), [f for f in findings if not f.ok]
+
+
+def _selftest_lines(out):
+    return {ln.split(":")[0].split(" ", 1)[1]: ln.split(" ", 1)[0]
+            for ln in out.splitlines() if ln.startswith(("PASS ", "FAIL "))}
+
+
+@pytest.mark.container
+def test_selftest_on_a_job_mounting_other_rows_of_the_same_count_fails_that_instrument(
+        backends, monkeypatch, capsys, synth_state, tc, calendars, config):
+    # REVIEW-13 should-fix 1 and 2: the job the self-test mounts has SYNA's earliest
+    # context bar dropped and the first bar after W added; it is judged against the
+    # store, so the finding of SYNA fails though the count is right.
+    real = container.build_job
+
+    def build_tampered(*args, **kwargs):
+        job = real(*args, **kwargs)
+        return tampered(job, synth_state, tc, calendars, tc.track.windows(DAY).w)
+
+    monkeypatch.setattr(container, "build_job", build_tampered)
+    assert main(["--state", str(synth_state), "--config", str(config), "--track", SYNTH,
+                 "--as-of", AS_OF, "sandbox", "selftest"]) == 1
+    out = capsys.readouterr().out
+    lines = _selftest_lines(out)
+    assert [n for n, v in lines.items() if v == "FAIL"] == ["mount.SYNA"], out
+    assert len(lines) == len(ALL) - 2 + len(tc.instruments)
+    assert len(backends) == 1 and len(backends[0].started) == 1
+
+
+@pytest.mark.container
+def test_selftest_on_a_state_with_no_bars_fails_its_mount_findings_and_exits_1(
+        backends, capsys, tmp_path, tc, config):
+    empty = tmp_path / "empty-state"
+    empty.mkdir()
+    assert main(["--state", str(empty), "--config", str(config), "--track", SYNTH,
+                 "--as-of", AS_OF, "sandbox", "selftest"]) == 1
+    out = capsys.readouterr().out
+    lines = _selftest_lines(out)
+    failed = [n for n, v in lines.items() if v == "FAIL"]
+    assert failed == [f"mount.{i.symbol}" for i in tc.instruments], out

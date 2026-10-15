@@ -58,10 +58,14 @@ wider fails); a create outside ``/tmp`` passes only when it failed
 with ``EROFS``, since the container's user is not root and a create under a
 writable root would fail too, with ``EACCES`` (DESIGN 18.3 G2.3: "a read-only
 root"). The mount carries no timestamp (``write_job``), so "no bar after W" is
-judged by count against the job the harness built, whose last bar's open time it
-holds (:func:`expected_mount`), and by any open time the probe finds mounted.
-:func:`selftest` is ``discotrade sandbox selftest`` and ``doctor --live
-sandbox`` (L5).
+judged by content (decision 110 of 2026-10-15-m14): per instrument, the mounted
+count must equal W's bars plus their context, W must hold a bar, and the mounted
+last ``close`` (the probe's ``last_close``) must equal the raw close of W's last
+stored bar (DESIGN 5.6: the last bar of a series adjusted as of it is raw).
+:func:`expected_from_store` reads that expectation from the store itself, never
+through a job; :func:`selftest` (``discotrade sandbox selftest`` and ``doctor
+--live sandbox``, L5) judges against it. :func:`expected_mount` gives the same
+from the job the harness built, for gate G2.3, which calls it.
 """
 
 from __future__ import annotations
@@ -77,9 +81,10 @@ import subprocess
 import tempfile
 import time
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import UTC, date, datetime
+from datetime import time as dtime
 from pathlib import Path
 from typing import Any, TextIO
 
@@ -90,6 +95,7 @@ from discotrade.config import (
     DateRange,
     Instrument,
     SandboxSettings,
+    Track,
     load_calendar,
     load_run,
     load_track_config,
@@ -391,12 +397,15 @@ class ContainerSandbox:
                     breach = "wall_clock"
         finally:
             # Whatever the outcome: the container is killed and removed by name, then
-            # the runtime's command is ended and reaped.
-            remove(runtime, name)
-            if proc.returncode is None:
-                _end(proc)
-            assert proc.stdout is not None
-            proc.stdout.close()
+            # the runtime's command is ended and reaped, even when the removal raised
+            # (decision 111 (d) of 2026-10-15-m14), whose error then propagates.
+            try:
+                remove(runtime, name)
+            finally:
+                if proc.returncode is None:
+                    _end(proc)
+                assert proc.stdout is not None
+                proc.stdout.close()
         if breach is not None:
             return Execution(None, bytes(out), breach)
         if proc.returncode == _START_FAILED:
@@ -526,15 +535,17 @@ class Finding:
 
 @dataclass(frozen=True)
 class Expected:
-    """What the mount must hold for one instrument, from the job the harness built:
-    ``count`` bars, ``window`` of them W's, the last opening at ``last_open``, every
-    one before ``w_end``, the end of W's last trading day."""
+    """What the mount must hold for one instrument: ``count`` bars, ``window`` of
+    them W's (at least one), the last opening at ``last_open``, every one before
+    ``w_end``, the end of W's last trading day, and, when known, ``last_close``, the
+    raw close of the last bar, which the mounted last close must equal exactly."""
 
     symbol: str
     count: int
     window: int
     last_open: datetime | None
     w_end: datetime
+    last_close: float | None = None
 
 
 @dataclass(frozen=True)
@@ -561,16 +572,65 @@ def required_limits(limits: SandboxLimits, settings: SandboxSettings) -> Require
 
 def expected_mount(job: SandboxJob, instruments: Sequence[Instrument],
                    calendars: dict[str, Calendar], window: DateRange) -> list[Expected]:
-    """Per instrument of ``job`` (in ``instruments``' order), what its mount holds."""
+    """Per instrument of ``job`` (in ``instruments``' order), what its mount holds,
+    read from the job itself, its last close included (gate G2.3 calls this)."""
     from discotrade.bars.gaps import day_end
 
     out = []
     for inst, ji in zip(instruments, job.instruments, strict=True):
         ts = ji.bars["ts"]
         last = None if ts.empty else ts.iloc[-1].to_pydatetime()
+        close = None if ts.empty else float(ji.bars["close"].iloc[-1])
         out.append(Expected(ji.symbol, len(ji.bars), ji.window_bars, last,
-                            day_end(calendars[inst.calendar], window.last)))
+                            day_end(calendars[inst.calendar], window.last), close))
     return out
+
+
+def expected_from_store(state_dir: Path, track: Track, instruments: Sequence[Instrument],
+                        calendars: Mapping[str, Calendar], window: DateRange
+                        ) -> list[Expected]:
+    """Per instrument (in ``instruments``' order), what the mount of W's job must
+    hold, read from the store itself and never through a job (decision 110 (b) of
+    2026-10-15-m14): the count of W's stored bars, the count of the context before
+    them (at most ``history_cap_bars - 1``, none before ``trusted_from``; none when W
+    holds no bar, as the job then holds none), and the raw ``close`` and open time of
+    W's last stored bar."""
+    from discotrade.bars.gaps import day_end
+    from discotrade.bars.store import BarStore
+    from discotrade.tradingcal import trading_date
+
+    store = BarStore(Path(state_dir), track.name, track.bar_seconds)
+    out = []
+    for inst in instruments:
+        cal = calendars[inst.calendar]
+        w_end = day_end(cal, window.last)
+        start = datetime.combine(inst.trusted_from, dtime(), tzinfo=UTC)
+        bars = store.read_range(inst.symbol, start, w_end) if start < w_end else None
+        inside: list[int] = []
+        before = 0
+        if bars is not None:
+            for i, ts in enumerate(bars["ts"]):
+                d = trading_date(cal, ts.to_pydatetime())
+                if d < window.first:
+                    before += 1
+                elif d <= window.last:
+                    inside.append(i)
+        if not inside:
+            out.append(Expected(inst.symbol, 0, 0, None, w_end, None))
+            continue
+        assert bars is not None
+        last = inside[-1]
+        context = min(before, track.history_cap_bars - 1)
+        out.append(Expected(inst.symbol, len(inside) + context, len(inside),
+                            bars["ts"].iloc[last].to_pydatetime(), w_end,
+                            float(bars["close"].iloc[last])))
+    return out
+
+
+def _same_close(mounted: Any, expected: float) -> bool:
+    """Whether the mounted last close is a number equal to ``expected`` exactly."""
+    return (isinstance(mounted, int | float) and not isinstance(mounted, bool)
+            and float(mounted) == expected)
 
 
 def _get(doc: Any, *keys: Any) -> Any:
@@ -692,6 +752,11 @@ def judge(report: Any, expected: Sequence[Expected], required: Required) -> list
         problems = []
         if count != e.count or not isinstance(arrays, dict) or set(arrays.values()) != {e.count}:
             problems.append(f"{count} bars mounted, the job's window and context are {e.count}")
+        if e.window == 0:
+            problems.append("W holds no bar")
+        if e.last_close is not None and not _same_close(_get(m, "last_close"), e.last_close):
+            problems.append(f"the last mounted close is {_get(m, 'last_close')!r}, not "
+                            f"{e.last_close!r}, the close of W's last bar")
         if e.last_open is not None and e.last_open >= e.w_end:
             problems.append(f"the job's last bar opens {e.last_open.isoformat()}, after W")
         if latest is not None:
@@ -707,8 +772,10 @@ def judge(report: Any, expected: Sequence[Expected], required: Required) -> list
 
 def selftest(ctx: Any, out: TextIO, err: TextIO, command: str = "sandbox selftest") -> int:
     """``discotrade sandbox selftest`` (decision 103 (c)): build the job of W of
-    decision 19's ``D`` on ``ctx``'s track, run the probe on it, print one line per
-    finding with PASS or FAIL; exit 0 only when all pass. With no runtime or no image
+    decision 19's ``D`` on ``ctx``'s track, run the probe on it, judge its mount
+    against the store (:func:`expected_from_store`, decision 110 (c) of
+    2026-10-15-m14), print one line per finding with PASS or FAIL; exit 0 only when
+    all pass. With no runtime or no image
     of the current tag, exit 1 naming which, starting nothing."""
     from discotrade.daily import closed_day
 
@@ -734,7 +801,8 @@ def selftest(ctx: Any, out: TextIO, err: TextIO, command: str = "sandbox selftes
         window = tc.track.windows(day).w
         job = build_job(ctx.state, tc.track, tc.instruments, calendars, window,
                         source=PROBE_SOURCE, param_sets=[{}], config_dir=Path(ctx.config))
-        expected = expected_mount(job, tc.instruments, calendars, window)
+        expected = expected_from_store(ctx.state, tc.track, tc.instruments, calendars,
+                                       window)
     except (ConfigError, OSError, ValueError) as exc:
         return fail(exc)
     print(f"{command}: track {tc.track.name}, day {day.isoformat()}, W "

@@ -250,11 +250,16 @@ class _ForkServer:
         self._buf = b""
 
     def _line(self, timeout: float | None = None) -> dict[str, Any]:
-        """The server's next answer; ``TimeoutError`` when none came in ``timeout`` s."""
+        """The server's next answer; ``TimeoutError`` when none came in ``timeout`` s
+        (a ``BlockingIOError`` of the read is that timeout, decision 111 (a) of
+        2026-10-15-m14)."""
         self.sock.settimeout(timeout)
         try:
             while b"\n" not in self._buf:
-                chunk = self.sock.recv(4096)
+                try:
+                    chunk = self.sock.recv(4096)
+                except BlockingIOError as exc:
+                    raise TimeoutError("no answer from the fork server in time") from exc
                 if not chunk:
                     raise OSError("the fork server ended")
                 self._buf += chunk
@@ -277,9 +282,13 @@ class _ForkServer:
 
     def wait(self, timeout: float | None) -> int:
         """The child's exit status as ``Popen.returncode`` once it has ended, the
-        child left unreaped; ``TimeoutError`` when it has not ended in ``timeout`` s
-        (the question stays asked: call :meth:`answer` after ending the child)."""
+        child left unreaped; ``TimeoutError`` when it has not ended in ``timeout`` s,
+        at once when ``timeout`` is at or below zero, with no read of the socket
+        (decision 111 (a) of 2026-10-15-m14); the question stays asked either way:
+        call :meth:`answer` after ending the child."""
         self.sock.sendall(b"wait\n")
+        if timeout is not None and timeout <= 0:
+            raise TimeoutError("the wall-clock limit was reached before the answer")
         return int(self._line(timeout)["status"])
 
     def answer(self) -> int:
@@ -466,7 +475,8 @@ class ProcessSandbox:
                 returncode = server.wait(None)
             else:
                 try:
-                    returncode = server.wait(max(0.0, deadline - time.monotonic()))
+                    # A remaining time at or below zero is the breach (decision 111 (a)).
+                    returncode = server.wait(deadline - time.monotonic())
                 except TimeoutError:
                     breach = "wall_clock"
                     _end(pid)

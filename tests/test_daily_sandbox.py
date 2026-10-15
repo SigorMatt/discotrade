@@ -487,6 +487,30 @@ def test_a_job_after_the_server_died_gets_a_fresh_one_with_a_health_notice(
                              .read_text(encoding="utf-8").splitlines()))
 
 
+def test_a_rerun_of_a_journaled_day_after_the_server_died_writes_nothing_no_notice_either(
+        tmp_path, setup, config, counted):
+    """Decision 112 of 2026-10-15-m14, REVIEW-13 should-fix 4 (I-6, DESIGN 16.2): the
+    server is killed, the journaled day re-run in the same process starts a fresh one
+    (a restart), and the state's bytes, the health log included, are unchanged."""
+    state = init(tmp_path / "state")
+    trend = admit(state, setup, TREND)
+    day = APPROACH_DAYS[0]
+    assert replay_cli(state, config, FIRST, day)[0] == 0
+    assert set(approach_rows(state, day)["subject"]) == {trend}
+    [old] = counted
+    before, head = files(state), git_head(state)
+    log = health_path(state, TRACK).relative_to(state).as_posix()
+    os.kill(old, signal.SIGKILL)   # the server dies; the day is re-run
+    status, out, err = run_day(state, config, day)
+    assert status == 0, err
+    assert "already journaled with equal rows; nothing written" in out, out
+    assert len(counted) == 2 and counted[1] != old, counted   # it was restarted
+    assert files(state).get(log) == before.get(log)   # the health log, present or not
+    assert files(state) == before
+    assert git_head(state) == head
+    assert SANDBOX_RESTARTED not in out
+
+
 # ------------------------------------------------------------------ 105 (d): the container
 
 

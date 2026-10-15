@@ -27,7 +27,9 @@ DESIGN 6.2 ending at ``t`` is built here, at most ``history_cap_bars`` rows
 with prices adjusted as of ``t`` exactly as :mod:`discotrade.backtest` adjusts
 them, and ``position`` is called with it and a copy of the parameters. The
 result is checked by decision 22's rule (:func:`check`), a negative one
-clipped to 0 where shorting is not allowed.
+clipped to 0 where shorting is not allowed; a raise from that check's own
+conversion of the result to a number is an error of stage ``dry_run``, rule
+``not_a_number`` (decision 111 (b) of 2026-10-15-m14).
 
 The first failure ends the run with an error (decision 95 (d), (e)): stage
 ``load`` (the text raised while loading, or defines no callable
@@ -88,20 +90,29 @@ INDICATORS_NAME = "indicators"
 _PRICES = ("open", "high", "low", "close")
 
 #: The exception classes of Python's ``builtins`` an error text may name
-#: (decision 101 (a)); any other raised type is named ``an exception``.
+#: (decision 101 (a)): every one of them, the ``Warning`` family, ``ExceptionGroup``
+#: and ``BaseExceptionGroup`` included (decision 111 (c) of 2026-10-15-m14); any
+#: other raised type is named ``an exception``. The two classes ``builtins`` holds
+#: only from Python 3.13 on are named here and taken when present, so that the
+#: module still imports on the 3.11 the project allows.
 BUILTIN_EXCEPTIONS: tuple[type[BaseException], ...] = (
     BaseException, Exception, ArithmeticError, AssertionError, AttributeError,
-    BlockingIOError, BrokenPipeError, BufferError, ChildProcessError,
-    ConnectionAbortedError, ConnectionError, ConnectionRefusedError, ConnectionResetError,
-    EOFError, FileExistsError, FileNotFoundError, FloatingPointError, GeneratorExit,
-    ImportError, IndentationError, IndexError, InterruptedError, IsADirectoryError,
-    KeyError, KeyboardInterrupt, LookupError, MemoryError, ModuleNotFoundError, NameError,
-    NotADirectoryError, NotImplementedError, OSError, OverflowError, PermissionError,
-    ProcessLookupError, RecursionError, ReferenceError, RuntimeError, StopAsyncIteration,
-    StopIteration, SyntaxError, SystemError, SystemExit, TabError, TimeoutError, TypeError,
-    UnboundLocalError, UnicodeDecodeError, UnicodeEncodeError, UnicodeError,
-    UnicodeTranslateError, ValueError, ZeroDivisionError,
-)
+    BaseExceptionGroup, BlockingIOError, BrokenPipeError, BufferError, BytesWarning,
+    ChildProcessError, ConnectionAbortedError, ConnectionError, ConnectionRefusedError,
+    ConnectionResetError, DeprecationWarning, EOFError, EncodingWarning, ExceptionGroup,
+    FileExistsError, FileNotFoundError, FloatingPointError, FutureWarning, GeneratorExit,
+    ImportError, ImportWarning, IndentationError, IndexError, InterruptedError,
+    IsADirectoryError, KeyError, KeyboardInterrupt, LookupError, MemoryError,
+    ModuleNotFoundError, NameError, NotADirectoryError, NotImplementedError, OSError,
+    OverflowError, PendingDeprecationWarning, PermissionError, ProcessLookupError,
+    RecursionError, ReferenceError, ResourceWarning, RuntimeError, RuntimeWarning,
+    StopAsyncIteration, StopIteration, SyntaxError, SyntaxWarning, SystemError, SystemExit,
+    TabError, TimeoutError, TypeError, UnboundLocalError, UnicodeDecodeError,
+    UnicodeEncodeError, UnicodeError, UnicodeTranslateError, UnicodeWarning, UserWarning,
+    ValueError, Warning, ZeroDivisionError,
+) + tuple(getattr(builtins, name) for name in ("PythonFinalizationError",
+                                               "_IncompleteInputError")
+          if hasattr(builtins, name))
 #: The types of a result that is not a number an error text may name (decision
 #: 101 (a)): built-in and ``numpy`` types; any other is named ``an object``.
 RESULT_TYPES: tuple[type, ...] = (
@@ -265,6 +276,12 @@ def execute(job: Mapping[str, Any], bars: Sequence[Mapping[str, np.ndarray]],
                     targets.append(check(value, shorting))
                 except BadResult as exc:
                     return error_doc("dry_run", exc.rule, exc.what, p, i)
+                except BaseException as exc:  # noqa: BLE001 - decision 111 (b)
+                    # The result's own conversion to a number raised (REVIEW-13 note 3).
+                    return error_doc("dry_run", "not_a_number",
+                                     f"position returned {result_name(value)} whose "
+                                     f"conversion to a number raised {exception_name(exc)}",
+                                     p, i)
             results.append({"param_set": p, "instrument": j, "bars": order,
                             "targets": targets, "call_ms": call_ms})
     return {"ok": True, "results": results}

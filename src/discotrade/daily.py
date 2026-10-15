@@ -81,7 +81,9 @@ releasing it on success and on failure:
   because the one before had died (O-20 of 2026-10-15;
   ``sandbox.process.restarts``), a ``sandbox_restarted`` notice (subject the
   track, detail the backend and the number of restarts) is appended to the
-  health log, whether the day then succeeds or fails.
+  health log on a day that is written, and on one that fails (DESIGN 16.2
+  exempts the health log there); a re-run of a journaled day whose rows are
+  unchanged writes none (decision 112 of 2026-10-15-m14, I-6).
 - A failure in either step discards the staging directory and moves nothing.
   A reader that refuses a revised data point appends a ``revised_data`` alert
   (subject the track, the reader's message as detail) and the day fails.
@@ -340,11 +342,14 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
         shutil.rmtree(staging, ignore_errors=True)
         staging.mkdir()
         before = process.restarts()
+        result = None
         try:
             result = journal.journal_day(state_dir, setup, d, into=staging, sandbox=sandbox)
         finally:
             restarted = process.restarts() - before
-            if restarted:
+            # Decision 112 of 2026-10-15-m14 (I-6): a re-run whose rows equal the
+            # journal's writes nothing, this notice included.
+            if restarted and (result is None or result.status != journal.UNCHANGED):
                 appended += state.append_health(state_dir, track, [HealthEvent(
                     d, "notice", SANDBOX_RESTARTED, track,
                     {"backend": "process", "restarts": restarted})])

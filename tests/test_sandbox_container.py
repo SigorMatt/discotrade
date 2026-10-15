@@ -53,6 +53,7 @@ from discotrade.config import DateRange, load_calendar, load_run, load_track_con
 from discotrade.journal import Setup
 from discotrade.sandbox import container, runner
 from discotrade.sandbox.base import (
+    SandboxLimits,
     SandboxRefused,
     SandboxUnavailable,
     build_job,
@@ -757,3 +758,42 @@ def test_the_correlation_stage_runs_an_approach_whose_frozen_source_is_no_reposi
     assert (out.stage, out.rule) == ("correlation", "duplicate"), out.text
     assert out.text.endswith(f"with approach {aid}")
     assert_no_container_of(b)
+
+
+# ------------------------------------------------------------------ decision 111 (d)
+
+
+def test_a_removal_that_raises_still_ends_the_runtime_client(tmp_path, monkeypatch, config):
+    """Decision 111 (d) of 2026-10-15-m14, REVIEW-13 note 5: the runtime's client is
+    a stub here (no runtime, no container): it records its pid, writes past the
+    output cap and then waits. The removal is replaced to raise; the error
+    propagates, and the client process has been ended and reaped all the same."""
+    pid_file = tmp_path / "client.pid"
+    client = tmp_path / "bin" / "docker"
+    client.parent.mkdir()
+    client.write_text(f"#!/bin/sh\necho $$ > {pid_file}\nprintf '%0100d' 0\nexec sleep 600\n",
+                      encoding="utf-8")
+    client.chmod(client.stat().st_mode | stat.S_IXUSR)
+    monkeypatch.setattr(ContainerSandbox, "_ready", lambda self: (str(client), "image:tag"))
+
+    class StuckDaemon(RuntimeError):
+        pass
+
+    def remove(runtime, name):
+        raise StuckDaemon(f"rm --force {name} timed out")
+
+    monkeypatch.setattr(container, "remove", remove)
+    job_dir = tmp_path / "input"
+    job_dir.mkdir()
+    limits = SandboxLimits(wall_seconds=60.0, memory_bytes=1 << 30, output_bytes=16)
+    b = ContainerSandbox(tmp_path / "scratch", config)
+    pid = None
+    try:
+        with pytest.raises(StuckDaemon):
+            bounded(lambda: b.run_program(container.RUNNER_ARGV, job_dir, limits))
+        pid = int(pid_file.read_text(encoding="utf-8"))
+        assert not os.path.exists(f"/proc/{pid}"), "the runtime client was left running"
+    finally:
+        if pid is not None and os.path.exists(f"/proc/{pid}"):
+            os.kill(pid, 9)
+            os.waitpid(pid, 0)
