@@ -7,10 +7,11 @@ Done: U0 53401fd (plan, findings D-014, D-015, HF-010, HF-011, D-013 status).
 U1 ad53fad (mount vs store, last_close, zero remaining time, float in catch-all, builtins tuple, removal ends client,
 notice only on a written day; image discotrade-sandbox:3b7d75c39621; check 3/3 890-912 s).
 
-Unit in progress: U2 ./scripts/check under 12 minutes (decision 114, D-013). Intent: share identical expensive
-setup through module/session fixtures (writers get copies), drop repeated unasserted work, cache trusted_hashes
-keyed so a changed file is hashed again. Done means: same collected node ids at parent and commit, durations and
-wall times at both in the body, no assertion moved, check 3/3 green, one commit pushed.
+U2 a0ba5e8 (shared states, trusted_hashes cache; check 841-891 s, target 12 min missed, under D-013).
+
+Unit in progress: U3 the W profile p1 (decision 115). Intent: src/discotrade/workers/{__init__,profile}.py and
+tests/test_workers_profile.py per 115 (a)-(e). Done means: the unit's gate met, seen-to-fail changes named, check
+3/3 green, one commit pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-15-m14 (109-117) bind; the owner's
 decisions-2026-10-15-owner (O-19, O-20, O-22) and decisions-2026-10-13-owner (O-16..O-18 bind every new module) win;

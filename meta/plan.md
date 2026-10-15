@@ -26,7 +26,7 @@ Carried items:
 
 - [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (D-014, D-015, HF-010, HF-011, D-013 status line; decisions 113, 114). — 53401fd
 - [x] U1 REVIEW-13's should-fix items 1 to 4 and notes 3 to 5: the mount judged against the store, the backends' edges, the restart notice (decisions 110, 111, 112; DESIGN §5.6, §12.4, §16.2, §19.3 L5; I-6, I-7, I-12). — ad53fad (image discotrade-sandbox:3b7d75c39621; G2.3 PASS unchanged; expected_from_store; check 3/3 890-912 s, times appended to D-013)
-- [ ] U2 `./scripts/check` under 12 minutes (decision 114; D-013; HF-006, HF-008; DESIGN §18.1).
+- [x] U2 `./scripts/check` under 12 minutes (decision 114; D-013; HF-006, HF-008; DESIGN §18.1). — a0ba5e8 (session-built shared states copied per module, trusted_hashes cache keyed by stat; parent 916 s, commit 841-891 s, 12-minute target missed, recorded under D-013; collect 2067 -> 2068, only the cache test added)
 - [ ] U3 The W profile, `p1` (decision 115; DESIGN §13.1, §4.1, §5.6, §6.2; I-1, I-3, I-9, I-12).
 - [ ] U4 Anonymization and the registry (decision 116; DESIGN §13.2, §13.3, §10.3, §4.1, §4.3; I-8, I-10).
 - [ ] U5 The prompt builder and the response parser (decision 117; DESIGN §13.4, §6, §7.3, §12.1, §12.2, §13.2; I-8, I-10, I-13).
