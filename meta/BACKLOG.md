@@ -55,6 +55,23 @@ a chain, determinism not checking the bars called) and its notes 2 and 3
 are taken by mission 13 (step S2.2, unit U1; decisions-2026-10-14-m13
 item 101), its notes 5 and 6 by mission 13 U2 (item 102), and its
 `hands:` note 10 is appended to HF-008 by mission 13 U0 (item 108).
+REVIEW-13 has no blocker and records `Gate M2: PASS`; its should-fix 1 to
+4 (the mount judged by count only, the self-test judged against its own
+job, the zero-timeout race of the fork server, the restart notice on a
+re-run) and its notes 3, 4 and 5 are taken by mission 14 (step S3.1, unit
+U1; decisions-2026-10-15-m14 items 110 to 112), its should-fix 5 and 6
+and its `hands:` notes 12 and 15 by mission 14 U0 and U6 (findings D-014,
+D-015, HF-010, HF-011; item 113), and finding D-013 (the check's run time)
+by mission 14 U2 (item 114).
+
+- REVIEW-13 notes, not carried as work unless named: note 8
+  (`changes_bars_in_place.py` is rejected only for being flat; nothing
+  detects an in-place change of `bars` itself) stands as O-22 allows; note
+  7 (the unused `fail()` helper of `tests/gates/test_g1_3_lifecycle.py`)
+  stays, that file changing only by the owner (O-19); note 6
+  (`tests/test_gate_script.py` checks the M2 count, not the printed item
+  lines) stands; G2.5's 64 MiB tolerance and 5 s kill grace (REVIEW-13
+  68bee5f) are the test's own bounds, disclosed in FINAL-REPORT-13.
 
 - REVIEW-12 notes, not carried as work unless named: note 4 (the
   subprocess backend leaves a forked grandchild after a clean exit; its
@@ -220,6 +237,27 @@ item 101), its notes 5 and 6 by mission 13 U2 (item 102), and its
 - The architect role's directory, set up as hands `architect/README.md`
   says, with this project's parameters (the plan kit's hand-over message
   gives the block).
+
+## For the owner, at any time (after M2)
+
+- `DESIGN.md` still says `tests/fixtures/hostile/` (§12.5's title and
+  text) and lists four M2 items in §18.3, where the owner's
+  `meta/decisions/decisions-2026-10-15-owner.md` (O-22) retires the name
+  and adds G2.5 (REVIEW-13 note 9). The owner's file wins until the text
+  is applied; neither the builder nor the architect role may edit
+  `DESIGN.md` (`meta/ARCHITECT.md` §4).
+- Gate item G2.3 (`tests/gates/test_g2_3_probe.py`) judges the probe's
+  mount against the job it built, by count; mission 14 makes `judge`, the
+  self-test and L5 compare count and last close with the store
+  (decisions-2026-10-15-m14 item 110), proven by a test outside the gate.
+  Whether G2.3 itself should call that store expectation is the owner's,
+  by a decision naming the test and the assertion (O-19).
+- Finding D-014: G1.3 ran 607 s and 618 s in REVIEW-13, above O-3's 10
+  minutes, against the builder's 576 s; O-20 keeps the gate as it is.
+- Finding D-015: O-22 item 1's "copied by path" conflicts with decision
+  104 (d)'s hash exclusion; the four run-time entries of the rejection
+  suite point at their originals under `tests/fixtures/strategies/` until
+  the owner confirms or rules otherwise.
 
 ## For the owner, at any time (frozen-config changes)
 

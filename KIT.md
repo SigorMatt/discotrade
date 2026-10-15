@@ -1,1 +1,1 @@
-plan: mission 13 kit (S2.2, container sandbox, hostile suite, gate M2)
+plan: mission 14 kit (S3.1, W profile, registry, prompt, parser)
