@@ -62,12 +62,25 @@ generated like any other.
 Generation (mission 9 U3). A request still generates the series from its
 start, ``trusted_from``, since every bar's price depends on every draw
 before it; it generates no further than the request's end, and builds the
-rows and contract names of the requested range only. A source keeps, per
+rows and contract names of the requested range only. The process keeps, per
 instrument record, the longest series it has generated and serves every
 later request whose end it covers from that series' prefix (a prefix of the
 generation is the generation of the prefix: each draw of bar ``k`` depends
 only on the seed and ``k``, and the cumulative sum is sequential), so a run
 that builds its source once generates each series once.
+
+The series kept for the process (decision 121 of 2026-10-16-m15, finding
+D-013). What a source generated is kept for the life of the process, not of
+the source, keyed by everything the generation reads: the instrument record's
+``[source]`` table (the seed among it), its ``trusted_from``, its calendar
+record and the bar length. A record that differs in any of them is generated
+from its own settings; an equal record on a new source (each day run builds
+its own) is served from what an earlier one kept. A request that ends beyond
+the kept series extends it: the expected bar times kept are reused and only
+those after them are listed (a bar time's membership depends only on that
+time and the calendar), and the underlying is generated again over the
+extended times, so it is the generation from ``trusted_from`` exactly as
+before. ``clear_cache`` forgets every kept series.
 """
 
 from __future__ import annotations
@@ -75,7 +88,7 @@ from __future__ import annotations
 import bisect
 import re
 from collections.abc import Mapping
-from datetime import UTC, datetime, time, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from typing import Any
 
 import numpy as np
@@ -119,6 +132,18 @@ def _contract_name(symbol: str, quarter: int) -> str:
     return f"{symbol}-{quarter // 4:04d}-{(quarter % 4 + 1) * 3:02d}"
 
 
+#: The series kept for the process: per (``[source]`` table, ``trusted_from``,
+#: calendar record, bar length), the end it was generated to, the expected bar
+#: times to that end plus the look-ahead, and the underlying before that end.
+_SERIES: dict[tuple[Source, date, Calendar, int],
+              tuple[datetime, list[datetime], pd.DataFrame, np.ndarray]] = {}
+
+
+def clear_cache() -> None:
+    """Forget every series kept for the process."""
+    _SERIES.clear()
+
+
 class SynthSource:
     """The synthetic market. ``available_until(now) = now`` (DESIGN 5.5)."""
 
@@ -129,10 +154,6 @@ class SynthSource:
             raise ValueError(f"bar_seconds must be a positive integer, not {bar_seconds!r}")
         self.calendars = dict(calendars)
         self.bar_seconds = bar_seconds
-        # Per symbol: the record, the end it was generated to, the expected bar
-        # times to that end plus the look-ahead, and the underlying before it.
-        self._cache: dict[str, tuple[Instrument, datetime, list[datetime], pd.DataFrame,
-                                     np.ndarray]] = {}
 
     def available_until(self, now: datetime) -> datetime:
         return _aware(now, "now")
@@ -188,15 +209,21 @@ class SynthSource:
                     ) -> tuple[list[datetime], pd.DataFrame, np.ndarray]:
         """The expected bar times from ``origin`` to ``stop`` plus the look-ahead,
         and the underlying series over those before ``stop``, from the series
-        this source generated for the record when it reaches ``stop``."""
-        cached = self._cache.get(instrument.symbol)
-        if cached is None or cached[0] != instrument or cached[1] < stop:
-            ahead = expected_bars(cal, origin, stop + _LOOKAHEAD, self.bar_seconds)
+        kept for the process for the record when it reaches ``stop``."""
+        key = (src, instrument.trusted_from, cal, self.bar_seconds)
+        cached = _SERIES.get(key)
+        if cached is None or cached[0] < stop:
+            if cached is None:
+                ahead = expected_bars(cal, origin, stop + _LOOKAHEAD, self.bar_seconds)
+            else:
+                # The times kept end before the kept stop plus the look-ahead.
+                ahead = cached[1] + expected_bars(cal, cached[0] + _LOOKAHEAD,
+                                                  stop + _LOOKAHEAD, self.bar_seconds)
             frame, dropped = _generate(ahead[:bisect.bisect_left(ahead, stop)], src,
                                        self.bar_seconds)
-            cached = (instrument, stop, ahead, frame, dropped)
-            self._cache[instrument.symbol] = cached
-        _, _, ahead, frame, dropped = cached
+            cached = (stop, ahead, frame, dropped)
+            _SERIES[key] = cached
+        _, ahead, frame, dropped = cached
         ahead = ahead[:bisect.bisect_left(ahead, stop + _LOOKAHEAD)]
         n = bisect.bisect_left(ahead, stop)
         return ahead, frame.iloc[:n], dropped[:n]

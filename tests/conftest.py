@@ -43,6 +43,10 @@ clocks those modules used. No test is given a template itself: each module
 fixture copies it with :func:`copy_template` into its own temporary directory,
 so that a test writing into its module's state never reaches the template or
 another module's copy.
+
+The synthetic source keeps what it generates for the life of the process
+(decision 121 of meta/decisions/decisions-2026-10-16-m15.md); an autouse fixture
+clears it before every test, so that a test starts as a new process would.
 """
 
 import _socket
@@ -256,6 +260,16 @@ RAN_AS_OF = "2019-06-26T00:00:00+00:00"
 RAN_ADMITTED = date(2019, 6, 7)
 RAN_DAYS = tuple(date(2019, 6, 8 + k) for k in range(5))
 RAN_FILES = ("trend_ma.py", "hour_of_day.py")
+
+
+@pytest.fixture(autouse=True)
+def _fresh_synth_series():
+    """Every test starts with no synthetic series kept for the process
+    (decision 121 of meta/decisions/decisions-2026-10-16-m15.md), so that what a
+    test generates does not depend on the tests run before it in the process."""
+    from discotrade.sources import synth
+
+    synth.clear_cache()
 
 
 def copy_template(template: Path, dest: Path) -> Path:
