@@ -142,3 +142,4 @@
 - 2026-10-16 mission 15 U3 done d9acfcd: three providers behind one protocol, doctor --live workers offline behaviour; 45 tests; check 3/3 (793-797 s).
 - 2026-10-16 mission 15 U4 done 0260f0c: config/models.toml (4 records, verified = false), [workers] tables, loader with refusals, pool (rotation, fallback, removal, cell window from calls.jsonl); check 3/3 (800-812 s).
 - 2026-10-16 mission 15 U5 done 5f5c5c5: Coordinator protocol, CellStatus with no score, ScriptedCoordinator, fallback for an out-of-list cell; 18 tests; check 3/3 (797-809 s).
+- 2026-10-16 mission 15 U6 done 41b2670: the day's generation (two calls at most, store before parse, replay from stored response, token budget, call rows of decision 62); 17 tests; check 3/3 (832-834 s).

@@ -9,10 +9,11 @@ U2 aeed087 (synth process cache; no speed gain: 1.598 vs 1.623 s/replay day; che
 U3 d9acfcd (providers.py; doctor --live workers reads models.toml directly, timeout 300 s constant until U4; check 793-797 s).
 U4 0260f0c (models.toml + fixture, [workers], config loader, pool.py; doctor still reads models.toml directly; check 800-812 s).
 U5 5f5c5c5 (coordinator.py, scripted form, 18 tests; check 797-809 s).
+U6 41b2670 (generate.py, 17 tests, 9 fixture responses; check 832-834 s).
 
-Unit in progress: U6 — the day's generation (decision 126). Done means: workers/generate.py; every test 126 (g)
-lists, the container one run; call rows checked against decision 62's keys; response stored in full before parse,
-read back equal; seen-to-fail changes named; check 3/3; one commit pushed.
+Unit in progress: U7 — the gate runs and the final report (decisions 118, 120, 121). Done means: check 3/3 at
+the tip; sandbox build; gate M0, M2, M1 G1.1-G1.4 each its own call with times; meta/FINAL-REPORT-15.md committed
+with its required sections; pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-16-m15 (118-126) bind; owner files
 (O-11, O-13, O-16..O-20, O-22) win; decisions 1-117 still bind (117 (c) amended by 119 (a)). No value of a frozen
