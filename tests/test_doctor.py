@@ -57,7 +57,8 @@ def test_plain_doctor_is_a_usage_error_naming_s5_1(capsys):
 
 
 # "sandbox" (L5) left this list: decision 2026-10-14-m13 103 (d) builds it in step S2.2.
-@pytest.mark.parametrize("name", ["workers", "coordinator", "issues", "costs",
+# "workers" (L3) left it: decision 2026-10-16-m15 122 (e) builds its offline behaviour.
+@pytest.mark.parametrize("name", ["coordinator", "issues", "costs",
                                   "planted", "nonsense"])
 def test_another_check_is_a_usage_error_naming_s5_1(monkeypatch, capsys, name):
     monkeypatch.delenv(KEY_ENV, raising=False)
@@ -110,3 +111,142 @@ def test_live_sandbox_with_an_empty_path_refuses_naming_no_runtime_and_starts_no
     assert "no container runtime found" in captured.err
     assert "doctor --live sandbox" in captured.err
     assert "PASS" not in captured.out and list(tmp_path.iterdir()) == []
+
+
+# --- L3 workers, offline (decision 2026-10-16-m15 122 (e); I-11, I-13) ------------------
+
+FAKE_NEBIUS = "nb-test-key-0123456789abcdef"
+MODELS_TOML = """base_url = "{base}"
+checked = "2026-10-11"
+source = "written by the test"
+verified = false
+
+[[model]]
+id = "maker-a/model-one"
+pool = true
+
+[[model]]
+id = "maker-b/model-two"
+pool = true
+fallback = "maker-b/model-two-small"
+
+[[model]]
+id = "maker-b/model-two-small"
+pool = false
+"""
+WORKERS_BASE = "https://worker.example.invalid/v1"
+
+
+class ModelList:
+    """A MockTransport handler answering ``GET /models`` with ``ids``; records requests."""
+
+    def __init__(self, ids):
+        self.ids = ids
+        self.requests = []
+
+    def __call__(self, request):
+        import httpx
+        self.requests.append(request)
+        return httpx.Response(200, json={"data": [{"id": i} for i in self.ids]})
+
+
+@pytest.fixture
+def no_request(monkeypatch):
+    """Any request through httpx fails the test; the doctor's transport is a recorder."""
+    import httpx
+
+    from discotrade import doctor as doc
+
+    def refuse(*args, **kwargs):
+        raise AssertionError("a request was made")
+
+    monkeypatch.setattr(httpx.Client, "send", refuse)
+    recorder = ModelList([])
+    monkeypatch.setattr(doc, "WORKERS_TRANSPORT", httpx.MockTransport(recorder))
+    return recorder
+
+
+def workers_config(tmp_path, base=WORKERS_BASE, models=True):
+    config = make_config(tmp_path / "config")
+    if models:
+        (config / "models.toml").write_text(MODELS_TOML.format(base=base), encoding="utf-8")
+    return config
+
+
+@pytest.mark.parametrize("key", [None, ""])
+@pytest.mark.parametrize("on", ["repository", "copy"])
+def test_live_workers_without_the_key_prints_one_line_exits_1_no_request(
+        monkeypatch, capsys, tmp_path, no_request, key, on):
+    if key is None:
+        monkeypatch.delenv("NEBIUS_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("NEBIUS_API_KEY", key)
+    config = workers_config(tmp_path) if on == "copy" else None
+    assert doctor("--live", "workers", config=config,
+                  track=TRACK if config else None) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    lines = captured.err.splitlines()
+    assert len(lines) == 1, lines
+    assert "doctor --live workers: FAIL" in lines[0]
+    assert "NEBIUS_API_KEY" in lines[0] and "no request was made" in lines[0]
+    assert no_request.requests == []
+
+
+def test_live_workers_without_models_toml_prints_one_line_exits_1_no_request(
+        monkeypatch, capsys, tmp_path, no_request):
+    monkeypatch.setenv("NEBIUS_API_KEY", FAKE_NEBIUS)
+    config = workers_config(tmp_path, models=False)
+    assert doctor("--live", "workers", config=config, track=TRACK) == 1
+    captured = capsys.readouterr()
+    lines = captured.err.splitlines()
+    assert len(lines) == 1 and "models.toml" in lines[0], lines
+    assert captured.out == "" and no_request.requests == []
+    assert FAKE_NEBIUS not in captured.err
+
+
+def test_live_workers_with_an_empty_base_url_prints_one_line_exits_1_no_request(
+        monkeypatch, capsys, tmp_path, no_request):
+    monkeypatch.setenv("NEBIUS_API_KEY", FAKE_NEBIUS)
+    config = workers_config(tmp_path, base="")
+    assert doctor("--live", "workers", config=config, track=TRACK) == 1
+    captured = capsys.readouterr()
+    lines = captured.err.splitlines()
+    assert len(lines) == 1 and "base_url" in lines[0], lines
+    assert no_request.requests == []
+
+
+def _with_list(monkeypatch, ids):
+    import httpx
+
+    from discotrade import doctor as doc
+    recorder = ModelList(ids)
+    monkeypatch.setattr(doc, "WORKERS_TRANSPORT", httpx.MockTransport(recorder))
+    monkeypatch.setenv("NEBIUS_API_KEY", FAKE_NEBIUS)
+    return recorder
+
+
+def test_live_workers_prints_the_pool_against_the_providers_list(monkeypatch, capsys,
+                                                                 tmp_path):
+    recorder = _with_list(monkeypatch, ["maker-b/model-two-small", "maker-a/model-one",
+                                        "maker-b/model-two", "maker-c/other"])
+    config = workers_config(tmp_path)
+    assert doctor("--live", "workers", config=config, track=TRACK) == 0
+    out = capsys.readouterr().out
+    [request] = recorder.requests
+    assert str(request.url) == f"{WORKERS_BASE}/models"
+    assert "maker-a/model-one (pool): listed" in out
+    assert "maker-b/model-two (pool): listed" in out
+    assert "maker-b/model-two-small (fallback): listed" in out
+    assert "doctor --live workers: ok" in out
+    assert FAKE_NEBIUS not in out
+
+
+def test_live_workers_reports_a_model_the_provider_does_not_list(monkeypatch, capsys,
+                                                                 tmp_path):
+    _with_list(monkeypatch, ["maker-a/model-one", "maker-b/model-two-small"])
+    config = workers_config(tmp_path)
+    assert doctor("--live", "workers", config=config, track=TRACK) == 1
+    out = capsys.readouterr().out
+    assert "maker-b/model-two (pool): NOT listed" in out
+    assert "doctor --live workers: FAIL, 1 of 3 configured models not listed" in out

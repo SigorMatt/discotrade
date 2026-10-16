@@ -1,9 +1,11 @@
 """Offline and live checks (DESIGN 19.3; decision 2026-10-12 15; I-13).
 
 ``discotrade doctor`` runs ``--live vendor`` (L1) and ``--live spreads`` (L2),
-built in step S0.2, and ``--live sandbox`` (L5), built in step S2.2 (decision
-2026-10-14-m13 103 (d)); plain ``doctor`` and every other check name are
-usage errors (exit 2) that name step S5.1, which builds them.
+built in step S0.2, ``--live sandbox`` (L5), built in step S2.2 (decision
+2026-10-14-m13 103 (d)), and ``--live workers`` (L3) for its offline behaviour
+and the model list, built in step S3.2a (decision 2026-10-16-m15 122 (e));
+plain ``doctor`` and every other check name are usage errors (exit 2) that name
+step S5.1, which builds them.
 
 L1, ``--live vendor``, runs against the real vendor and prints, for every
 instrument of the track whose adapter is ``vendor``: the vendor's cost
@@ -23,6 +25,13 @@ existing table), and reports every instrument with a main-session hour above
 one tick (SPEC decision 14). Without ``DATABENTO_API_KEY`` it refuses before
 any request, writes nothing and exits 1.
 
+L3, ``--live workers`` (decision 2026-10-16-m15 122 (e)), reads
+``<config>/models.toml`` and prints each configured model against the worker
+provider's model list, exit 1 when one is not listed. Without
+``NEBIUS_API_KEY``, without ``models.toml`` or with an empty ``base_url`` it
+refuses with one line, exits 1 and makes no request. The rest of L3 (whether a
+seed is accepted, twenty replay days with the real pool) is step S3.2b's.
+
 L5, ``--live sandbox``, runs the container self-test of ``discotrade sandbox
 selftest`` (:func:`discotrade.sandbox.container.selftest`). Without a container
 runtime it refuses, naming that none was found, exits 1 and starts nothing.
@@ -31,7 +40,9 @@ runtime it refuses, naming that none was found, exits 1 and starts nothing.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
+import tomllib
 from collections.abc import Callable
 from datetime import UTC, datetime, time, timedelta
 from typing import Any, TextIO
@@ -43,6 +54,12 @@ LATER_STEP = "S5.1"
 #: The checks of DESIGN 19.3 built so far (decision 2026-10-12 15; decision
 #: 2026-10-14-m13 103 (d)), by name.
 LIVE: dict[str, Callable[..., int]] = {}
+#: The transport L3 hands the worker provider; ``None`` is the real network. Tests
+#: put an ``httpx.MockTransport`` here (I-11).
+WORKERS_TRANSPORT: Any = None
+#: L3's request timeout in seconds: decision 123 (d)'s ``request_timeout_seconds``,
+#: which step S3.2a U4 adds to ``config/run.toml``.
+WORKERS_TIMEOUT_SECONDS = 300.0
 
 
 def usage_error(message: str) -> int:
@@ -55,13 +72,13 @@ def run(ctx: Any, args: argparse.Namespace) -> int:
     name = args.live
     if name is None:
         return usage_error(f"plain 'doctor' (the offline checks) is built by step "
-                           f"{LATER_STEP}; in this step give --live vendor, --live spreads "
-                           f"or --live sandbox")
+                           f"{LATER_STEP}; in this step give --live vendor, --live spreads, "
+                           f"--live workers or --live sandbox")
     check = LIVE.get(name)
     if check is None:
         return usage_error(f"no live check {name!r} in this step; the live checks other than "
-                           f"vendor, spreads and sandbox are built by step {LATER_STEP} "
-                           f"(DESIGN 19.3)")
+                           f"vendor, spreads, workers and sandbox are built by step "
+                           f"{LATER_STEP} (DESIGN 19.3)")
     return check(ctx, out=sys.stdout, err=sys.stderr, args=args)
 
 
@@ -203,6 +220,57 @@ def live_spreads(ctx: Any, out: TextIO, err: TextIO, args: Any = None) -> int:
 
 
 LIVE["spreads"] = live_spreads
+
+
+def live_workers(ctx: Any, out: TextIO, err: TextIO, args: Any = None) -> int:
+    """Live check L3 (DESIGN 19.3), its first part: the pool against the provider's list."""
+    from discotrade.workers.providers import (
+        KEY_ENV,
+        ProviderError,
+        no_key_message,
+        openai_compat_from_env,
+    )
+
+    head = "doctor --live workers: FAIL:"
+    if not os.environ.get(KEY_ENV, "").strip():
+        print(f"{head} {no_key_message()}", file=err)
+        return 1
+    path = ctx.config / "models.toml"
+    try:
+        data = tomllib.loads(path.read_text(encoding="utf-8"))
+        base_url = data.get("base_url", "")
+        models = [(m["id"], bool(m.get("pool", True))) for m in data.get("model", [])]
+        if not isinstance(base_url, str) or not all(isinstance(i, str) for i, _ in models):
+            raise ValueError("base_url and every model id must be strings")
+    except FileNotFoundError:
+        print(f"{head} {path} does not exist (step S3.2a U4 creates config/models.toml); "
+              "no request was made", file=err)
+        return 1
+    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
+        print(f"{head} {path} cannot be read: {exc}; no request was made", file=err)
+        return 1
+    try:
+        provider = openai_compat_from_env(base_url, WORKERS_TIMEOUT_SECONDS,
+                                          transport=WORKERS_TRANSPORT)
+        listed = set(provider.list_models())
+    except ProviderError as exc:
+        print(f"{head} {exc}", file=err)
+        return 1
+    print(f"L3 workers: {provider.base_url}, the provider lists {len(listed)} models",
+          file=out)
+    missing = 0
+    for model, pool in models:
+        found = model in listed
+        missing += not found
+        print(f"{model} ({'pool' if pool else 'fallback'}): "
+              f"{'listed' if found else 'NOT listed'}", file=out)
+    print(f"doctor --live workers: {'FAIL' if missing else 'ok'}, {missing} of {len(models)} "
+          "configured models not listed; the seed and the twenty replay days of L3 are "
+          "step S3.2b's", file=out)
+    return 1 if missing else 0
+
+
+LIVE["workers"] = live_workers
 
 
 def live_sandbox(ctx: Any, out: TextIO, err: TextIO, args: Any = None) -> int:

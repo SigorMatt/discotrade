@@ -386,6 +386,9 @@ SUBPROCESS_FILES = {
     "src/discotrade/sandbox/process.py":
         "python -I -m discotrade.sandbox.runner, a program of this repository that opens "
         "no connection (decision 96)",
+    "src/discotrade/workers/providers.py":
+        "the claude executable it is given (a fake written by the test in tests), print "
+        "mode with every tool denied, without NEBIUS_API_KEY (decision 2026-10-16-m15 122 (d))",
     "src/discotrade/state.py": "git on the local state directory, GIT_ALLOW_PROTOCOL=file",
     "tests/test_cli.py": "the discotrade command; a scratch pytest run of tests/conftest.py",
     "tests/test_config_check.py": "the discotrade command",

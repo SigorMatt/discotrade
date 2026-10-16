@@ -466,14 +466,16 @@ def _add_doctor(subparsers: argparse._SubParsersAction, common: argparse.Argumen
     doctor = subparsers.add_parser(
         "doctor", parents=[common],
         help="live checks against the real services (DESIGN 19.3); in this step only "
-        "--live vendor (L1), --live spreads (L2) and --live sandbox (L5)",
+        "--live vendor (L1), --live spreads (L2), --live workers (L3, the pool against "
+        "the provider's model list) and --live sandbox (L5)",
     )
     doctor.add_argument(
         "--live", metavar="NAME", default=None,
         help="the live check to run: vendor (L1) and spreads (L2) need DATABENTO_API_KEY "
-        "and refuse, exit 1, without it; sandbox (L5) runs the container self-test and "
-        "refuses, exit 1, without a container runtime; plain doctor and the other checks "
-        "are built by step S5.1",
+        "and refuse, exit 1, without it; workers (L3) needs NEBIUS_API_KEY and "
+        "config/models.toml and refuses, exit 1, without either; sandbox (L5) runs the "
+        "container self-test and refuses, exit 1, without a container runtime; plain "
+        "doctor and the other checks are built by step S5.1",
     )
     doctor.add_argument(
         "--days", type=int, default=None,
