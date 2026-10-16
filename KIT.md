@@ -1,1 +1,1 @@
-plan: mission 14 kit (S3.1, W profile, registry, prompt, parser)
+plan: mission 15 kit (S3.2a, providers, pool, coordinator, generation)

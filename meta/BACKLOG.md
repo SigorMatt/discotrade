@@ -62,7 +62,27 @@ re-run) and its notes 3, 4 and 5 are taken by mission 14 (step S3.1, unit
 U1; decisions-2026-10-15-m14 items 110 to 112), its should-fix 5 and 6
 and its `hands:` notes 12 and 15 by mission 14 U0 and U6 (findings D-014,
 D-015, HF-010, HF-011; item 113), and finding D-013 (the check's run time)
-by mission 14 U2 (item 114).
+by mission 14 U2 (item 114). REVIEW-14 has no blocker; its should-fix 1
+(a fence line after the last block taken as the description) and its
+notes 3, 4 and 7 are taken by mission 15 (step S3.2a, unit U1;
+decisions-2026-10-16-m15 item 119), its `hands:` notes 11 to 13 by mission
+15 U0 (HF-010, HF-011 lines, HF-012; item 120), and finding D-013 again
+(the synthetic source rebuilt every day) by mission 15 U2 (item 121).
+
+- REVIEW-14 notes, not carried as work unless named: note 5 (the profile's
+  tests do not tell the adjustment anchor apart; roll gaps are additive),
+  note 6 (ddof 1 in the mean-reversion block; "``` python" is no block, as
+  pinned) and note 8 (`registry.lines()` reads every approach of the state
+  directory; one track per state in this series) stand as built
+  (decision 119 (e)).
+- Left by step S3.2a to step S3.2b (decision 118): the generation called by
+  `run-day` and `replay` (with the provider and coordinator options of
+  §16.4 and the scripted provider's cursor built from `calls.jsonl`),
+  scoring on T with both measures, the trial rows with model, version and
+  cutoff, the worker corpus, the M3 gate tests, and the rest of live check
+  L3 (twenty replay days with the real pool). REVIEW-11's note on G1.3's
+  scenario (one admission line with a non-zero `avg_position`) may be
+  taken there if S3.2b touches the scenario.
 
 - REVIEW-13 notes, not carried as work unless named: note 8
   (`changes_bars_in_place.py` is rejected only for being flat; nothing
@@ -258,6 +278,12 @@ by mission 14 U2 (item 114).
   104 (d)'s hash exclusion; the four run-time entries of the rejection
   suite point at their originals under `tests/fixtures/strategies/` until
   the owner confirms or rules otherwise.
+
+- `config/models.toml` (mission 15, decision 123): the base URL, the model
+  ids and the cutoffs are SPEC §17's and the provider's public pages,
+  `verified = false` until live check L3. The Claude worker of the cell
+  fallback (R-21) has no model configured; choosing one, with its cutoff,
+  is the owner's when `workers.claude_fallback` is switched on.
 
 ## For the owner, at any time (frozen-config changes)
 
