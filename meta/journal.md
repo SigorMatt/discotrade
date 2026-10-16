@@ -143,3 +143,4 @@
 - 2026-10-16 mission 15 U4 done 0260f0c: config/models.toml (4 records, verified = false), [workers] tables, loader with refusals, pool (rotation, fallback, removal, cell window from calls.jsonl); check 3/3 (800-812 s).
 - 2026-10-16 mission 15 U5 done 5f5c5c5: Coordinator protocol, CellStatus with no score, ScriptedCoordinator, fallback for an out-of-list cell; 18 tests; check 3/3 (797-809 s).
 - 2026-10-16 mission 15 U6 done 41b2670: the day's generation (two calls at most, store before parse, replay from stored response, token budget, call rows of decision 62); 17 tests; check 3/3 (832-834 s).
+- 2026-10-16 mission 15 U7 done d5dfa02: check 3/3 (848, 828, 838 s); gates M0 (251 s), M2 (130 s), M1 G1.1-G1.4 (373, 173, 522, 1 s) PASS at 6259365; final report written; mission 15 finished.
