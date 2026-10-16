@@ -68,6 +68,27 @@ notes 3, 4 and 7 are taken by mission 15 (step S3.2a, unit U1;
 decisions-2026-10-16-m15 item 119), its `hands:` notes 11 to 13 by mission
 15 U0 (HF-010, HF-011 lines, HF-012; item 120), and finding D-013 again
 (the synthetic source rebuilt every day) by mission 15 U2 (item 121).
+REVIEW-15 blocker 1 (the claim that one function reads `NEBIUS_API_KEY`,
+which `doctor.py` contradicted) and its note 3's first half (the context
+an error keeps) are taken by mission 16 (step S3.2a, unit U1;
+decisions-2026-10-16-m16 item 128), its should-fix 1 (`doctor --live
+workers` reading raw TOML and a fixed timeout) by mission 16 U2 (item
+129), its should-fix 2 (the cache key's calendar and bar-length parts
+untested) by mission 16 U3 (item 130), and its `hands:` notes 8 to 10 and
+the D-013 times by mission 16 U0 (item 131 (e), (f)).
+
+- REVIEW-15 notes, not carried as work unless named (decision 131): note 1
+  (`model_skipped` also raised when the fallback replaces the model, with
+  `replaced: true`) stands as built; note 5 (the synthetic cache has no
+  bound) stands as built.
+- Left by REVIEW-15 to step S3.2b (decision 131 (b), (c)): whether a
+  lifecycle row to `dormant` dated D, written by D's own lifecycle step,
+  makes its cell weak on D or from D+1, with a test of either, and a test
+  of the weak flag at an approach's paper day 0 (note 2); the full list of
+  retry messages checked in the duplicate test too (note 4).
+- Left by REVIEW-15 to step S4.2 (decision 131 (d)): a timeout of the
+  `claude` child kills it but not a grandchild it starts (note 3's second
+  half); S4.2 runs `claude` again for the coordinator and takes both.
 
 - REVIEW-14 notes, not carried as work unless named: note 5 (the profile's
   tests do not tell the adjustment anchor apart; roll gaps are additive),

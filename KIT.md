@@ -1,1 +1,1 @@
-plan: mission 15 kit (S3.2a, providers, pool, coordinator, generation)
+plan: mission 16 kit (S3.2a repaired, REVIEW-15 blocker and should-fix)
