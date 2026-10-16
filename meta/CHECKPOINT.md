@@ -7,11 +7,11 @@ Done: U0 ccaf429 (plan; HF-010, HF-011 lines, HF-012; decision 120).
 U1 e404e00 (fence line, sanitize after cut, roll-record test, conftest env; image discotrade-sandbox:3b7d75c39621; check 3/3 ~790 s).
 U2 aeed087 (synth process cache; no speed gain: 1.598 vs 1.623 s/replay day; check 791 s parent, 801-807 s commit; D-013 line).
 U3 d9acfcd (providers.py; doctor --live workers reads models.toml directly, timeout 300 s constant until U4; check 793-797 s).
+U4 0260f0c (models.toml + fixture, [workers], config loader, pool.py; doctor still reads models.toml directly; check 800-812 s).
 
-Unit in progress: U4 — config/models.toml and the pool (decisions 123, 124). Done means: models.toml and its
-fixture with SPEC §17's records, verified = false; [workers] tables added; frozen-map entries added; config.py
-loader with refusals; config check lists unverified values; workers/pool.py (rotation, fallback, removal, cell
-window from calls.jsonl); seen-to-fail changes named; check 3/3; one commit pushed.
+Unit in progress: U5 — the coordinator interface and its scripted form (decision 125). Done means:
+src/discotrade/coordinator.py, tests/test_coordinator.py with every test 125 (e) lists incl. the no-score property
+test; seen-to-fail changes named; check 3/3; one commit pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-16-m15 (118-126) bind; owner files
 (O-11, O-13, O-16..O-20, O-22) win; decisions 1-117 still bind (117 (c) amended by 119 (a)). No value of a frozen
