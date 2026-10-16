@@ -542,3 +542,184 @@ def test_records_are_frozen():
     with pytest.raises(AttributeError):
         inst.tick_size = 1.0  # type: ignore[misc]
     hash(inst)
+
+
+# --- config/models.toml (DESIGN 13.6, 4.3, 11.3; R-14; decision 2026-10-16-m15 123) ----
+
+MODELS = CONFIG / "models.toml"
+FIXTURE_MODELS = FIXTURE_CONFIG / "models.toml"
+
+# SPEC.md section 17, "Worker models on Nebius Token Factory", the first four rows,
+# as decision 123 (a) lists them: id, maker, stated cutoff month, pool, fallback.
+SPEC_MODELS = [
+    ("openai/gpt-oss-120b", "OpenAI", (2024, 6), True, None),
+    ("MiniMaxAI/MiniMax-M3", "MiniMax", (2026, 1), True, None),
+    ("nvidia/nemotron-3-super-120b-a12b", "NVIDIA", (2026, 2), True,
+     "nvidia/Nemotron-3_5-Lightning"),
+    ("nvidia/Nemotron-3_5-Lightning", "NVIDIA", (2026, 5), False, None),
+]
+
+
+def last_day_of_month(year: int, month: int) -> date:
+    """R-14, read by the test itself: the day before the first of the next month."""
+    first_next = date(year + 1, 1, 1) if month == 12 else date(year, month + 1, 1)
+    return first_next - timedelta(days=1)
+
+
+def test_last_day_of_month_reading():
+    # The test's own reading of R-14 gives the four dates the brief names.
+    assert [last_day_of_month(*ym) for _, _, ym, _, _ in SPEC_MODELS] == [
+        date(2024, 6, 30), date(2026, 1, 31), date(2026, 2, 28), date(2026, 5, 31)]
+
+
+@pytest.mark.parametrize("path", [MODELS, FIXTURE_MODELS], ids=["config", "fixture"])
+def test_models_are_spec_17s_records_unverified(path):
+    from discotrade.config import load_models
+
+    cfg = load_models(path)
+    got = [(m.id, m.maker, m.cutoff, m.cutoff_basis, m.pool, m.fallback, m.cutoff_date)
+           for m in cfg.models]
+    want = [(i, mk, f"{y:04d}-{mo:02d}", "stated", pool, fb, last_day_of_month(y, mo))
+            for i, mk, (y, mo), pool, fb in SPEC_MODELS]
+    assert got == want
+    assert [m.id for m in cfg.pool] == [i for i, _, _, pool, _ in SPEC_MODELS if pool]
+    for m in cfg.models:
+        assert m.provenance.checked == date(2026, 10, 11)
+        assert m.provenance.verified is False
+        assert "SPEC.md section 17" in m.provenance.source
+    assert cfg.provenance.verified is False
+    assert cfg.base_url == "https://api.tokenfactory.nebius.com/v1/"
+    assert "docs.tokenfactory.nebius.com" in cfg.provenance.source
+
+
+def test_fixture_models_hold_the_same_records():
+    from discotrade.config import load_models
+
+    assert load_models(FIXTURE_MODELS) == load_models(MODELS)
+
+
+MODELS_TEXT = MODELS.read_text()
+
+
+def models_with(tmp_path, text):
+    return write(tmp_path / "models.toml", text)
+
+
+@pytest.mark.parametrize(
+    "edit, match",
+    [
+        # an unknown key, at the top and in a model
+        (lambda s: s.replace("verified = false\n", "verified = false\nregion = \"eu\"\n", 1),
+         "unknown key 'region'"),
+        (lambda s: s.replace('maker = "OpenAI"', 'maker = "OpenAI"\nprice = 0.15'),
+         r"unknown key 'model\.price'"),
+        # a fallback that names no model, a pool model, or a model of another maker
+        (lambda s: s.replace('fallback = "nvidia/Nemotron-3_5-Lightning"',
+                             'fallback = "nvidia/none"'), "fallback"),
+        (lambda s: s.replace('fallback = "nvidia/Nemotron-3_5-Lightning"',
+                             'fallback = "MiniMaxAI/MiniMax-M3"'), "fallback"),
+        (lambda s: s.replace('maker = "NVIDIA"\ncutoff = "2026-05"',
+                             'maker = "Other"\ncutoff = "2026-05"'), "fallback"),
+        (lambda s: s.replace('pool = false', 'pool = true'), "fallback"),
+        # a duplicate id
+        (lambda s: s.replace('id = "MiniMaxAI/MiniMax-M3"', 'id = "openai/gpt-oss-120b"'),
+         "duplicate"),
+        # a cutoff not of the form its basis says, or not a date
+        (lambda s: s.replace('cutoff = "2024-06"', 'cutoff = "2024-06-15"'), "cutoff"),
+        (lambda s: s.replace('cutoff = "2024-06"\ncutoff_basis = "stated"',
+                             'cutoff = "2024-06"\ncutoff_basis = "release"'), "cutoff"),
+        (lambda s: s.replace('cutoff = "2024-06"', 'cutoff = "2024-13"'), "cutoff"),
+        (lambda s: s.replace('cutoff_basis = "stated"', 'cutoff_basis = "guess"', 1),
+         "cutoff_basis"),
+        # a missing companion
+        (lambda s: s.replace('pool = true\nchecked = "2026-10-11"\n', 'pool = true\n', 1),
+         "checked"),
+    ],
+)
+def test_models_refusals(tmp_path, edit, match):
+    from discotrade.config import load_models
+
+    text = edit(MODELS_TEXT)
+    assert text != MODELS_TEXT
+    refused(load_models, models_with(tmp_path, text), match=match)
+
+
+def test_models_empty_pool_refused(tmp_path):
+    from discotrade.config import load_models
+
+    no_pool = MODELS_TEXT.replace("pool = true", "pool = false").replace(
+        'fallback = "nvidia/Nemotron-3_5-Lightning"\n', "")
+    refused(load_models, models_with(tmp_path, no_pool), match="empty pool")
+    no_model = MODELS_TEXT[:MODELS_TEXT.index("\n[[model]]\n")]
+    refused(load_models, models_with(tmp_path, no_model), match="empty pool")
+
+
+def test_models_release_date_is_used_as_is(tmp_path):
+    from discotrade.config import load_models
+
+    text = MODELS_TEXT.replace('cutoff = "2026-01"\ncutoff_basis = "stated"',
+                               'cutoff = "2025-07-21"\ncutoff_basis = "release"')
+    model = load_models(models_with(tmp_path, text)).get("MiniMaxAI/MiniMax-M3")
+    assert model.cutoff_date == date(2025, 7, 21)
+
+
+def test_models_empty_base_url_loads(tmp_path):
+    # Decision 123 (a): the empty string is allowed in the file; the provider refuses it.
+    from discotrade.config import load_models
+
+    text = MODELS_TEXT.replace('base_url = "https://api.tokenfactory.nebius.com/v1/"',
+                               'base_url = ""')
+    assert load_models(models_with(tmp_path, text)).base_url == ""
+
+
+def test_models_unverified_lists_base_url_and_each_cutoff():
+    from discotrade.config import load_models
+
+    keys = [k for k, _, _ in load_models(MODELS).unverified()]
+    assert keys == ["base_url"] + [f"model.{i}.cutoff" for i, *_ in SPEC_MODELS]
+
+
+def test_models_records_are_frozen():
+    from discotrade.config import load_models
+
+    cfg = load_models(MODELS)
+    with pytest.raises(AttributeError):
+        cfg.models[0].cutoff = "2020-01"  # type: ignore[misc]
+
+
+# --- run.toml's [workers] (decision 2026-10-16-m15 123 (d); R-21) ----------------------
+
+
+@pytest.mark.parametrize("config", [CONFIG, FIXTURE_CONFIG], ids=["config", "fixture"])
+def test_run_workers_table(config):
+    from discotrade.config import load_run
+
+    workers = load_run(config).workers
+    assert workers is not None
+    assert workers.claude_fallback is False
+    assert workers.request_timeout_seconds == 300.0
+
+
+def test_run_without_a_workers_table_still_loads(tmp_path):
+    from discotrade.config import load_run
+
+    text = (CONFIG / "run.toml").read_text()
+    write(tmp_path / "run.toml", text[:text.index("\n# The workers")] + "\n")
+    assert load_run(tmp_path).workers is None
+
+
+@pytest.mark.parametrize(
+    "old, new, match",
+    [
+        ("claude_fallback = false", "claude_fallback = false\nmodel = \"x\"",
+         r"unknown key 'workers\.model'"),
+        ("claude_fallback = false", 'claude_fallback = "no"', "claude_fallback"),
+        ("request_timeout_seconds = 300.0", "request_timeout_seconds = 0.0",
+         "request_timeout_seconds"),
+    ],
+)
+def test_run_workers_refusals(tmp_path, old, new, match):
+    from discotrade.config import load_run
+
+    write(tmp_path / "run.toml", (CONFIG / "run.toml").read_text().replace(old, new))
+    refused(load_run, tmp_path, match=match)

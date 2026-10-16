@@ -1,0 +1,54 @@
+# The worker model pool (DESIGN 13.6, 4.3, 11.3; decision 2026-10-16-m15 123 (a)).
+# A frozen file (DESIGN 4.3, I-10): once created, a value changes only by the
+# owner's decision, with a [[change]] entry in config/HISTORY.toml. Every value
+# here came from outside the project and is unverified until live check L3.
+# The order of the [[model]] tables is the pool's order. cutoff is "YYYY-MM" for
+# a stated training-cutoff month (its last day is the cutoff date, R-14) or
+# "YYYY-MM-DD" for a release date (used as is); cutoff_basis says which.
+# tests/fixtures/config/models.toml holds the same records.
+
+base_url = "https://api.tokenfactory.nebius.com/v1/"
+checked = "2026-10-16"
+source = "Nebius Token Factory quickstart, https://docs.tokenfactory.nebius.com/quickstart (the base_url its OpenAI client sample sets), read on 2026-10-16"
+verified = false
+
+[[model]]
+id = "openai/gpt-oss-120b"
+maker = "OpenAI"
+cutoff = "2024-06"
+cutoff_basis = "stated"
+pool = true
+checked = "2026-10-11"
+source = "SPEC.md section 17 (Worker models on Nebius Token Factory), from the provider's catalog https://tokenfactory.nebius.com/api/public/models_info"
+verified = false
+
+[[model]]
+id = "MiniMaxAI/MiniMax-M3"
+maker = "MiniMax"
+cutoff = "2026-01"
+cutoff_basis = "stated"
+pool = true
+checked = "2026-10-11"
+source = "SPEC.md section 17 (Worker models on Nebius Token Factory), from the provider's catalog https://tokenfactory.nebius.com/api/public/models_info"
+verified = false
+
+[[model]]
+id = "nvidia/nemotron-3-super-120b-a12b"
+maker = "NVIDIA"
+cutoff = "2026-02"
+cutoff_basis = "stated"
+pool = true
+fallback = "nvidia/Nemotron-3_5-Lightning"
+checked = "2026-10-11"
+source = "SPEC.md section 17 (Worker models on Nebius Token Factory; the post-training cutoff), from the provider's catalog https://tokenfactory.nebius.com/api/public/models_info"
+verified = false
+
+[[model]]
+id = "nvidia/Nemotron-3_5-Lightning"
+maker = "NVIDIA"
+cutoff = "2026-05"
+cutoff_basis = "stated"
+pool = false
+checked = "2026-10-11"
+source = "SPEC.md section 17 (Worker models on Nebius Token Factory; the post-training cutoff), from the provider's catalog https://tokenfactory.nebius.com/api/public/models_info"
+verified = false

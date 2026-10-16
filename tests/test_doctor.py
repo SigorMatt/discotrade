@@ -170,6 +170,8 @@ def workers_config(tmp_path, base=WORKERS_BASE, models=True):
     config = make_config(tmp_path / "config")
     if models:
         (config / "models.toml").write_text(MODELS_TOML.format(base=base), encoding="utf-8")
+    else:  # the fixture configuration holds models.toml since decision 123 (b)
+        (config / "models.toml").unlink(missing_ok=True)
     return config
 
 

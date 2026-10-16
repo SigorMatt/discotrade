@@ -14,3 +14,9 @@ image = "discotrade-sandbox"  # the image's repository name; its tag is the hash
 pids = 64                    # process limit of the container
 cpus = 1.0                   # CPU limit of the container
 tmpfs_bytes = 67108864       # size of the tmpfs at /tmp, 64 MiB
+
+# The workers (DESIGN 13.6; decision 2026-10-16-m15 123 (d)). The project's own
+# choices, not facts from outside it; the same values in both run.toml files.
+[workers]
+claude_fallback = false          # R-21: the Claude worker fallback for a failing cell is off
+request_timeout_seconds = 300.0  # a worker provider request's timeout

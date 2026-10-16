@@ -196,6 +196,18 @@ def test_frozen_map_covers_track_and_instruments():
     assert globex["closure.0.verified"] is False
 
 
+def test_frozen_map_covers_models():
+    # Decision 2026-10-16-m15 123 (a): config/models.toml is frozen from its creation.
+    models = json.loads(FROZEN.read_text())["config/models.toml"]
+    assert models["base_url"] == "https://api.tokenfactory.nebius.com/v1/"
+    assert [models[f"model.{i}.id"] for i in range(4)] == [
+        "openai/gpt-oss-120b", "MiniMaxAI/MiniMax-M3", "nvidia/nemotron-3-super-120b-a12b",
+        "nvidia/Nemotron-3_5-Lightning"]
+    assert [models[f"model.{i}.cutoff"] for i in range(4)] == [
+        "2024-06", "2026-01", "2026-02", "2026-05"]
+    assert all(models[f"model.{i}.verified"] is False for i in range(4))
+
+
 def test_frozen_config_matches_map_and_history():
     """DESIGN 4.3: a frozen value that differs from the map needs a change entry."""
     frozen = json.loads(FROZEN.read_text())

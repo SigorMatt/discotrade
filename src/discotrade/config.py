@@ -13,6 +13,7 @@ threshold value lives in ``config/thresholds.toml`` (I-10).
 
 from __future__ import annotations
 
+import calendar
 import math
 import re
 import tomllib
@@ -814,6 +815,7 @@ def threshold_drift(current: Thresholds, frozen: Thresholds) -> list[str]:
 RUN_FILE = "run.toml"
 _SANDBOX_KEYS = ("wall_seconds", "cpu_seconds", "memory_bytes", "output_bytes", "image",
                  "pids", "cpus", "tmpfs_bytes", "runtime")
+_WORKERS_KEYS = ("claude_fallback", "request_timeout_seconds")
 #: The container runtimes ``sandbox.runtime`` may name (DESIGN 12.4; decision 102 (a)).
 RUNTIMES = ("docker", "podman")
 #: An image repository name without a tag or digest (decision 102 (d), (e): the tag
@@ -845,8 +847,21 @@ class SandboxSettings:
 
 
 @dataclass(frozen=True)
+class WorkerSettings:
+    """``[workers]`` of ``run.toml`` (DESIGN 13.6; decision 2026-10-16-m15 123 (d)):
+    ``claude_fallback``, whether a failing cell is served by the Claude worker (R-21,
+    off in v1), and ``request_timeout_seconds``, a worker provider request's timeout."""
+
+    claude_fallback: bool
+    request_timeout_seconds: float
+
+
+@dataclass(frozen=True)
 class RunConfig:
     sandbox: SandboxSettings
+    #: None when ``run.toml`` has no ``[workers]`` table: only the code that builds a
+    #: worker provider or the day's pool needs it, as only job building needs ``[sandbox]``.
+    workers: WorkerSettings | None = None
 
 
 def load_run(config_dir: Path) -> RunConfig:
@@ -856,9 +871,16 @@ def load_run(config_dir: Path) -> RunConfig:
     if not path.is_file():
         raise ConfigError(f"{path}: no such file; a sandbox job takes its limits from "
                           f"{RUN_FILE} (DESIGN 3, 12.4)")
-    top = _Table(path, read_toml(path), "", ("sandbox",))
+    top = _Table(path, read_toml(path), "", ("sandbox", "workers"))
     s = _Table(path, top.raw("sandbox"), "sandbox.", _SANDBOX_KEYS)
-    return RunConfig(sandbox=SandboxSettings(
+    workers = None
+    if top.has("workers"):
+        w = _Table(path, top.raw("workers"), "workers.", _WORKERS_KEYS)
+        workers = WorkerSettings(
+            claude_fallback=w.boolean("claude_fallback"),
+            request_timeout_seconds=w.number("request_timeout_seconds", positive=True),
+        )
+    return RunConfig(workers=workers, sandbox=SandboxSettings(
         wall_seconds=s.number("wall_seconds", positive=True),
         cpu_seconds=s.number("cpu_seconds", positive=True),
         memory_bytes=s.integer("memory_bytes", low=1),
@@ -877,6 +899,130 @@ def _image_name(table: _Table) -> str:
         table.fail("image", "must be an image repository name, lower case, with no tag "
                    f"or digest (the harness adds the tag), not {value!r}")
     return value
+
+
+# --- the model pool (DESIGN 13.6, 11.3; R-14; decision 2026-10-16-m15 123) -------
+
+#: The model-pool file of a configuration directory; frozen (DESIGN 4.3).
+MODELS_FILE = "models.toml"
+#: ``cutoff_basis``: a stated training-cutoff month (``"YYYY-MM"``), or a release
+#: date (``"YYYY-MM-DD"``) for a maker that states none (DESIGN 11.3).
+CUTOFF_BASES = ("stated", "release")
+_MODEL_KEYS = ("id", "maker", "cutoff", "cutoff_basis", "pool", "fallback", *COMPANIONS)
+_MONTH = re.compile(r"^(\d{4})-(\d{2})$")
+
+
+@dataclass(frozen=True)
+class Model:
+    """One ``[[model]]`` of ``models.toml``. ``pool`` is true for a rotating pool
+    model, false for a fallback only; ``fallback`` names a ``pool = false`` model
+    of the same maker, or is None."""
+
+    id: str
+    maker: str
+    cutoff: str                 # as written
+    cutoff_basis: str
+    pool: bool
+    fallback: str | None
+    provenance: Provenance
+
+    @property
+    def cutoff_date(self) -> date:
+        """The cutoff date as used (DESIGN 11.3; R-14): the last day of a stated
+        month, or the release date as is (decision 123 (a), (c))."""
+        if self.cutoff_basis == "stated":
+            year, month = (int(x) for x in self.cutoff.split("-"))
+            return date(year, month, calendar.monthrange(year, month)[1])
+        return date.fromisoformat(self.cutoff)
+
+
+@dataclass(frozen=True)
+class ModelsConfig:
+    """``models.toml``: the provider's ``base_url`` with its companions, and the
+    models in file order, which is the pool's order."""
+
+    base_url: str
+    provenance: Provenance
+    models: tuple[Model, ...]
+
+    @property
+    def pool(self) -> tuple[Model, ...]:
+        """The ``pool = true`` models, in file order."""
+        return tuple(m for m in self.models if m.pool)
+
+    def get(self, model_id: str) -> Model:
+        for m in self.models:
+            if m.id == model_id:
+                return m
+        raise KeyError(model_id)
+
+    def unverified(self) -> list[tuple[str, Any, Provenance]]:
+        """``base_url`` and each model's ``cutoff`` whose companions say unverified."""
+        out: list[tuple[str, Any, Provenance]] = []
+        if not self.provenance.verified:
+            out.append(("base_url", self.base_url, self.provenance))
+        out += [(f"model.{m.id}.cutoff", m.cutoff, m.provenance)
+                for m in self.models if not m.provenance.verified]
+        return out
+
+
+def _cutoff(t: _Table, basis: str) -> str:
+    value = t.text("cutoff")
+    if basis == "stated":
+        match = _MONTH.match(value)
+        if not match or not 1 <= int(match.group(2)) <= 12:
+            t.fail("cutoff", f'must be "YYYY-MM" for a stated cutoff month, not {value!r}')
+    else:
+        try:
+            if len(value) != 10:
+                raise ValueError
+            date.fromisoformat(value)
+        except ValueError:
+            t.fail("cutoff", f'must be "YYYY-MM-DD" for a release date, not {value!r}')
+    return value
+
+
+def load_models(path: Path) -> ModelsConfig:
+    """Load ``models.toml`` (decision 2026-10-16-m15 123 (a), (c)). Refused: an
+    unknown key, a missing key or companion, a cutoff not of its basis's form, a
+    duplicate id, a fallback that names no ``pool = false`` model of the same maker
+    (or that a ``pool = false`` model carries), and an empty pool."""
+    path = Path(path)
+    top = _Table(path, read_toml(path), "", ("base_url", "model", *COMPANIONS))
+    base_url = top.raw("base_url")
+    if not isinstance(base_url, str):
+        top.fail("base_url", "must be text (the empty string when it is not known)")
+    provenance = top.provenance(required=True)
+    assert provenance is not None
+    raw_models = top.raw("model", [])
+    if not isinstance(raw_models, list):
+        top.fail("model", "must be an array of tables ([[model]])")
+    models: list[Model] = []
+    for entry in raw_models:
+        t = _Table(path, entry, "model.", _MODEL_KEYS)
+        model_id = t.text("id")
+        if any(m.id == model_id for m in models):
+            t.fail("id", f"{model_id!r} is a duplicate id")
+        basis = t.choice("cutoff_basis", CUTOFF_BASES)
+        prov = t.provenance(required=True)
+        assert prov is not None
+        models.append(Model(
+            id=model_id, maker=t.text("maker"), cutoff=_cutoff(t, basis), cutoff_basis=basis,
+            pool=t.boolean("pool"), fallback=t.text("fallback", None), provenance=prov,
+        ))
+    for m in models:
+        if m.fallback is None:
+            continue
+        where = f"{path}: 'model.fallback' of {m.id!r}"
+        if not m.pool:
+            raise ConfigError(f"{where}: a pool = false model has no fallback")
+        target = next((x for x in models if x.id == m.fallback), None)
+        if target is None or target.pool or target.maker != m.maker:
+            raise ConfigError(f"{where} names {m.fallback!r}, which is not a pool = false "
+                              f"model of the same maker ({m.maker!r})")
+    if not any(m.pool for m in models):
+        raise ConfigError(f"{path}: empty pool: no [[model]] has pool = true")
+    return ModelsConfig(base_url=base_url, provenance=provenance, models=tuple(models))
 
 
 # --- frozen config and config/HISTORY.toml (DESIGN 4.3) ------------------------
@@ -1133,8 +1279,25 @@ def check(config_dir: Path, track_name: str) -> CheckReport:
         f"thresholds: {len(thresholds.values)} values in {len(THRESHOLD_SCHEMA)} tables, "
         f"{len(thresholds.history)} history entries"
     )
+    if (config_dir / MODELS_FILE).is_file():  # checked when present
+        models = load_models(config_dir / MODELS_FILE)
+        lines.append(f"models: base_url {models.base_url!r}, {len(models.pool)} pool models, "
+                     f"{len(models.models) - len(models.pool)} fallback only")
+        for m in models.models:
+            lines.append(
+                f"model {m.id}: maker {m.maker}, cutoff {m.cutoff} ({m.cutoff_basis}), "
+                f"cutoff date {m.cutoff_date.isoformat()}, "
+                + ("pool" if m.pool else "fallback only")
+                + (f", fallback {m.fallback}" if m.fallback else "")
+            )
+        for key, value, prov in models.unverified():
+            unverified.append(
+                f"unverified {MODELS_FILE} {key} = {_show(value)} "
+                f"(checked {prov.checked.isoformat()}; source: {prov.source})"
+            )
     if (config_dir / RUN_FILE).is_file():  # checked when present; only job building needs it
-        s = load_run(config_dir).sandbox
+        run = load_run(config_dir)
+        s = run.sandbox
         lines.append(
             f"run: sandbox wall {s.wall_seconds:g} s, cpu {s.cpu_seconds:g} s, "
             f"memory {s.memory_bytes} bytes, output {s.output_bytes} bytes"
@@ -1143,6 +1306,15 @@ def check(config_dir: Path, track_name: str) -> CheckReport:
             f"run: container image {s.image}, pids {s.pids}, cpus {s.cpus:g}, "
             f"tmpfs {s.tmpfs_bytes} bytes, runtime {s.runtime or 'docker or podman on PATH'}"
         )
+        if run.workers is not None:
+            w = run.workers
+            if w.claude_fallback:
+                # Decision 123 (d): no Claude worker can be configured in this step.
+                raise ConfigError(
+                    f"{config_dir / RUN_FILE}: 'workers.claude_fallback' is true, but no "
+                    "Claude worker is configured (decision 2026-10-16-m15 123 (d))")
+            lines.append(f"run: workers claude_fallback {str(w.claude_fallback).lower()}, "
+                         f"request timeout {w.request_timeout_seconds:g} s")
     history = config_dir / "HISTORY.toml"
     changes = load_changes(history) if history.is_file() else ()
     lines.append(f"history: {len(changes)} changes")
