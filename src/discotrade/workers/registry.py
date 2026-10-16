@@ -19,7 +19,9 @@ function every worker-written text of a prompt goes through (item 117 cuts the
 brief with it too): every run of whitespace (line breaks included) becomes one
 space, then characters outside printable ASCII (0x20 to 0x7E), backticks and
 angle brackets are removed, runs of spaces this leaves become one space, and
-the result is stripped and cut to ``max_chars`` characters. For a description
+the result is stripped, cut to ``max_chars`` characters and stripped again, so
+that a cut landing on a space leaves no trailing space (decision 119 (b) of
+2026-10-16-m15; ``sanitize('ab cd', 3) == 'ab'``). For a description
 that is ``validation.description_max_chars`` of ``config/thresholds.toml``
 (:func:`description_cap`, I-10). Whitespace is joined before characters are
 removed so that a line break between two words leaves them apart.
@@ -60,7 +62,7 @@ def sanitize(text: str, max_chars: int) -> str:
     """``text`` as one inert line of printable ASCII, at most ``max_chars`` long."""
     one_line = _WHITESPACE.sub(" ", str(text))
     kept = _SPACES.sub(" ", _REMOVED.sub("", one_line))
-    return kept.strip()[:max_chars]
+    return kept.strip()[:max_chars].strip()
 
 
 def description_cap(thresholds: Thresholds) -> int:

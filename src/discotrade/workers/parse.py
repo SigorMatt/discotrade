@@ -14,13 +14,16 @@ opens nothing. A block never closed is not a block.
 the two fence lines exactly as the response holds it, the fences excluded.
 Its description is the first non-empty line after the closing fence,
 sanitized and cut by :func:`discotrade.workers.registry.sanitize` to
-``validation.description_max_chars`` (I-10). No Python block is the failure
-``no_block``; no non-empty line after it, or one that sanitizes to nothing
-(the decision is silent; an empty description is no description), is
-``no_description``. A failure is of stage ``parse`` and carries the fixed
-error text of its rule, which quotes nothing of the response (DESIGN 12.2's
-error text, fit to send back). Nothing here reads a clock, a file, the
-network or a secret.
+``validation.description_max_chars`` (I-10). When that line, after leading
+spaces and tabs, begins with three backticks (an opening fence of any
+language, a bare fence or a closing fence), there is no description and the
+next line is not tried (decision 119 (a) of 2026-10-16-m15, amending 117 (c)).
+No Python block is the failure ``no_block``; no non-empty line after it, a
+fence line there, or a line that sanitizes to nothing (the decision is
+silent; an empty description is no description), is ``no_description``. A
+failure is of stage ``parse`` and carries the fixed error text of its rule,
+which quotes nothing of the response (DESIGN 12.2's error text, fit to send
+back). Nothing here reads a clock, a file, the network or a secret.
 """
 
 from __future__ import annotations
@@ -43,6 +46,7 @@ TEXTS = {
                      "after its closing fence"),
 }
 PYTHON = frozenset(("python", "py", "python3"))
+FENCE = "```"
 _OPEN = re.compile(r"[ \t]*```([^`\s]*)[ \t]*")
 _CLOSE = re.compile(r"[ \t]*```[ \t]*")
 
@@ -97,7 +101,10 @@ def parse(response: str, thresholds: Thresholds) -> Parsed | Failure:
     raw = response.splitlines(keepends=True)
     source = "".join(raw[start + 1:end])
     after = (line for line in response.splitlines()[end + 1:] if line.strip())
-    description = sanitize(next(after, ""), description_cap(thresholds))
+    line = next(after, "")
+    if line.lstrip(" \t").startswith(FENCE):
+        return _fail(NO_DESCRIPTION)
+    description = sanitize(line, description_cap(thresholds))
     if not description:
         return _fail(NO_DESCRIPTION)
     return Parsed(source=source, description=description)

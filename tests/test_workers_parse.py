@@ -87,6 +87,21 @@ def test_no_block_and_no_description_are_parse_failures_with_fixed_texts():
                                              wparse.TEXTS["no_description"])
 
 
+def test_a_fence_line_after_the_last_block_is_no_description():
+    """Decision 119 (a), REVIEW-14 should-fix 1: when the first non-empty line after
+    the last block's closing fence begins, after spaces and tabs, with three
+    backticks, there is no description, and the next line is not tried."""
+    review = refused("```python\nx=1\n```\n```python\nB\n")
+    assert (review.stage, review.rule, review.text) == ("parse", "no_description",
+                                                        wparse.TEXTS["no_description"])
+    for fence in ("```json", "```", "  ```text  ", "\t```", "````",
+                  "```js and more"):
+        response = f"```python\n{FIRST}```\n\n{fence}\n{{\"a\": 1}}\n```\ndescribed\n"
+        assert refused(response).rule == wparse.NO_DESCRIPTION, fence
+    got = ok(f"```python\n{FIRST}```\n  Not a fence: ```x```.\n")
+    assert got.description == "Not a fence: x."
+
+
 def test_the_description_is_sanitized_and_cut_to_the_cap():
     line = "Buys `breakouts` <b>café</b>\t and " + "x" * 400
     got = ok(f"```python\n{FIRST}```\n{line}\n")

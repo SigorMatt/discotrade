@@ -545,3 +545,26 @@ def test_the_document_is_json_ready(documents):
 def test_an_unknown_cell_is_refused(config, stores):
     with pytest.raises(wp.ProfileError):
         _profile(config, stores["test_synth"]["full"], "test_synth", ("trend", "long"))
+
+
+@pytest.mark.parametrize("damage", ["file_removed", "record_names_another_contract"])
+def test_a_contract_change_with_no_roll_record_is_refused(config, synth_bars_template,
+                                                          tmp_path, damage):
+    """REVIEW-14 note 4 (decision 119 (c)): a store built here from test_synth's bars
+    fetched at ``SYNTH_AS_OF``, whose SYNA roll inside W (2019-06-14) has lost its
+    record, is refused; the same store with the record intact is not."""
+    state = copy_template(synth_bars_template, tmp_path / "state")
+    cell = ("trend", "short")
+    assert _profile(config, state, "test_synth", cell)["version"] == "p1"
+    rolls = state / "rolls" / "test_synth" / "SYNA.jsonl"
+    records = [json.loads(line) for line in rolls.read_text(encoding="utf-8").splitlines()]
+    assert any(r["ts"].startswith("2019-06-14") for r in records), records
+    if damage == "file_removed":
+        rolls.unlink()
+    else:
+        for r in records:
+            r["new"] = r["new"] + "Z"
+        rolls.write_text("".join(json.dumps(r, sort_keys=True) + "\n" for r in records),
+                         encoding="utf-8")
+    with pytest.raises(wp.ProfileError, match="no roll record"):
+        _profile(config, state, "test_synth", cell)

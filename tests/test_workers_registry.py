@@ -112,6 +112,13 @@ def test_the_sanitizer_keeps_printable_ascii_on_one_line():
     assert rg.sanitize(printable, 200) == printable.strip()
 
 
+def test_a_cut_on_a_space_leaves_no_trailing_space():
+    """Decision 119 (b), REVIEW-14 note 3: the text is stripped again after the cut."""
+    assert rg.sanitize("ab cd", 3) == "ab"
+    assert rg.sanitize("  ab \t\n cd", 3) == "ab"
+    assert rg.sanitize("ab cd", 4) == "ab c"
+
+
 def test_the_registry_holds_exactly_the_expected_lines_in_order(built, setup):
     state, ids = built
     th = setup.thresholds

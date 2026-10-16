@@ -337,17 +337,19 @@ def mixed_ran_template(tmp_path_factory, template_config):
 
     setup = journal.Setup.load(template_config, "test_mixed")
     path = tmp_path_factory.mktemp("template-mixed-ran") / "state"
-    _cli("init-state", "--state", str(path), "--as-of", RAN_AS_OF)
-    for name in RAN_FILES:
-        source = REPO_ROOT / "reference" / name
-        strat = load_strategy_file(source, setup.thresholds)
-        write_approach(
-            path, source=source.read_text(encoding="utf-8"), params=strat.params,
-            cell="trend/short", model_id="test-model", model_version="test-model-v0",
-            cutoff=date(2019, 1, 1), description=f"the reference strategy {name}",
-            profile_version="w-test", admitted=RAN_ADMITTED, instruments=setup.instruments,
-            spread_tables=setup.spread_tables)
-    for d in RAN_DAYS:
-        _cli("--state", str(path), "--config", str(template_config), "--track", "test_mixed",
-             "--as-of", RAN_AS_OF, "run-day", "--day", d.isoformat())
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setenv("GIT_ALLOW_PROTOCOL", "file")
+        _cli("init-state", "--state", str(path), "--as-of", RAN_AS_OF)
+        for name in RAN_FILES:
+            source = REPO_ROOT / "reference" / name
+            strat = load_strategy_file(source, setup.thresholds)
+            write_approach(
+                path, source=source.read_text(encoding="utf-8"), params=strat.params,
+                cell="trend/short", model_id="test-model", model_version="test-model-v0",
+                cutoff=date(2019, 1, 1), description=f"the reference strategy {name}",
+                profile_version="w-test", admitted=RAN_ADMITTED,
+                instruments=setup.instruments, spread_tables=setup.spread_tables)
+        for d in RAN_DAYS:
+            _cli("--state", str(path), "--config", str(template_config), "--track",
+                 "test_mixed", "--as-of", RAN_AS_OF, "run-day", "--day", d.isoformat())
     return path

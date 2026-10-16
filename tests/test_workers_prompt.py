@@ -303,7 +303,9 @@ def test_a_changed_cap_in_a_copied_configuration_changes_the_prompt(tmp_path, co
     for key, value in changed.items():
         assert re.findall(rf"\b{key} = ([0-9.]+)", p[3]) == [str(value)], key
     assert re.findall(r"\bhistory_cap_bars = (\d+)", p[3]) == ["321"]
-    assert p[0].split("\n")[1:] == [rg.sanitize(BRIEF, 40)] and len(rg.sanitize(BRIEF, 40)) == 40
+    # The cut at 40 lands on a space, which decision 119 (b) strips: 39 characters.
+    assert p[0].split("\n")[1:] == [rg.sanitize(BRIEF, 40)] == [BRIEF[:40].rstrip()]
+    assert len(rg.sanitize(BRIEF, 40)) == 39
 
 
 def test_the_static_checks_tables_and_the_indicators_appear(prompts):
