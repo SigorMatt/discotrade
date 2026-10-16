@@ -8,11 +8,11 @@ U1 6e3caa5 (key_present; doctor asks it; docstrings per 128 (b); ProviderError r
 cli.py help text and doctor docstring name removed, finding D-016; check 3/3 825-832 s).
 U2 512bb3e (doctor reads load_models and load_run's [workers] timeout; 8 tests; test MODELS_TOML given loader fields;
 run.toml without [workers] refused (design silent); check 3/3 831-837 s).
+U3 dcff385 (calendar and bar-length cache key tests; synth.py unchanged; check 3/3 834, 837, 890 s).
 
-Unit in progress: U3 (the cache key's calendar and bar-length parts held by tests; decision 130). Intent: two tests in
-tests/test_synth_cache.py; synth.py changes only if 130 (c) applies. Done means: changed-calendar and other-bar-length
-tests each assert differs-from-first and equals-cache-cleared; each seen red with its key part removed; existing
-tests unchanged; check 3/3; one commit pushed.
+Unit in progress: U4 (final report; decisions 127-131; DESIGN §18.2). Intent: sandbox build, ./scripts/check 3x at
+the tip, meta/FINAL-REPORT-16.md (drafted under meta/drafts/) with Corrections, Cache key, NOT PROVEN and the
+review-items table. Done means: the report committed and pushed; verdict line.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-16-m16 (127-131) bind; decisions 1-126 still
 bind; owner files (O-16..O-20, O-22) win. Product files changed only: src/discotrade/doctor.py,

@@ -148,3 +148,4 @@
 - 2026-10-16 mission 16 U0: plan written (U0-U4, S3.2a repaired, no gate); FINDINGS D-013, HF-010, HF-011, HF-012 lines (decision 131 (e)).
 - 2026-10-16 mission 16 U1 done 6e3caa5: key_present, doctor asks it, docstrings per 128 (b), ProviderError with no cause/context; 22 tests; D-016 filed (cli.py help text); check 3/3 (825-832 s).
 - 2026-10-16 mission 16 U2 done 512bb3e: doctor --live workers reads load_models and run.toml's [workers] timeout; 8 tests; check 3/3 (831-837 s).
+- 2026-10-16 mission 16 U3 done dcff385: calendar and bar-length cache key tests, synth.py unchanged; check 3/3 (834, 837, 890 s).
