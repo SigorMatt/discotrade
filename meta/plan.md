@@ -1,30 +1,26 @@
-# PLAN — mission 15 (roadmap step S3.2a)
+# PLAN — mission 16 (roadmap step S3.2a, repaired)
 
-Base commit: 301a5c7 (`plan: mission 15 kit (S3.2a, providers, pool, coordinator, generation)`).
-Brief: `meta/BUILDER-15-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-16-m15.md` (items 118-126 new); `meta/decisions/decisions-2026-10-15-m14.md` (109-117; 115-117 the modules called, 117 (c) amended by 119 (a)); owner `meta/decisions/decisions-2026-10-15-owner.md` (O-19, O-20, O-22 bind); owner `meta/decisions/decisions-2026-10-13-owner.md` (O-16 to O-18 bind every new module; O-11, O-13 read for S3.2b); `meta/decisions/decisions-2026-10-14-m13.md` (100-108; 104 (d)); `meta/decisions/decisions-2026-10-14-m12.md` (91-99; 92 the return-reader audit); `meta/decisions/decisions-2026-10-14-m11.md` (83-90); `meta/decisions/decisions-2026-10-14.md` (76-82; 80 the speed method); `meta/decisions/decisions-2026-10-12.md` (1-75 still bind; 61-63 what this step writes).
-Roadmap step: S3.2a (DESIGN §13.5 to §13.7, §14.1 to §14.3, as decisions 118 to 126 cut it).
+Base commit: 72c7836 (`plan: mission 16 kit (S3.2a repaired, REVIEW-15 blocker and should-fix)`).
+Brief: `meta/BUILDER-16-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-16-m16.md` (items 127-131 new); `meta/decisions/decisions-2026-10-16-m15.md` (118-126; 121 the synthetic cache, 122 the providers and L3, 123 the models and run configuration); `meta/decisions/decisions-2026-10-15-m14.md` (109-117); owner `meta/decisions/decisions-2026-10-15-owner.md` (O-19, O-20, O-22 bind); owner `meta/decisions/decisions-2026-10-13-owner.md` (O-16 to O-18 bind); `meta/decisions/decisions-2026-10-14-m13.md` (100-108); `meta/decisions/decisions-2026-10-12.md` (1-75 still bind).
+Roadmap step: S3.2a, repaired (REVIEW-15's blocker and should-fix items).
 
-This mission does not close a milestone.
+This mission does not close a milestone and runs no gate (decision 127 (a)).
 
-It runs, at its pushed tip, `discotrade sandbox build`, then gate M0 in one foreground call, gate M2 in one foreground call and gate M1 item by item (G1.1 to G1.4, each its own call) as a regression check, as decision 118 (b) says (U7), each output verbatim with its wall time beside mission 14's (M2 135 s; G1.1 385 s, G1.2 174 s, G1.3 546 s, G1.4 1 s).
-
-Not built here (decision 118 (a)): wiring the generation into `run-day` and `replay`, scoring on T, trial rows, the worker corpus, the M3 gate tests (S3.2b). Nothing of this mission is called from `run-day` or `replay`.
+Not built here: wiring the generation into `run-day` and `replay`, scoring on T, trial rows, the worker corpus, the M3 gate tests (S3.2b).
 
 Carried items:
-- REVIEW-14 should-fix 1: a fence line after the last block is no description (decision 119). — taken by U1
-- REVIEW-14 note 3: a sanitized text ends in no whitespace (decision 119). — taken by U1
-- REVIEW-14 note 4: the profile's roll-record refusal tested (decision 119). — taken by U1
-- REVIEW-14 note 7: the conftest templates pass `GIT_ALLOW_PROTOCOL=file` (decision 119). — taken by U1
-- REVIEW-14 note 11: HF-010 line, stale worktrees still registered (decision 120 (a)). — taken by U0
-- REVIEW-14 note 12: HF-011 line, the `report:` prefix (decision 120 (b)). — taken by U0
-- REVIEW-14 note 13: HF-012, concurrency of per-commit reviewers (decision 120 (c)). — taken by U0
-- Finding D-013: the synthetic source's per-day cost (decision 121). — taken by U2
+- REVIEW-15 blocker 1: one place reads the worker key, and the claim says so (decision 128). — taken by U1
+- REVIEW-15 note 3, first half: no `ProviderError` keeps a cause or a context (decision 128 (e)). — taken by U1
+- REVIEW-15 should-fix 1: `doctor --live workers` reads the loaded configuration (decision 129). — taken by U2
+- REVIEW-15 should-fix 2: the cache key's calendar and bar-length parts held by tests (decision 130). — taken by U3
+- REVIEW-15 note 6: the cache key parts named in the report with their tests (decision 130 (d)). — taken by U4
+- REVIEW-15 note 8: HF-010 line, stale worktrees still registered (decision 131 (e)). — taken by U0
+- REVIEW-15 note 9: HF-011 line, d5dfa02 carries `report:` (decision 131 (e)). — taken by U0
+- REVIEW-15 note 10: HF-012 line, sequential reviewers and their slips (decision 131 (e)). — taken by U0
+- D-013 times line, REVIEW-15's check times 794-834 s (decision 131 (e), (f)). — taken by U0
 
-- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (HF-010 and HF-011 lines, HF-012; decision 120).
-- [x] U1 REVIEW-14's should-fix 1 and notes 3, 4, 7 (decision 119; decisions 115, 116 (b), 117 (c); DESIGN §13.1, §13.3, §13.4). — e404e00 (fence line no description; sanitize strips after cut, prompt brief-cap test 40 -> 39 per 119 (b); roll-record refusal tested; mixed_ran_template GIT_ALLOW_PROTOCOL=file; check 3/3 ~790 s)
-- [x] U2 The synthetic source's per-day cost (decision 121; D-013; DESIGN §5.5, §17.1, §18.1; I-6). — aeed087 (process cache keyed by [source] table, seed, trusted_from, calendar, bar length; 4 tests; replay 1.598 -> 1.623 s/day (noise); check parent 791 s, commit 801-807 s; D-013 times line appended; conftest cache-clearing fixture)
-- [x] U3 The providers and live check L3's offline behaviour (decision 122; DESIGN §13.5, §19.3 L3; I-11, I-13). — d9acfcd (Scripted, OpenAICompat, ClaudeWorker providers; doctor --live workers; 34 + 11 tests; `workers` dropped from the usage-error list per 122 (e); claude flags from claude --help 2.1.300 and SPEC §17 (--max-turns); check 3/3 793-797 s)
-- [x] U4 `config/models.toml` and the pool (decisions 123, 124; DESIGN §13.6, §4.3, §11.3, §15.2; R-14, R-21; I-5, I-10). — 0260f0c (four records verified = false, base_url https://api.tokenfactory.nebius.com/v1/ from docs.tokenfactory.nebius.com/quickstart; [workers] tables; one frozen-map entry; pool.py; config-check listing test and doctor helper adjusted; doctor.py not switched to the loader; check 3/3 800-812 s)
-- [x] U5 The coordinator interface and its scripted form (decision 125; DESIGN §14.1-§14.3, §16.1 step 3; I-8). — 5f5c5c5 (coordinator.py, 18 tests incl. the no-score property test; check 3/3 797-809 s)
-- [x] U6 The day's generation (decision 126; DESIGN §13.4, §13.7, §10.2, §12.2, §12.3, §16.2; R-25; I-5, I-6, I-13). — 41b2670 (generate.py; 17 tests, container one run; 9 fixture responses; no ledger, strategy or return_readers change; check 3/3 832-834 s, +30 s)
-- [x] U7 The gate runs (sandbox build, M0, M2, M1 G1.1-G1.4) and the final report (decisions 118, 120, 121; DESIGN §18.2). — d5dfa02 (check 3/3 848, 828, 838 s; image discotrade-sandbox:3b7d75c39621; M0 PASS 251 s, M2 PASS 130 s, G1.1 PASS 373 s, G1.2 PASS 173 s, G1.3 PASS 522 s, G1.4 PASS 1 s; no item above 10 min, no D-014 line; D-013 times line appended; meta/FINAL-REPORT-15.md)
+- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (D-013, HF-010, HF-011, HF-012 lines; decision 131 (e)).
+- [ ] U1 One place reads the worker key, and the claim says so (decision 128; 122 (c), (e); DESIGN §13.5, §19.3 L3; I-13).
+- [ ] U2 `doctor --live workers` reads the loaded configuration (decision 129; 122 (e), 123 (c), (d); DESIGN §19.3 L3, §4.3, §13.6; I-10).
+- [ ] U3 The cache key's calendar and bar-length parts held by tests (decision 130; 121 (a); DESIGN §5.5, §17.1; I-6).
+- [ ] U4 The final report (decisions 127 to 131; DESIGN §18.2).

@@ -144,3 +144,5 @@
 - 2026-10-16 mission 15 U5 done 5f5c5c5: Coordinator protocol, CellStatus with no score, ScriptedCoordinator, fallback for an out-of-list cell; 18 tests; check 3/3 (797-809 s).
 - 2026-10-16 mission 15 U6 done 41b2670: the day's generation (two calls at most, store before parse, replay from stored response, token budget, call rows of decision 62); 17 tests; check 3/3 (832-834 s).
 - 2026-10-16 mission 15 U7 done d5dfa02: check 3/3 (848, 828, 838 s); gates M0 (251 s), M2 (130 s), M1 G1.1-G1.4 (373, 173, 522, 1 s) PASS at 6259365; final report written; mission 15 finished.
+2026-10-16T14:48:50.434Z  consult 0mvb2wvkw-l01i (architect done) on aux.done of aux job 0mvawx4bx-gd45: VERDICT: next kit mission-16-kit
+- 2026-10-16 mission 16 U0: plan written (U0-U4, S3.2a repaired, no gate); FINDINGS D-013, HF-010, HF-011, HF-012 lines (decision 131 (e)).
