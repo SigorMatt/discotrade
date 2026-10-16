@@ -21,7 +21,7 @@ Carried items:
 - REVIEW-15 note 4: a duplicate on attempt 1 through the day, attempt 2's whole message list (decision 136 (h), 131 (c)). — taken by U2
 
 - [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (D-016 status; HF-010, HF-011, HF-012 lines; decision 134 (e), (f)). — 1a04ee1
-- [ ] U1 Scoring a generated candidate on T (decision 135; O-4, O-11, O-13, O-17, O-18; DESIGN §7.1, §8, §10.2, §10.3, §11.3, §12.4, §16.1 step 5).
+- [x] U1 Scoring a generated candidate on T (decision 135; O-4, O-11, O-13, O-17, O-18; DESIGN §7.1, §8, §10.2, §10.3, §11.3, §12.4, §16.1 step 5). — 014f06a (score_on_t; producer entry; 7 tests; check 3/3 834-844 s)
 - [ ] U2 Daily steps 3 to 5 in `run_day` (decision 136; 124, 125, 126, 131 (b), (c); DESIGN §13.6, §13.7, §14.1, §14.3, §15.2, §16.1, §16.2).
 - [ ] U3 The options of `run-day` and `replay`, and the scripted cursor (decision 137; 122 (b), (c); DESIGN §13.5, §14.2, §16.4).
 - [ ] U4 The worker corpus (decision 138; 122 (b); DESIGN §13.4, §17.1, §18.3 G3.1; HF-009).

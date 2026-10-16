@@ -153,3 +153,4 @@
 2026-10-16T19:00:55.918Z  consult 0mvbbpab4-bo08 (architect done) on aux.done of aux job 0mvb9ryqm-qi5g: VERDICT: next kit mission-17-kit
 - 2026-10-16 mission 17 U0 started at af85e55: plan, checkpoint, D-016 status and HF-010/011/012 lines (decision 134 (e), (f)).
 - 2026-10-16 mission 17 U0 done 1a04ee1: plan, checkpoint, D-016 answered, HF-010/011/012 lines; U1 started.
+- 2026-10-16 mission 17 U1 done 014f06a: daily.score_on_t, producer entry, 7 tests; check 3/3 (844, 838, 834 s); U2 started.
