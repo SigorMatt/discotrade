@@ -139,3 +139,4 @@
 - 2026-10-16 mission 15 U0 done: plan, checkpoint, HF-010 and HF-011 lines, HF-012 (decision 120); base 301a5c7.
 - 2026-10-16 mission 15 U1 done e404e00: fence line after last block is no_description; sanitize strips after the cut; roll-record refusal tested; conftest env; check 3/3 (~790 s).
 - 2026-10-16 mission 15 U2 done aeed087: synthetic series cached per process, byte-identical stores; no speed gain (1.598 vs 1.623 s/replay day); check 801-807 s, D-013 line appended.
+- 2026-10-16 mission 15 U3 done d9acfcd: three providers behind one protocol, doctor --live workers offline behaviour; 45 tests; check 3/3 (793-797 s).
