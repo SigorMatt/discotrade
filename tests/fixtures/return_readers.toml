@@ -25,6 +25,12 @@ class = "display"
 note = "the backtest command's output: plain DESIGN 8 metrics and per-instrument net_1x, net_2x totals; nothing selects on them (O-18, decision 92)"
 
 [[reader]]
+module = "discotrade.daily"
+function = "score_on_t"
+class = "producer"
+note = "scores a generated candidate on T through the grid's own code into metrics_t and adjusted_t for lifecycle.admit; decides nothing (decision 135 (d))"
+
+[[reader]]
 module = "discotrade.journal"
 function = "_columns"
 class = "producer"

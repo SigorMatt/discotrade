@@ -101,6 +101,22 @@ the next day (of a ``replay`` too) checks every file it reads again.
 
 No wall clock is read (I-12): the instant is the clock's, and the commit's
 dates are its.
+
+``score_on_t(state_dir, config_dir, setup, day, generated, backend)`` (DESIGN
+16.1 step 5, 7.1, 8, 10.2, 10.3; owner's O-4, O-11, O-13, O-17; decision
+2026-10-16-m17 135) turns the ``workers.generate.Candidate`` of ``day`` into the
+``lifecycle.Candidate`` that ``lifecycle.admit`` takes. Its fixed parameters
+(alone, no grid) run on T of ``day`` (``Track.windows(day).t``) through
+``backend`` in mode ``positions``, the job holding T's bars and their warm-up
+context per instrument and nothing later (``backtest.read_window``), and are
+scored by the grid's own code (``validation.sequence.dry_run_and_grid`` with
+its window T in place of W): T is scored on its own (``h(u0) = 0``),
+``metrics_t`` is the DESIGN 8 metrics on T and ``adjusted_t`` the figures of
+``replay.ADJUSTED_KEYS``, the average positions taken over T. The grid, its
+results, ``metrics_w`` and ``adjusted_w`` are the generation's. A sandbox error
+while scoring T is raised (:class:`DailyError`), never a worker's outcome: the
+candidate passed validation on W in the same backend (decision 135 (e)). It is
+not yet called by the day (decision 136 (d) calls it in step 5).
 """
 
 from __future__ import annotations
@@ -118,13 +134,15 @@ from discotrade import journal, ledger, lifecycle, paper, sources, state, stats,
 from discotrade.bars.gaps import check_gaps, day_end, latest_closed_day
 from discotrade.bars.store import BarStore, BarStoreError, day_run, finite_rows
 from discotrade.clock import Clock
-from discotrade.config import Calendar, TrackConfig, load_track_config
+from discotrade.config import Calendar, DateRange, TrackConfig, load_track_config
 from discotrade.rolls import update_rolls
 from discotrade.sandbox import process
 from discotrade.sandbox.base import Sandbox, choose_backend
 from discotrade.sources.base import BarSource
 from discotrade.state import HealthEvent
 from discotrade.tradingcal import expected_bars
+from discotrade.validation import sequence
+from discotrade.workers import generate
 
 REVISED_DATA = "revised_data"
 #: The notice of a fork server started again after one died (O-20 of 2026-10-15).
@@ -387,6 +405,40 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
     sha = state.commit(state_dir, track, d, clock) if moved else None
     return DayRun(d, result.status, result.rows, sha, tuple(appended), tuple(changes),
                   admission)
+
+
+@dataclass(frozen=True)
+class _OnT(sequence.Context):
+    """The grid's context with T of ``day`` as its window (decision 135 (a))."""
+
+    @property
+    def window(self) -> DateRange:
+        return self.setup.track.windows(self.day).t
+
+
+def score_on_t(state_dir: Path, config_dir: Path, setup: journal.Setup, day: date,
+               generated: generate.Candidate, backend: Sandbox) -> lifecycle.Candidate:
+    """The ``lifecycle.Candidate`` of ``generated``, scored on T of ``day`` in
+    ``backend`` (decision 135); ``DailyError`` when the sandbox fails on T."""
+    ctx = _OnT(Path(state_dir), Path(config_dir), setup, day, backend)
+    fixed = sequence.Submission(params=dict(generated.params), source=generated.source)
+    out = sequence.dry_run_and_grid(ctx, fixed)
+    if not out.ok:
+        raise DailyError(f"{day.isoformat()}: the candidate of call {generated.call} failed "
+                         f"in the sandbox while scored on T, after it passed on W: "
+                         f"{out.text}")
+    t = ctx.window
+    calendars = [setup.calendars[name]
+                 for name in sorted({inst.calendar for inst in setup.instruments})]
+    return lifecycle.Candidate(
+        source=generated.source, params=dict(generated.params),
+        cell=f"{generated.cell[0]}/{generated.cell[1]}", model_id=generated.model_id,
+        model_version=generated.model_version, cutoff=generated.cutoff,
+        description=generated.description, profile_version=generated.profile_version,
+        metrics_t=out.metrics_w, adjusted_t=out.adjusted_w,
+        t_days=tuple(stats.trading_dates(calendars, setup.track.bar_seconds, t.first,
+                                         t.last)),
+        grid=generated.grid, metrics_w=generated.metrics_w, adjusted_w=generated.adjusted_w)
 
 
 def describe(run: DayRun, track: str) -> Sequence[str]:
