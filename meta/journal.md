@@ -134,3 +134,4 @@
 - 2026-10-16 mission 14 U3 done 1112052: W profile p1 (workers/profile.py), 42 tests on test_synth and test_mixed; check 3/3 (849-901 s, 901 s under D-013).
 - 2026-10-16 mission 14 U4 done 7e4c098: anonymization (sha256 seed of the call id) and the registry block, sanitizer; 17 tests; check 3/3 (845-882 s).
 - 2026-10-16 mission 14 U5 done 779c9a4: prompt builder (five parts, caps from thresholds, names from the static check, indicators from the library) and response parser (last python block, fixed refusal texts); 25 tests; check 3/3 (880-895 s).
+- 2026-10-16 mission 14 U6 done f5f43ee: at a3734d9 check 3/3 (784-830 s), image discotrade-sandbox:3b7d75c39621, gate M2 PASS (135 s), M1 G1.1 385 s, G1.2 174 s, G1.3 546 s, G1.4 1 s all PASS; final report; mission finished.

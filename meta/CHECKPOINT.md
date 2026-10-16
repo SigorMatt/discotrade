@@ -16,9 +16,10 @@ U4 7e4c098 (anonymize.py, registry.py; sanitize(text, max_chars); check 845-882 
 
 U5 779c9a4 (prompt.py, parse.py; sample prompt test_synth trend/short 2019-07-15 call-0001, 13969 chars; check 880-895 s).
 
-Unit in progress: U6 the gate runs and the final report (decisions 109, 113). Intent: check 3/3 at the tip, sandbox
-build, gate M2, gate M1 G1.1-G1.4 each its own call, outputs verbatim with times; meta/FINAL-REPORT-14.md drafted
-under meta/drafts/ and moved in by the report commit. Done means: report committed and pushed, verdict line.
+U6 f5f43ee (final report; gates at a3734d9: M2 PASS 135 s; M1 G1.1 385 s, G1.2 174 s, G1.3 546 s, G1.4 1 s PASS;
+check 3/3 784-830 s).
+
+Unit in progress: none. Mission 14 finished; final report meta/FINAL-REPORT-14.md.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-15-m14 (109-117) bind; the owner's
 decisions-2026-10-15-owner (O-19, O-20, O-22) and decisions-2026-10-13-owner (O-16..O-18 bind every new module) win;
