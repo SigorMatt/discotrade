@@ -6,12 +6,13 @@ Container runtime: docker. Image at mission 15's tip: discotrade-sandbox:3b7d75c
 Done: U0 ef3ebc4 (plan; D-013, HF-010, HF-011, HF-012 lines; decision 131 (e)).
 U1 6e3caa5 (key_present; doctor asks it; docstrings per 128 (b); ProviderError raised outside except; 22 tests;
 cli.py help text and doctor docstring name removed, finding D-016; check 3/3 825-832 s).
+U2 512bb3e (doctor reads load_models and load_run's [workers] timeout; 8 tests; test MODELS_TOML given loader fields;
+run.toml without [workers] refused (design silent); check 3/3 831-837 s).
 
-Unit in progress: U2 (doctor --live workers reads the loaded configuration; decision 129). Intent: live_workers reads
-the pool by config.load_models and the timeout by config.load_run(...).workers.request_timeout_seconds;
-WORKERS_TIMEOUT_SECONDS and the raw tomllib parse removed. Done means: the four 123 (c) refusals give the one FAIL
-line (matching `config check`'s text) and exit 1 with no request; a copied run.toml timeout reaches the provider;
-missing models.toml keeps its refusal; ok and missing-model paths still list the pool; check 3/3; one commit pushed.
+Unit in progress: U3 (the cache key's calendar and bar-length parts held by tests; decision 130). Intent: two tests in
+tests/test_synth_cache.py; synth.py changes only if 130 (c) applies. Done means: changed-calendar and other-bar-length
+tests each assert differs-from-first and equals-cache-cleared; each seen red with its key part removed; existing
+tests unchanged; check 3/3; one commit pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-16-m16 (127-131) bind; decisions 1-126 still
 bind; owner files (O-16..O-20, O-22) win. Product files changed only: src/discotrade/doctor.py,
