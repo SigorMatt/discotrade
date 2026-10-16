@@ -137,3 +137,4 @@
 - 2026-10-16 mission 14 U6 done f5f43ee: at a3734d9 check 3/3 (784-830 s), image discotrade-sandbox:3b7d75c39621, gate M2 PASS (135 s), M1 G1.1 385 s, G1.2 174 s, G1.3 546 s, G1.4 1 s all PASS; final report; mission finished.
 2026-10-16T04:59:47.999Z  consult 0mvahqgrk-xjmv (architect done) on aux.done of aux job 0mvaemke3-7omn: VERDICT: next kit mission-15-kit
 - 2026-10-16 mission 15 U0 done: plan, checkpoint, HF-010 and HF-011 lines, HF-012 (decision 120); base 301a5c7.
+- 2026-10-16 mission 15 U1 done e404e00: fence line after last block is no_description; sanitize strips after the cut; roll-record refusal tested; conftest env; check 3/3 (~790 s).

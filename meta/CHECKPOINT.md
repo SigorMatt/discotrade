@@ -3,12 +3,13 @@
 Mission: 15 (`meta/BUILDER-15-PROMPT.md`), roadmap step S3.2a. Does not close a milestone. Base 301a5c7.
 Container runtime: docker. Image at mission 14's tip: discotrade-sandbox:3b7d75c39621.
 
-Done: U0 (plan; HF-010, HF-011 lines, HF-012; decision 120).
+Done: U0 ccaf429 (plan; HF-010, HF-011 lines, HF-012; decision 120).
+U1 e404e00 (fence line, sanitize after cut, roll-record test, conftest env; image discotrade-sandbox:3b7d75c39621; check 3/3 ~790 s).
 
-Unit in progress: U1 — REVIEW-14 should-fix 1 and notes 3, 4, 7 (decision 119). Done means: a fence line after
-the last block parses to `no_description`; `sanitize('ab cd', 3) == 'ab'`; the profile's roll-record refusal tested
-on a store built in the test; conftest templates running init-state/run-day pass GIT_ALLOW_PROTOCOL=file; seen-to-fail
-changes named; check 3/3; one commit pushed.
+Unit in progress: U2 — the synthetic source's per-day cost (decision 121; D-013). Done means: a cache in
+sources/synth.py keyed with the seed (and the record); day-by-day vs one fetch byte-identical bars, index, roll records;
+changed seed regenerates; s/replay-day of G1.3's first 30 days and check wall time at parent and commit in the body;
+no assertion moved; check 3/3; one commit pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-16-m15 (118-126) bind; owner files
 (O-11, O-13, O-16..O-20, O-22) win; decisions 1-117 still bind (117 (c) amended by 119 (a)). No value of a frozen

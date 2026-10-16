@@ -21,7 +21,7 @@ Carried items:
 - Finding D-013: the synthetic source's per-day cost (decision 121). — taken by U2
 
 - [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (HF-010 and HF-011 lines, HF-012; decision 120).
-- [ ] U1 REVIEW-14's should-fix 1 and notes 3, 4, 7 (decision 119; decisions 115, 116 (b), 117 (c); DESIGN §13.1, §13.3, §13.4).
+- [x] U1 REVIEW-14's should-fix 1 and notes 3, 4, 7 (decision 119; decisions 115, 116 (b), 117 (c); DESIGN §13.1, §13.3, §13.4). — e404e00 (fence line no description; sanitize strips after cut, prompt brief-cap test 40 -> 39 per 119 (b); roll-record refusal tested; mixed_ran_template GIT_ALLOW_PROTOCOL=file; check 3/3 ~790 s)
 - [ ] U2 The synthetic source's per-day cost (decision 121; D-013; DESIGN §5.5, §17.1, §18.1; I-6).
 - [ ] U3 The providers and live check L3's offline behaviour (decision 122; DESIGN §13.5, §19.3 L3; I-11, I-13).
 - [ ] U4 `config/models.toml` and the pool (decisions 123, 124; DESIGN §13.6, §4.3, §11.3, §15.2; R-14, R-21; I-5, I-10).
