@@ -9,10 +9,9 @@ cli.py help text and doctor docstring name removed, finding D-016; check 3/3 825
 U2 512bb3e (doctor reads load_models and load_run's [workers] timeout; 8 tests; test MODELS_TOML given loader fields;
 run.toml without [workers] refused (design silent); check 3/3 831-837 s).
 U3 dcff385 (calendar and bar-length cache key tests; synth.py unchanged; check 3/3 834, 837, 890 s).
+U4 6c10a3b (check 3/3 841, 834, 837 s at ef4548f; image discotrade-sandbox:3b7d75c39621; meta/FINAL-REPORT-16.md).
 
-Unit in progress: U4 (final report; decisions 127-131; DESIGN §18.2). Intent: sandbox build, ./scripts/check 3x at
-the tip, meta/FINAL-REPORT-16.md (drafted under meta/drafts/) with Corrections, Cache key, NOT PROVEN and the
-review-items table. Done means: the report committed and pushed; verdict line.
+Unit in progress: none. Mission 16 finished; meta/FINAL-REPORT-16.md exists.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-16-m16 (127-131) bind; decisions 1-126 still
 bind; owner files (O-16..O-20, O-22) win. Product files changed only: src/discotrade/doctor.py,
