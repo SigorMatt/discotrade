@@ -722,3 +722,24 @@ D-013 times (appended 2026-10-16, mission 14 U2): U2 shared identical setup acro
 D-013 times (appended 2026-10-16, mission 14 U3): U3's three `./scripts/check` runs, each its own foreground call with a 20-minute timeout, all green (2110 passed, `container` tests run on discotrade-sandbox:3b7d75c39621), took 849 s, 901 s and 850 s; the second is above HF-006's 15 minutes by under 2 s (pytest 899.9 s). U3's new module `tests/test_workers_profile.py` (42 tests) takes about 12 s alone: its stores (two fetches, one template copy, two scaled stores) about 5 s, its 72 profile documents about 6 s. No test was dropped or shortened. Status: open (mission 14 U3 at its commit)
 
 D-014 times (appended 2026-10-16, mission 14 U6): at tip a3734d9, after `discotrade sandbox build` (discotrade-sandbox:3b7d75c39621, present) and `./scripts/check` green three times (830 s, 785 s, 784 s), each item its own foreground call with a 20-minute timeout and nothing else of this project running: `./scripts/gate M1 G1.3` took 546 s wall (`G1.3 PASS 10 passed in 524.97s (0:08:44)`), against 576 s at mission 13 U6 and 607 s and 618 s in REVIEW-13; G1.1 385 s, G1.2 174 s, G1.4 1 s. No M1 item took above 10 minutes in this run. Status: open (for the owner, O-3's target)
+
+HF-010 status (appended 2026-10-16, mission 15 U0): REVIEW-14 (`hands:` note 11) found `/tmp/rv13-8b9f9be` and `/tmp/u5/parent` still registered as worktrees. Status: open (meta/decisions/decisions-2026-10-16-m15.md item 120 (a))
+
+HF-011 status (appended 2026-10-16, mission 15 U0): REVIEW-14 (`hands:` note 12): the commit f5f43ee carries the prefix `report:`, which the review protocol's skip list does not name either. Status: open (meta/decisions/decisions-2026-10-16-m15.md item 120 (b))
+
+### HF-012 — the review protocol does not say whether per-commit reviewers may run at once
+
+Severity: low · Component: the review protocol (`meta/REVIEW-PROTOCOL.md` and hands'
+templates) · Found: 2026-10-16, REVIEW-14 (`hands:` note 13), recorded by mission 15
+U0 (decision 120 (c)).
+
+Symptom. The review protocol dispatches one sub-agent per unit commit and does not
+say whether they may run at once. With `./scripts/check` near 13 minutes on four
+cores and the `container` tests' time limits, REVIEW-14 ran its five reviewers in
+sequence (about 83 minutes).
+
+Direction (for the hands Project). Say it in the protocol template.
+
+What this project does meanwhile: nothing in product code.
+
+Status: open
