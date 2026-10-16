@@ -1,1 +1,1 @@
-plan: mission 16 kit (S3.2a repaired, REVIEW-15 blocker and should-fix)
+plan: mission 17 kit (S3.2b, workers in the day, scoring on T, gate M3)

@@ -75,7 +75,30 @@ decisions-2026-10-16-m16 item 128), its should-fix 1 (`doctor --live
 workers` reading raw TOML and a fixed timeout) by mission 16 U2 (item
 129), its should-fix 2 (the cache key's calendar and bar-length parts
 untested) by mission 16 U3 (item 130), and its `hands:` notes 8 to 10 and
-the D-013 times by mission 16 U0 (item 131 (e), (f)).
+the D-013 times by mission 16 U0 (item 131 (e), (f)). REVIEW-16 has no
+blocker; its should-fix 1 (6e3caa5's body says more about its test history
+than the disk shows) is taken by mission 17 (step S3.2b, the final report's
+`## Corrections`; decisions-2026-10-16-m17 item 133), its notes 10 to 12
+and finding D-016 by mission 17 U0 (item 134 (e), (f)), and REVIEW-15's
+notes 2 and 4, left to step S3.2b, by mission 17 U2 (item 136 (g), (h)).
+
+- REVIEW-16 notes, not carried as work unless named (decision 134): note 3
+  (`ClaudeWorkerProvider` filtering the environment) stands, decision 128
+  (b) read as "reads it to use it"; note 7 (the understated cache-key row,
+  the "27 hours" comment) stands.
+- Left by REVIEW-16 to step S5.1 (decision 134 (b)), which builds the
+  doctor: a test of `doctor --live workers` with a `run.toml` that has no
+  `[workers]` table, and a `models.toml` path that is a directory reported
+  as missing (note 6).
+- Left by step S3.2b to step S4.2 (decision 137 (a)): the live default of
+  `run-day --provider` and `--coordinator`, chosen with the full daily run;
+  `--coordinator` gains the Claude Code form there.
+- For step S4.3: the fixture models of `tests/fixtures/config/models.toml`
+  have cutoffs in 2024 and 2026, so every approach observation of a replay
+  over 2019 is exposed (DESIGN §11.3), and no finding alert can read a
+  clean day. G4.2 needs clean paper days; S4.3 gives its replay models
+  whose cutoffs precede it, as new fixture records (no existing record
+  changes).
 
 - REVIEW-15 notes, not carried as work unless named (decision 131): note 1
   (`model_skipped` also raised when the fallback replaces the model, with
@@ -103,7 +126,12 @@ the D-013 times by mission 16 U0 (item 131 (e), (f)).
   cutoff, the worker corpus, the M3 gate tests, and the rest of live check
   L3 (twenty replay days with the real pool). REVIEW-11's note on G1.3's
   scenario (one admission line with a non-zero `avg_position`) may be
-  taken there if S3.2b touches the scenario.
+  taken there if S3.2b touches the scenario. Taken by mission 17
+  (decisions-2026-10-16-m17 items 135 to 139; the cursor is built from the
+  stored responses, item 137 (c)); `replay --provider openai` is built
+  there and tested for its refusal only, so the twenty days with the real
+  pool stay the owner's live check L3. G1.3's scenario is not touched
+  (O-19); REVIEW-11's note on it stays with step S4.1 or S4.3.
 
 - REVIEW-13 notes, not carried as work unless named: note 8
   (`changes_bars_in_place.py` is rejected only for being flat; nothing
