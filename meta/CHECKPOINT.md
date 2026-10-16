@@ -6,11 +6,13 @@ Container runtime: docker. Image at mission 16's tip: discotrade-sandbox:3b7d75c
 Done: U0 1a04ee1 (plan; D-016 answered; HF-010, HF-011, HF-012 lines).
 U1 014f06a (daily.score_on_t via sequence.dry_run_and_grid on T; producer entry; tests/test_daily_score_t.py 7 tests;
 three wrong changes seen red; check 3/3 844, 838, 834 s; image discotrade-sandbox:3b7d75c39621).
+U2 db29997 (run_day steps 3-5 with a provider passed in; tests/test_daily_generation.py 11 tests; three wrong changes
+seen red; check 3/3 867, 918, 923 s, two above 15 min, D-013 times line appended; module ~36 s).
 
-Unit in progress: U2 Daily steps 3 to 5 in run_day (decision 136). Intent: run_day gains an optional provider; on a
-new day with one, steps 3 to 5 (statuses, offered, pool, choose, generate, score_on_t, admit) run with health events
-logged at once; without one, state as at the parent. Done means: 136 (g), (h), (i) tests pass, three wrong changes
-seen red, check green 3/3, one commit pushed.
+Unit in progress: U3 The options of run-day and replay, and the scripted cursor (decision 137). Intent: --provider
+(none|scripted:<dir>|openai) and --coordinator scripted on both commands; replay builds the provider once per command
+with the scripted cursor's start counted from stored responses. Done means: 137 (d) tests pass, two wrong changes seen
+red, check green 3/3, one commit pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-16-m17 (132-140) bind; decisions 1-131 still
 bind; owner files (O-11, O-13, O-16..O-20, O-22) win. No file under config/ or tests/fixtures/rejected/, no existing
