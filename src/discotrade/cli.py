@@ -551,6 +551,58 @@ def _sandbox_refused(ctx: Context, args: argparse.Namespace, command: str) -> in
     return None
 
 
+_PROVIDER_HELP = (
+    "the worker provider of daily steps 3 to 5: none (the default: steps 3 to 5 do not "
+    "run), scripted:<directory> (canned responses, one subdirectory per model, the cursor "
+    "continuing after the responses stored in the state) or openai (the OpenAI-compatible "
+    "endpoint of models.toml, its key from the environment; refused, exit 1, without "
+    "it); a missing scripted directory or a missing or refused models.toml is a usage "
+    "error before any day runs (DESIGN 13.5, 16.4; decision 2026-10-16-m17 137)")
+
+
+def _provider_spec(value: str) -> str:
+    from discotrade.replay import PROVIDER_NONE, PROVIDER_OPENAI, SCRIPTED_PREFIX
+
+    if value in (PROVIDER_NONE, PROVIDER_OPENAI) or (
+            value.startswith(SCRIPTED_PREFIX) and len(value) > len(SCRIPTED_PREFIX)):
+        return value
+    raise argparse.ArgumentTypeError(f"{value!r} is not none, scripted:<directory> or openai")
+
+
+def _add_role_options(parser: argparse.ArgumentParser) -> None:
+    from discotrade.replay import COORDINATORS, PROVIDER_NONE
+
+    parser.add_argument("--provider", metavar="PROVIDER", type=_provider_spec,
+                        default=PROVIDER_NONE, help=_PROVIDER_HELP)
+    parser.add_argument("--coordinator", choices=COORDINATORS, default=COORDINATORS[0],
+                        help="the coordinator of daily step 4: scripted (the default and, "
+                        "in this step, the only one; DESIGN 14.2)")
+
+
+def _roles(ctx: Context, args: argparse.Namespace, command: str
+           ) -> tuple[int | None, Any, Any]:
+    """The provider and coordinator of the command, built once, before any day
+    runs; a refusal prints one line and gives its exit status (decision 137 (b))."""
+    from discotrade.config import ConfigError, load_track_config
+    from discotrade.replay import RolesRefused, make_coordinator, make_provider
+
+    assert ctx.state is not None
+    try:
+        provider = make_provider(args.provider, ctx.state, ctx.config, ctx.track)
+        if provider is None:
+            return None, None, None
+        coordinator = make_coordinator(args.coordinator,
+                                       load_track_config(ctx.config, ctx.track).track)
+    except RolesRefused as exc:
+        prefix = f"discotrade {command}: error:" if exc.status == 2 else f"{command}: FAIL:"
+        print(f"{prefix} {exc}", file=sys.stderr)
+        return exc.status, None, None
+    except (ConfigError, OSError, ValueError) as exc:
+        print(f"{command}: FAIL: {exc}", file=sys.stderr)
+        return 1, None, None
+    return None, provider, coordinator
+
+
 def _run_day(ctx: Context, args: argparse.Namespace) -> int:
     from discotrade.backtest import EvaluationError
     from discotrade.bars.store import BarStoreError
@@ -567,9 +619,12 @@ def _run_day(ctx: Context, args: argparse.Namespace) -> int:
     refused = _sandbox_refused(ctx, args, "run-day")
     if refused is not None:
         return refused
+    refused, provider, coordinator = _roles(ctx, args, "run-day")
+    if refused is not None:
+        return refused
     try:
         done = run_day(ctx.state, ctx.config, ctx.track, ctx.clock, args.day,
-                       sandbox=args.sandbox)
+                       sandbox=args.sandbox, provider=provider, coordinator=coordinator)
     except (DailyError, StateError, JournalError, ConfigError, BarStoreError, StrategyError,
             ResultError, EvaluationError, NotBuiltError, OSError, ValueError) as exc:
         print(f"run-day: FAIL: {exc}", file=sys.stderr)
@@ -586,8 +641,10 @@ def _add_run_day(subparsers: argparse._SubParsersAction,
         help="run daily steps 1 and 2 for one trading day of --track in a state directory "
         "made by init-state, under its lock: fetch bars to the end of the day, run the gap "
         "check, record rolls, journal every approach, rebuild the paper records, and "
-        "commit the state as `run <track> <date>`; a finished day run again writes "
-        "nothing (DESIGN 16.1, 16.2; decisions 2026-10-12 50 to 53)",
+        "commit the state as `run <track> <date>`; with a --provider other than none, "
+        "also steps 3 to 5 (the coordinator's cell, one worker call, validation, scoring on "
+        "T, admission); a finished day run again writes nothing (DESIGN 16.1, 16.2; "
+        "decisions 2026-10-12 50 to 53, 2026-10-16-m17 136, 137)",
     )
     run.add_argument(
         "--day", metavar="YYYY-MM-DD", default=None, type=date.fromisoformat,
@@ -596,6 +653,7 @@ def _add_run_day(subparsers: argparse._SubParsersAction,
         "DESIGN 16.1)",
     )
     _add_sandbox_option(run)
+    _add_role_options(run)
     run.set_defaults(handler=_run_day)
 
 
@@ -608,7 +666,13 @@ def _replay(ctx: Context, args: argparse.Namespace) -> int:
     from discotrade.config import ConfigError, load_track_config
     from discotrade.daily import DailyError
     from discotrade.journal import WRITTEN, JournalError, Setup
-    from discotrade.replay import CandidatesError, DayFailed, read_candidates, replay
+    from discotrade.replay import (
+        PROVIDER_NONE,
+        CandidatesError,
+        DayFailed,
+        read_candidates,
+        replay,
+    )
     from discotrade.sources import NotBuiltError
     from discotrade.state import StateError
     from discotrade.strategy import ResultError, StrategyError
@@ -627,6 +691,9 @@ def _replay(ctx: Context, args: argparse.Namespace) -> int:
     refused = _sandbox_refused(ctx, args, "replay")
     if refused is not None:
         return refused
+    if args.candidates is not None and args.provider != PROVIDER_NONE:
+        return usage(f"--candidates with --provider {args.provider}: a day has one source "
+                     "of candidates (decision 2026-10-16-m17 137 (b))")
     failures = (DailyError, StateError, JournalError, ConfigError, BarStoreError,
                 StrategyError, ResultError, EvaluationError, NotBuiltError, OSError, ValueError)
     try:
@@ -642,6 +709,9 @@ def _replay(ctx: Context, args: argparse.Namespace) -> int:
                                          sorted(inst.symbol for inst in tc.instruments))
         except CandidatesError as exc:
             return usage(str(exc))
+    refused, provider, coordinator = _roles(ctx, args, "replay")
+    if refused is not None:
+        return refused
 
     def line(run: Any, instant: datetime) -> None:
         if run.status == WRITTEN:
@@ -658,7 +728,8 @@ def _replay(ctx: Context, args: argparse.Namespace) -> int:
 
     try:
         replay(ctx.state, ctx.config, ctx.track, tc, calendars, args.first, args.last, line,
-               failures, candidates, sandbox=args.sandbox)
+               failures, candidates, sandbox=args.sandbox, provider=provider,
+               coordinator=coordinator)
     except DayFailed as exc:
         print(f"replay: FAIL: {ctx.track} {exc}", file=sys.stderr)
         return 1
@@ -689,6 +760,7 @@ def _add_replay(subparsers: argparse._SubParsersAction, common: argparse.Argumen
     replay.add_argument("--to", dest="last", metavar="YYYY-MM-DD", required=True,
                         type=date.fromisoformat, help="last day of the span, included")
     _add_sandbox_option(replay)
+    _add_role_options(replay)
     replay.set_defaults(handler=_replay)
 
 

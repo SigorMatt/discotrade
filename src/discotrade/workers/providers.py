@@ -14,8 +14,8 @@ starts a process (decision 122 (f)). The worker key (decision 2026-10-16-m16
 module. Here, :func:`openai_compat_from_env` is the one function that reads the
 key's value, and it reads it to build the provider. :func:`key_present` only
 tests whether the key is set. :class:`ClaudeWorkerProvider` leaves the key out of
-its child's environment. Nothing here is called from ``run-day`` or ``replay``
-(decision 118 (a)).
+its child's environment. ``run-day`` and ``replay`` build a provider through
+``discotrade.replay.make_provider`` (decision 2026-10-16-m17 137).
 """
 
 from __future__ import annotations

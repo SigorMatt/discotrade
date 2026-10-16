@@ -33,6 +33,26 @@ no ``adjusted_w``; ``run_day`` admits or refuses it after lifecycle steps 1
 to 4 of ``D``. A candidate dated on a day the replay does not run is never
 used (the design is silent; nothing reads it).
 
+The roles (decision 2026-10-16-m17 137; DESIGN 13.5, 14.2, 16.4; I-6, I-13):
+``make_provider(spec, state_dir, config_dir, track)`` builds the worker provider
+of ``--provider`` once per command, before any day runs: ``none`` is no
+provider (steps 3 to 5 do not run); ``scripted:<directory>`` is a
+``ScriptedProvider`` over that directory whose ``start`` is
+``scripted_start``: per model, the number of stored response files under
+``responses/<track>/`` of the state directory whose ``model`` is that model
+(137 (c), amending decision 122 (b)'s "built from ``calls.jsonl``": a stored
+response survives a failed day while its call row does not, DESIGN 16.2, so no
+corpus file is served twice); ``openai`` is the provider
+``workers.providers.openai_compat_from_env`` builds, with ``base_url`` from
+``models.toml`` and ``request_timeout_seconds`` from ``run.toml``'s
+``[workers]``. A ``models.toml`` that is missing or refused, a ``scripted:``
+directory that does not exist, or (for ``openai``) a ``run.toml`` without
+``[workers]`` is ``RolesRefused`` with status 2; ``openai`` without a usable key
+(or with an empty ``base_url``) is ``RolesRefused`` with status 1, no request
+made. ``make_coordinator(name, track)`` gives the coordinator of
+``--coordinator``, whose only value in this step is ``scripted``. ``replay``
+passes the one provider and the one coordinator to every day.
+
 No wall clock is read (I-12): every instant comes from the calendars.
 """
 
@@ -48,7 +68,7 @@ from typing import Any
 
 from discotrade.bars.gaps import day_end
 from discotrade.clock import FixedClock
-from discotrade.config import Calendar, TrackConfig
+from discotrade.config import Calendar, ConfigError, Track, TrackConfig, load_models, load_run
 from discotrade.daily import DayRun, is_trading_day, run_day
 from discotrade.journal import REPO_ROOT, TRUSTED_DIRS
 from discotrade.lifecycle import Candidate
@@ -63,6 +83,81 @@ CANDIDATE_KEYS = ("adjusted_t", "cell", "cutoff", "day", "description", "metrics
 ADJUSTED_FIGURES = ("sharpe", "sharpe_2x", "total_return", "total_return_2x")
 ADJUSTED_KEYS = (*ADJUSTED_FIGURES, "avg_position")
 _TEXT_KEYS = ("cell", "description", "model_id", "model_version", "profile_version")
+
+
+#: The transport the ``openai`` provider is built with: None (``httpx``'s own) in
+#: use; tests set a ``MockTransport`` that fails them if called.
+WORKERS_TRANSPORT: Any = None
+#: The values of ``--provider`` and ``--coordinator`` (decision 2026-10-16-m17 137 (a)).
+PROVIDER_NONE, PROVIDER_OPENAI, SCRIPTED_PREFIX = "none", "openai", "scripted:"
+COORDINATORS = ("scripted",)
+
+
+class RolesRefused(ValueError):
+    """A ``--provider`` refused before any day runs; ``status`` is the exit status."""
+
+    def __init__(self, status: int, message: str) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+def scripted_start(state_dir: Path, track: str) -> dict[str, int]:
+    """Per model, the number of stored response files under
+    ``responses/<track>/`` whose ``model`` is that model (decision 137 (c))."""
+    from discotrade.workers.generate import RESPONSES
+
+    counts: dict[str, int] = {}
+    for path in sorted((Path(state_dir) / RESPONSES / track).glob("*/*.json")):
+        model = str(json.loads(path.read_text(encoding="utf-8"))["model"])
+        counts[model] = counts.get(model, 0) + 1
+    return counts
+
+
+def make_provider(spec: str, state_dir: Path, config_dir: Path, track: str) -> Any:
+    """The worker provider of ``--provider spec`` (decision 137 (a), (b)), or None
+    for ``none``; ``RolesRefused`` for a provider refused before any day runs."""
+    from discotrade.workers import providers
+
+    if spec == PROVIDER_NONE:
+        return None
+    path = Path(config_dir) / "models.toml"
+    if not path.is_file():
+        raise RolesRefused(2, f"{path} does not exist: --provider {spec} reads the worker "
+                              "pool from it")
+    try:
+        models = load_models(path)
+    except ConfigError as exc:
+        raise RolesRefused(2, f"{exc}") from None
+    if spec.startswith(SCRIPTED_PREFIX):
+        directory = Path(spec[len(SCRIPTED_PREFIX):])
+        if not directory.is_dir():
+            raise RolesRefused(2, f"the scripted corpus {directory} is not a directory")
+        return providers.ScriptedProvider(directory, start=scripted_start(state_dir, track))
+    if spec != PROVIDER_OPENAI:
+        raise RolesRefused(2, f"--provider {spec!r} is not none, scripted:<directory> or "
+                              "openai")
+    try:
+        workers = load_run(Path(config_dir)).workers
+    except ConfigError as exc:
+        raise RolesRefused(2, f"{exc}") from None
+    if workers is None:
+        raise RolesRefused(2, f"{Path(config_dir) / 'run.toml'}: no [workers] table; the "
+                              "worker provider takes its request timeout from it")
+    try:
+        return providers.openai_compat_from_env(models.base_url,
+                                                workers.request_timeout_seconds,
+                                                transport=WORKERS_TRANSPORT)
+    except providers.ProviderError as exc:
+        raise RolesRefused(1, f"{exc}") from None
+
+
+def make_coordinator(name: str, track: Track) -> Any:
+    """The coordinator of ``--coordinator name``: ``scripted`` only in this step."""
+    from discotrade.coordinator import ScriptedCoordinator
+
+    if name not in COORDINATORS:
+        raise RolesRefused(2, f"--coordinator {name!r} is not one of {', '.join(COORDINATORS)}")
+    return ScriptedCoordinator(track)
 
 
 class CandidatesError(ValueError):
@@ -211,10 +306,12 @@ def replay(state_dir: Path, config_dir: Path, track: str, tc: TrackConfig,
            on_day: Callable[[DayRun, datetime], None],
            failures: tuple[type[Exception], ...],
            candidates: Mapping[date, Candidate] | None = None,
-           sandbox: Sandbox | str | None = None) -> int:
+           sandbox: Sandbox | str | None = None, provider: Any = None,
+           coordinator: Any = None) -> int:
     """Run every day of ``replay_days``, with its scripted candidate if any,
-    approaches on ``sandbox`` (as ``run_day`` takes it); call ``on_day`` after
-    each success. An exception of a type in ``failures`` stops the replay as
+    approaches on ``sandbox`` (as ``run_day`` takes it), and the one ``provider``
+    and ``coordinator`` of the command passed to every day (decision 137); call
+    ``on_day`` after each success. An exception of a type in ``failures`` stops the replay as
     ``DayFailed``. Return the number of days run."""
     count = 0
     for d, instant in replay_days(tc, calendars, first, last):
@@ -223,7 +320,8 @@ def replay(state_dir: Path, config_dir: Path, track: str, tc: TrackConfig,
             candidate = dataclasses.replace(candidate, t_days=t_days(tc, calendars, d))
         try:
             done = run_day(state_dir, config_dir, track, FixedClock(instant), d,
-                           candidate=candidate, sandbox=sandbox)
+                           candidate=candidate, sandbox=sandbox, provider=provider,
+                           coordinator=coordinator)
         except failures as exc:
             raise DayFailed(d, instant, exc) from exc
         on_day(done, instant)
