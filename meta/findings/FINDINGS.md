@@ -777,3 +777,11 @@ HF-010 status (appended 2026-10-16, mission 16 U0): REVIEW-15 (`hands:` note 8) 
 HF-011 status (appended 2026-10-16, mission 16 U0): REVIEW-15 (`hands:` note 9): the commit d5dfa02 again carries the prefix `report:`, which the review protocol's skip list does not name. Status: open (meta/decisions/decisions-2026-10-16-m16.md item 131 (e))
 
 HF-012 status (appended 2026-10-16, mission 16 U0): REVIEW-15 (`hands:` note 10) ran its six reviewers in sequence, about 2.5 hours in all. One reviewer ran a background test run and returned before it finished, and had to be resumed; one ran `uv sync --all-extras` (then synced back to `--extra dev` before any test); one ran `./scripts/check` twice. Direction (for the hands Project): the protocol template should say "run `./scripts/check` once, in the foreground, and report only when every command has finished". Status: open (meta/decisions/decisions-2026-10-16-m16.md item 131 (e))
+
+D-016 status (appended 2026-10-16, mission 17 U0): Status: answered meta/decisions/decisions-2026-10-16-m17.md (item 134 (e))
+
+HF-010 status (appended 2026-10-16, mission 17 U0): REVIEW-16 (note 10) still found `/tmp/rv13-8b9f9be` and `/tmp/u5/parent` registered as worktrees. Status: open (meta/decisions/decisions-2026-10-16-m17.md item 134 (f))
+
+HF-011 status (appended 2026-10-16, mission 17 U0): REVIEW-16 (note 11): the commit 6c10a3b again carries the prefix `report:`, which the review protocol's skip list does not name. Status: open (meta/decisions/decisions-2026-10-16-m17.md item 134 (f))
+
+HF-012 status (appended 2026-10-16, mission 17 U0): REVIEW-16 (note 12) ran its three reviewers in sequence, about 51 minutes in all, each running `./scripts/check` once in the foreground, following HF-012's direction by hand. Status: open (meta/decisions/decisions-2026-10-16-m17.md item 134 (f))
