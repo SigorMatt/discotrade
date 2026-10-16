@@ -141,3 +141,4 @@
 - 2026-10-16 mission 15 U2 done aeed087: synthetic series cached per process, byte-identical stores; no speed gain (1.598 vs 1.623 s/replay day); check 801-807 s, D-013 line appended.
 - 2026-10-16 mission 15 U3 done d9acfcd: three providers behind one protocol, doctor --live workers offline behaviour; 45 tests; check 3/3 (793-797 s).
 - 2026-10-16 mission 15 U4 done 0260f0c: config/models.toml (4 records, verified = false), [workers] tables, loader with refusals, pool (rotation, fallback, removal, cell window from calls.jsonl); check 3/3 (800-812 s).
+- 2026-10-16 mission 15 U5 done 5f5c5c5: Coordinator protocol, CellStatus with no score, ScriptedCoordinator, fallback for an out-of-list cell; 18 tests; check 3/3 (797-809 s).
