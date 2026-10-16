@@ -5,11 +5,12 @@ Container runtime: docker. Image at mission 14's tip: discotrade-sandbox:3b7d75c
 
 Done: U0 ccaf429 (plan; HF-010, HF-011 lines, HF-012; decision 120).
 U1 e404e00 (fence line, sanitize after cut, roll-record test, conftest env; image discotrade-sandbox:3b7d75c39621; check 3/3 ~790 s).
+U2 aeed087 (synth process cache; no speed gain: 1.598 vs 1.623 s/replay day; check 791 s parent, 801-807 s commit; D-013 line).
 
-Unit in progress: U2 — the synthetic source's per-day cost (decision 121; D-013). Done means: a cache in
-sources/synth.py keyed with the seed (and the record); day-by-day vs one fetch byte-identical bars, index, roll records;
-changed seed regenerates; s/replay-day of G1.3's first 30 days and check wall time at parent and commit in the body;
-no assertion moved; check 3/3; one commit pushed.
+Unit in progress: U3 — the providers and L3 offline (decision 122). Done means: workers/providers.py with
+ScriptedProvider, OpenAICompatProvider (httpx.MockTransport tests), ClaudeWorkerProvider (fake claude); doctor --live
+workers without key prints one line, exits 1, no request; SUBPROCESS_FILES updated; seen-to-fail changes named;
+check 3/3; one commit pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-16-m15 (118-126) bind; owner files
 (O-11, O-13, O-16..O-20, O-22) win; decisions 1-117 still bind (117 (c) amended by 119 (a)). No value of a frozen
