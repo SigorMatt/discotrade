@@ -9,9 +9,11 @@ notice only on a written day; image discotrade-sandbox:3b7d75c39621; check 3/3 8
 
 U2 a0ba5e8 (shared states, trusted_hashes cache; check 841-891 s, target 12 min missed, under D-013).
 
-Unit in progress: U3 the W profile p1 (decision 115). Intent: src/discotrade/workers/{__init__,profile}.py and
-tests/test_workers_profile.py per 115 (a)-(e). Done means: the unit's gate met, seen-to-fail changes named, check
-3/3 green, one commit pushed.
+U3 1112052 (W profile p1; workers/profile.py: profile(state_dir, track, instruments, calendars, day, cell) -> dict;
+check 849-901 s).
+
+Unit in progress: U4 anonymization and the registry (decision 116). Intent: workers/anonymize.py, workers/registry.py
+and their tests per 116 (a)-(c). Done means: the unit's gate met, seen-to-fail changes named, check 3/3, pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-15-m14 (109-117) bind; the owner's
 decisions-2026-10-15-owner (O-19, O-20, O-22) and decisions-2026-10-13-owner (O-16..O-18 bind every new module) win;
