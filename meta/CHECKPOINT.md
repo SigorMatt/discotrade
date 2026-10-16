@@ -12,8 +12,11 @@ U2 a0ba5e8 (shared states, trusted_hashes cache; check 841-891 s, target 12 min 
 U3 1112052 (W profile p1; workers/profile.py: profile(state_dir, track, instruments, calendars, day, cell) -> dict;
 check 849-901 s).
 
-Unit in progress: U4 anonymization and the registry (decision 116). Intent: workers/anonymize.py, workers/registry.py
-and their tests per 116 (a)-(c). Done means: the unit's gate met, seen-to-fail changes named, check 3/3, pushed.
+U4 7e4c098 (anonymize.py, registry.py; sanitize(text, max_chars); check 845-882 s).
+
+Unit in progress: U5 the prompt builder and the response parser (decision 117). Intent: workers/prompt.py,
+workers/parse.py and their tests per 117 (a)-(d). Done means: the unit's gate met, seen-to-fail changes named,
+check 3/3, pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-15-m14 (109-117) bind; the owner's
 decisions-2026-10-15-owner (O-19, O-20, O-22) and decisions-2026-10-13-owner (O-16..O-18 bind every new module) win;

@@ -132,3 +132,4 @@
 - 2026-10-16 mission 14 U1 done ad53fad: mount judged against the store (last_close), zero remaining time is limit [wall_clock], float inside the catch-all, builtins tuple, removal ends client, notice only on a written day; image discotrade-sandbox:3b7d75c39621; G2.3 PASS; check 3/3 (890-912 s).
 - 2026-10-16 mission 14 U2 done a0ba5e8: shared session states copied per module, trusted_hashes cache; check 916 s -> 841-891 s (3/3), 12-minute target missed, recorded under D-013; same node ids plus the cache test.
 - 2026-10-16 mission 14 U3 done 1112052: W profile p1 (workers/profile.py), 42 tests on test_synth and test_mixed; check 3/3 (849-901 s, 901 s under D-013).
+- 2026-10-16 mission 14 U4 done 7e4c098: anonymization (sha256 seed of the call id) and the registry block, sanitizer; 17 tests; check 3/3 (845-882 s).
