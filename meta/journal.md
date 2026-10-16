@@ -152,3 +152,4 @@
 - 2026-10-16 mission 16 U4 done 6c10a3b: check 3/3 (841, 834, 837 s); final report written; mission 16 finished.
 2026-10-16T19:00:55.918Z  consult 0mvbbpab4-bo08 (architect done) on aux.done of aux job 0mvb9ryqm-qi5g: VERDICT: next kit mission-17-kit
 - 2026-10-16 mission 17 U0 started at af85e55: plan, checkpoint, D-016 status and HF-010/011/012 lines (decision 134 (e), (f)).
+- 2026-10-16 mission 17 U0 done 1a04ee1: plan, checkpoint, D-016 answered, HF-010/011/012 lines; U1 started.

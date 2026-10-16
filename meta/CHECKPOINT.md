@@ -3,11 +3,12 @@
 Mission: 17 (`meta/BUILDER-17-PROMPT.md`), roadmap step S3.2b. Closes milestone M3. Base af85e55.
 Container runtime: docker. Image at mission 16's tip: discotrade-sandbox:3b7d75c39621.
 
-Done: none yet.
+Done: U0 1a04ee1 (plan; D-016 answered; HF-010, HF-011, HF-012 lines).
 
-Unit in progress: U0 Plan. Intent: write meta/plan.md, this file, a journal line, and the FINDINGS lines of decision
-134 (e), (f) (D-016 status answered; HF-010, HF-011, HF-012 status lines). Done means: the four files committed and
-pushed in one `plan:` commit.
+Unit in progress: U1 Scoring a generated candidate on T (decision 135). Intent: a function in daily.py turning a
+workers.generate.Candidate into a lifecycle.Candidate with T figures (metrics_t, adjusted_t) scored in the day's
+backend; producer entry in return_readers.toml; own test module. Done means: decision 135 (f)'s tests pass, the three
+wrong changes seen red, check green 3/3, one commit pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-16-m17 (132-140) bind; decisions 1-131 still
 bind; owner files (O-11, O-13, O-16..O-20, O-22) win. No file under config/ or tests/fixtures/rejected/, no existing
