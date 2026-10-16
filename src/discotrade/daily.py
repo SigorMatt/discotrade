@@ -1,4 +1,4 @@
-"""The daily run, steps 1, 2 and the rank persistence of step 6 (DESIGN 16.1,
+"""The daily run, steps 1 to 5 and the rank persistence of step 6 (DESIGN 16.1,
 16.2, 5.4, 5.6, 9.2, 9.3, 10.4, 10.5, 11.1, 15.2; decisions 2026-10-12 2, 3, 19,
 50 to 53, 55, 59, 62, 69, 70, 71; I-5, I-6, I-12, I-14).
 
@@ -115,8 +115,45 @@ its window T in place of W): T is scored on its own (``h(u0) = 0``),
 ``replay.ADJUSTED_KEYS``, the average positions taken over T. The grid, its
 results, ``metrics_w`` and ``adjusted_w`` are the generation's. A sandbox error
 while scoring T is raised (:class:`DailyError`), never a worker's outcome: the
-candidate passed validation on W in the same backend (decision 135 (e)). It is
-not yet called by the day (decision 136 (d) calls it in step 5).
+candidate passed validation on W in the same backend (decision 135 (e)).
+
+Steps 3 to 5 (DESIGN 16.1, 13.6, 13.7, 14.1, 14.3, 15.2, 16.2; decisions
+2026-10-16-m15 124 to 126, 2026-10-16-m16 131 (b), (c), 2026-10-16-m17 136; I-5,
+I-6, I-8, I-13) run when ``run_day`` is given a ``provider`` (a worker provider:
+``list_models`` and ``complete``) and the day is new (its journal file written by
+this run), after lifecycle steps 1 to 4 and before rank persistence and the
+table; without a provider the day is as before. A ``provider`` and a
+``candidate`` together are refused (decision 137 (b): a day has one source of
+candidates). In this order:
+
+- Skipped, with no call, when step 1's gap check raised ``data_gaps`` for W or T
+  of ``D`` (DESIGN 5.4).
+- Step 3: ``coordinator.cell_statuses`` and ``coordinator.offered`` for ``D``,
+  which read the states in force on ``D`` (rows dated before ``D``, from the state
+  directory, never the staged rows of ``D``'s own lifecycle step; 136 (g)). No
+  offered cell: nothing more, no list read and no call (the design is silent on
+  the list read; not reading it is the simplest). Then the day's pool:
+  ``workers.pool.day_pool`` over ``<config>/models.toml``'s models, the
+  provider's ``list_models()`` read once (a failure of the provider's error
+  class is ``None``: ``model_list_failed`` and no call), less
+  ``pool.removed_models`` of the rows of ``calls.jsonl`` dated before ``D``. An
+  empty pool (``pool_empty``) makes no call.
+- Step 4: ``coordinator.choose`` with ``coordinator`` (default
+  ``ScriptedCoordinator``) over the offered cells and ``coordinator.registry_lines``.
+- Step 5: ``workers.generate.generate`` with the provider, the day's pool, ``D``'s
+  trading ordinal and the day's backend, its call rows staged (``into``), its
+  responses stored at once under the state directory; a candidate is scored on T
+  (``score_on_t``) and admitted or refused (``lifecycle.admit``) into the staging
+  directory. Then ``pool.day_events`` over the rows of ``D`` and before
+  (``model_removed``, ``cell_needs_fallback``; ``workers.claude_fallback`` from
+  ``run.toml``, false when it has no ``[workers]``).
+
+Every health event of these steps (the pool's, the coordinator's, the
+generation's, ``day_events``') is appended to the health log when it is
+returned, so it survives a day that fails later (DESIGN 16.2's exception). A
+re-run of a journaled day runs none of them (I-6). A day that failed after a
+response was stored is new on its next run; its generation reads the stored
+response and makes no ``complete`` call.
 """
 
 from __future__ import annotations
@@ -127,14 +164,23 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 
+from discotrade import coordinator as coord
 from discotrade import journal, ledger, lifecycle, paper, sources, state, stats, table
 from discotrade.bars.gaps import check_gaps, day_end, latest_closed_day
 from discotrade.bars.store import BarStore, BarStoreError, day_run, finite_rows
 from discotrade.clock import Clock
-from discotrade.config import Calendar, DateRange, TrackConfig, load_track_config
+from discotrade.config import (
+    Calendar,
+    DateRange,
+    TrackConfig,
+    load_models,
+    load_run,
+    load_track_config,
+)
 from discotrade.rolls import update_rolls
 from discotrade.sandbox import process
 from discotrade.sandbox.base import Sandbox, choose_backend
@@ -143,6 +189,7 @@ from discotrade.state import HealthEvent
 from discotrade.tradingcal import expected_bars
 from discotrade.validation import sequence
 from discotrade.workers import generate
+from discotrade.workers import pool as worker_pool
 
 REVISED_DATA = "revised_data"
 #: The notice of a fork server started again after one died (O-20 of 2026-10-15).
@@ -164,6 +211,9 @@ class DayRun:
     events: tuple[HealthEvent, ...]      # appended to the health log by this run
     changes: tuple[Mapping[str, object], ...] = ()   # lifecycle rows appended by this run
     admission: lifecycle.Admission | None = None      # the day's candidate, when it had one
+    statuses: tuple[coord.CellStatus, ...] = ()       # step 3's cell statuses, when it ran
+    brief: coord.Brief | None = None                  # step 4's brief, when it ran
+    calls: tuple[Mapping[str, object], ...] = ()      # step 5's call rows, when it ran
 
 
 def _sources(tc: TrackConfig, calendars: Mapping[str, Calendar]) -> dict[str, BarSource]:
@@ -261,7 +311,8 @@ def _fetch(state_dir: Path, tc: TrackConfig, calendars: Mapping[str, Calendar], 
 
 def _step_1(state_dir: Path, tc: TrackConfig, calendars: Mapping[str, Calendar], day: date,
             now: datetime, max_fraction: float,
-            used: Mapping[str, BarSource]) -> list[HealthEvent]:
+            used: Mapping[str, BarSource]) -> tuple[list[HealthEvent], bool]:
+    """Step 1's events, and whether the gap check skips the day's generation."""
     events = _fetch(state_dir, tc, calendars, day, now, used)
     report = check_gaps(state_dir, tc, calendars, day, max_fraction)
     if report.event is not None:
@@ -270,7 +321,7 @@ def _step_1(state_dir: Path, tc: TrackConfig, calendars: Mapping[str, Calendar],
         _, notices = update_rolls(state_dir, tc.track.name, tc.track.bar_seconds, inst,
                                   used[inst.symbol], day)
         events.extend(notices)
-    return events
+    return events, report.skip_generation
 
 
 def _move(staging: Path, state_dir: Path) -> list[str]:
@@ -310,23 +361,99 @@ def _rank_persistence(state_dir: Path, setup: journal.Setup, day: date, first: d
 
 def run_day(state_dir: Path, config_dir: Path, track: str, clock: Clock,
             day: date | None = None, candidate: lifecycle.Candidate | None = None,
-            sandbox: Sandbox | str | None = None) -> DayRun:
+            sandbox: Sandbox | str | None = None, provider: Any = None,
+            coordinator: coord.Coordinator | None = None) -> DayRun:
     """Run steps 1 and 2 of ``day`` (or decision 19's ``D``), with the
-    admission of ``candidate`` when given, and commit it. Approaches run on
-    ``sandbox``: a backend, or the name of one (None: the track's default,
-    decision 2026-10-14-m13 105 (b)); a name the track does not allow is
-    refused (``SandboxChoiceError``) before anything is read or written."""
+    admission of ``candidate`` when given, or steps 3 to 5 with ``provider``
+    when given (and ``coordinator``, the scripted one by default), and commit
+    it. Approaches run on ``sandbox``: a backend, or the name of one (None: the
+    track's default, decision 2026-10-14-m13 105 (b)); a name the track does
+    not allow is refused (``SandboxChoiceError``) before anything is read or
+    written."""
     state_dir = Path(state_dir)
+    if candidate is not None and provider is not None:
+        raise ValueError("a day has one source of candidates: a scripted candidate or a "
+                         "worker provider, not both (decision 2026-10-16-m17 137 (b))")
     if sandbox is None or isinstance(sandbox, str):
         choose_backend(load_track_config(Path(config_dir), track).instruments, sandbox)
     state.require_state_directory(state_dir)
     with state.lock(state_dir), day_run():
-        return _locked(state_dir, Path(config_dir), track, clock, day, candidate, sandbox)
+        return _locked(state_dir, Path(config_dir), track, clock, day, candidate, sandbox,
+                       provider, coordinator)
+
+
+@dataclass(frozen=True)
+class _Generated:
+    """What steps 3 to 5 of a day did."""
+
+    events: tuple[HealthEvent, ...] = ()
+    statuses: tuple[coord.CellStatus, ...] = ()
+    brief: coord.Brief | None = None
+    calls: tuple[Mapping[str, object], ...] = ()
+    admission: lifecycle.Admission | None = None
+
+
+def _steps_3_to_5(state_dir: Path, config_dir: Path, setup: journal.Setup, tc: TrackConfig,
+                  calendars: Mapping[str, Calendar], d: date, provider: Any,
+                  coordinator: coord.Coordinator | None, sandbox: Sandbox | str | None,
+                  staging: Path) -> _Generated:
+    """Steps 3 to 5 of the new day ``d`` (decision 136), each health event
+    appended to the health log as it is returned."""
+    from discotrade.workers.providers import ProviderError
+
+    track = setup.track
+    th = setup.thresholds
+    appended: list[HealthEvent] = []
+
+    def log(events: Sequence[HealthEvent]) -> None:
+        appended.extend(state.append_health(state_dir, track.name, events))
+
+    # Step 3: the cells, in force on d (rows dated before d; decision 136 (g)).
+    statuses = tuple(coord.cell_statuses(state_dir, track, th, d))
+    cells = coord.offered(statuses)
+    if not cells:
+        return _Generated(tuple(appended), statuses)
+    models = load_models(config_dir / "models.toml")
+    before = ledger.read(state_dir, track.name, ledger.CALLS)
+    removed = worker_pool.removed_models(before, models, d, th)
+    try:
+        listed: list[str] | None = list(provider.list_models())
+    except ProviderError:
+        listed = None
+    pool = worker_pool.day_pool(models, d, listed, removed)
+    log(pool.events)
+    if not pool.models:
+        return _Generated(tuple(appended), statuses)
+    # Step 4: the coordinator's choice (DESIGN 14.3).
+    lines = coord.registry_lines(state_dir, track, th, d)
+    brief, events = coord.choose(coordinator or coord.ScriptedCoordinator(track), cells,
+                                 lines, track, th, d)
+    log(events)
+    if brief is None:
+        return _Generated(tuple(appended), statuses)
+    # Step 5: the call, validation, scoring on T, admission.
+    ordinal = worker_pool.trading_ordinal(d, track.epoch,
+                                          lambda x: is_trading_day(tc, calendars, x))
+    admission = None
+    with journal.backend(setup, sandbox) as box:
+        out = generate.generate(state_dir, setup, d, brief.cell, brief.text,
+                                provider=provider, provider_errors=(ProviderError,),
+                                pool=pool, ordinal=ordinal, backend=box, into=staging)
+        log(out.events)
+        if out.candidate is not None:
+            scored = score_on_t(state_dir, config_dir, setup, d, out.candidate, box)
+            admission = lifecycle.admit(state_dir, setup, scored, d, into=staging)
+    run = load_run(config_dir)
+    fallback = bool(run.workers.claude_fallback) if run.workers is not None else False
+    rows = ledger.read(state_dir, track.name, ledger.CALLS, into=staging)
+    log(worker_pool.day_events(rows, models, d, th, fallback))
+    return _Generated(tuple(appended), statuses, brief, tuple(out.rows), admission)
 
 
 def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
             day: date | None, candidate: lifecycle.Candidate | None,
-            sandbox: Sandbox | str | None) -> DayRun:
+            sandbox: Sandbox | str | None, provider: Any = None,
+            coordinator: coord.Coordinator | None = None) -> DayRun:
     setup = journal.Setup.load(config_dir, track)
     tc = load_track_config(config_dir, track)
     calendars = dict(setup.calendars)
@@ -354,8 +481,8 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
     appended: list[HealthEvent] = []
     staging = state_dir / state.STAGING
     try:
-        events = _step_1(state_dir, tc, calendars, d, now,
-                         float(setup.thresholds["gaps.max_fraction"]), used)
+        events, skip = _step_1(state_dir, tc, calendars, d, now,
+                               float(setup.thresholds["gaps.max_fraction"]), used)
         appended += state.append_health(state_dir, track, events)
         shutil.rmtree(staging, ignore_errors=True)
         staging.mkdir()
@@ -387,9 +514,17 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
         changes = list(lifecycle.run_steps(state_dir, setup, d, records,
                                            dict(result.failures), into=staging))
         admission = None
+        generated = _Generated()
         if result.status == journal.WRITTEN and candidate is not None:
             admission = lifecycle.admit(state_dir, setup, candidate, d, into=staging)
             changes += admission.lifecycle
+        if result.status == journal.WRITTEN and provider is not None and not skip:
+            generated = _steps_3_to_5(state_dir, config_dir, setup, tc, calendars, d,
+                                      provider, coordinator, sandbox, staging)
+            appended += generated.events
+            admission = generated.admission
+            if admission is not None:
+                changes += admission.lifecycle
         if result.status == journal.WRITTEN:
             _rank_persistence(state_dir, setup, d, min(journaled | {d}), records, staging)
             table.write(staging, track, table.build(state_dir, setup, d, records,
@@ -404,7 +539,7 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
         shutil.rmtree(staging, ignore_errors=True)
     sha = state.commit(state_dir, track, d, clock) if moved else None
     return DayRun(d, result.status, result.rows, sha, tuple(appended), tuple(changes),
-                  admission)
+                  admission, generated.statuses, generated.brief, generated.calls)
 
 
 @dataclass(frozen=True)
