@@ -4,12 +4,14 @@ Mission: 16 (`meta/BUILDER-16-PROMPT.md`), roadmap step S3.2a repaired. Does not
 Container runtime: docker. Image at mission 15's tip: discotrade-sandbox:3b7d75c39621.
 
 Done: U0 ef3ebc4 (plan; D-013, HF-010, HF-011, HF-012 lines; decision 131 (e)).
+U1 6e3caa5 (key_present; doctor asks it; docstrings per 128 (b); ProviderError raised outside except; 22 tests;
+cli.py help text and doctor docstring name removed, finding D-016; check 3/3 825-832 s).
 
-Unit in progress: U1 (one place reads the worker key; decision 128). Intent: providers.key_present(); doctor's
-live_workers key check calls it and stops importing KEY_ENV; the two docstrings state 128 (b) and no more; every
-ProviderError of OpenAICompatProvider has __cause__ and __context__ None. Done means: the source test of 128 (c), the
-key_present tests, the doctor unset/blank-key tests with a failing transport, the cause/context test for status
-error, malformed body and timeout pass; existing provider and doctor tests unchanged; check 3/3; one commit pushed.
+Unit in progress: U2 (doctor --live workers reads the loaded configuration; decision 129). Intent: live_workers reads
+the pool by config.load_models and the timeout by config.load_run(...).workers.request_timeout_seconds;
+WORKERS_TIMEOUT_SECONDS and the raw tomllib parse removed. Done means: the four 123 (c) refusals give the one FAIL
+line (matching `config check`'s text) and exit 1 with no request; a copied run.toml timeout reaches the provider;
+missing models.toml keeps its refusal; ok and missing-model paths still list the pool; check 3/3; one commit pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-16-m16 (127-131) bind; decisions 1-126 still
 bind; owner files (O-16..O-20, O-22) win. Product files changed only: src/discotrade/doctor.py,

@@ -20,7 +20,7 @@ Carried items:
 - D-013 times line, REVIEW-15's check times 794-834 s (decision 131 (e), (f)). — taken by U0
 
 - [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (D-013, HF-010, HF-011, HF-012 lines; decision 131 (e)).
-- [ ] U1 One place reads the worker key, and the claim says so (decision 128; 122 (c), (e); DESIGN §13.5, §19.3 L3; I-13).
+- [x] U1 One place reads the worker key, and the claim says so (decision 128; 122 (c), (e); DESIGN §13.5, §19.3 L3; I-13). — 6e3caa5 (key_present; doctor asks it; 128 (b) docstrings; no cause/context; 22 tests; cli.py help string and doctor docstring changed for 128 (c)'s test, finding D-016; check 3/3 828, 832, 825 s)
 - [ ] U2 `doctor --live workers` reads the loaded configuration (decision 129; 122 (e), 123 (c), (d); DESIGN §19.3 L3, §4.3, §13.6; I-10).
 - [ ] U3 The cache key's calendar and bar-length parts held by tests (decision 130; 121 (a); DESIGN §5.5, §17.1; I-6).
 - [ ] U4 The final report (decisions 127 to 131; DESIGN §18.2).
