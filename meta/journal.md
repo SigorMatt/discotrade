@@ -155,3 +155,4 @@
 - 2026-10-16 mission 17 U0 done 1a04ee1: plan, checkpoint, D-016 answered, HF-010/011/012 lines; U1 started.
 - 2026-10-16 mission 17 U1 done 014f06a: daily.score_on_t, producer entry, 7 tests; check 3/3 (844, 838, 834 s); U2 started.
 - 2026-10-17 mission 17 U2 done db29997: run_day steps 3-5 with a provider, 11 tests; check 3/3 (867, 918, 923 s; two above 15 min, D-013 times line); U3 started.
+- 2026-10-17 mission 17 U3 done 545e7ec: --provider/--coordinator, scripted cursor from stored responses, 17 tests; check 3/3 (925, 928, 963 s; D-013 times line); U4 started.

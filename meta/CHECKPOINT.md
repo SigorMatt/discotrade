@@ -8,11 +8,14 @@ U1 014f06a (daily.score_on_t via sequence.dry_run_and_grid on T; producer entry;
 three wrong changes seen red; check 3/3 844, 838, 834 s; image discotrade-sandbox:3b7d75c39621).
 U2 db29997 (run_day steps 3-5 with a provider passed in; tests/test_daily_generation.py 11 tests; three wrong changes
 seen red; check 3/3 867, 918, 923 s, two above 15 min, D-013 times line appended; module ~36 s).
+U3 545e7ec (--provider/--coordinator on run-day and replay; provider once per command; scripted start from stored
+responses; tests/test_cli_provider.py 17 tests; two wrong changes seen red; providers.py docstring sentence; check 3/3
+925, 928, 963 s, D-013 times line).
 
-Unit in progress: U3 The options of run-day and replay, and the scripted cursor (decision 137). Intent: --provider
-(none|scripted:<dir>|openai) and --coordinator scripted on both commands; replay builds the provider once per command
-with the scripted cursor's start counted from stored responses. Done means: 137 (d) tests pass, two wrong changes seen
-red, check green 3/3, one commit pushed.
+Unit in progress: U4 The worker corpus (decision 138). Intent: tests/fixtures/worker_corpus/ (m3/, m3_pool/,
+strategies/, manifest.toml) and tests/test_worker_corpus.py; yield arranged and measured with a throwaway replay
+outside the repository. Done means: the corpus test passes in under 5 s, the one-character wrong change seen red,
+check green 3/3, one commit pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-16-m17 (132-140) bind; decisions 1-131 still
 bind; owner files (O-11, O-13, O-16..O-20, O-22) win. No file under config/ or tests/fixtures/rejected/, no existing

@@ -23,7 +23,7 @@ Carried items:
 - [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (D-016 status; HF-010, HF-011, HF-012 lines; decision 134 (e), (f)). — 1a04ee1
 - [x] U1 Scoring a generated candidate on T (decision 135; O-4, O-11, O-13, O-17, O-18; DESIGN §7.1, §8, §10.2, §10.3, §11.3, §12.4, §16.1 step 5). — 014f06a (score_on_t; producer entry; 7 tests; check 3/3 834-844 s)
 - [x] U2 Daily steps 3 to 5 in `run_day` (decision 136; 124, 125, 126, 131 (b), (c); DESIGN §13.6, §13.7, §14.1, §14.3, §15.2, §16.1, §16.2). — db29997 (run_day steps 3-5; 11 tests; check 3/3 867, 918, 923 s; D-013 times line)
-- [ ] U3 The options of `run-day` and `replay`, and the scripted cursor (decision 137; 122 (b), (c); DESIGN §13.5, §14.2, §16.4).
+- [x] U3 The options of `run-day` and `replay`, and the scripted cursor (decision 137; 122 (b), (c); DESIGN §13.5, §14.2, §16.4). — 545e7ec (options; cursor from stored responses; 17 tests; check 3/3 925, 928, 963 s; D-013 times line)
 - [ ] U4 The worker corpus (decision 138; 122 (b); DESIGN §13.4, §17.1, §18.3 G3.1; HF-009).
 - [ ] U5 The gate tests of M3 and the gate runs (decisions 132 (b), 139; 9, 40, 72; O-2, O-19; DESIGN §18.2, §18.3 M3). `gate:` commit.
 - [ ] U6 The final report (decisions 132 to 140; DESIGN §18.2).
