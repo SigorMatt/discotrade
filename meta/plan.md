@@ -29,5 +29,5 @@ Carried items:
 - [x] U2 `./scripts/check` under 12 minutes (decision 114; D-013; HF-006, HF-008; DESIGN §18.1). — a0ba5e8 (session-built shared states copied per module, trusted_hashes cache keyed by stat; parent 916 s, commit 841-891 s, 12-minute target missed, recorded under D-013; collect 2067 -> 2068, only the cache test added)
 - [x] U3 The W profile, `p1` (decision 115; DESIGN §13.1, §4.1, §5.6, §6.2; I-1, I-3, I-9, I-12). — 1112052 (profile(state_dir, track, instruments, calendars, day, cell); 42 tests; 14,565 bytes for test_synth trend/short 2019-07-15; check 3/3 849-901 s, 901 s line under D-013)
 - [x] U4 Anonymization and the registry (decision 116; DESIGN §13.2, §13.3, §10.3, §4.1, §4.3; I-8, I-10). — 7e4c098 (anonymize.labelling/anonymize/scale, registry.sanitize/registry; 17 tests; check 3/3 845-882 s)
-- [ ] U5 The prompt builder and the response parser (decision 117; DESIGN §13.4, §6, §7.3, §12.1, §12.2, §13.2; I-8, I-10, I-13).
+- [x] U5 The prompt builder and the response parser (decision 117; DESIGN §13.4, §6, §7.3, §12.1, §12.2, §13.2; I-8, I-10, I-13). — 779c9a4 (prompt.build(state_dir, setup, day, cell, brief, call_id), parse.parse(response, thresholds); 25 tests; no return reader found; check 3/3 880-895 s)
 - [ ] U6 The gate runs (sandbox build, M2, M1 G1.1-G1.4) and the final report (decisions 109, 113; DESIGN §18.2).
