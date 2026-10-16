@@ -151,3 +151,66 @@ def test_an_equal_record_on_a_new_source_is_served_without_building_the_series_a
     got = SynthSource(calendars, HOUR).fetch(again, TRUSTED_FROM, END)
     assert starts == [TRUSTED_FROM]
     pd.testing.assert_frame_equal(got, want, check_exact=True)
+
+
+#: The closure the calendar test adds to the copied ``synth_week`` record, in
+#: America/New_York time: 2019-02-12 09:00 to 2019-02-13 12:00, that is
+#: 2019-02-12 14:00 to 2019-02-13 17:00 UTC, inside [TRUSTED_FROM, END).
+ADDED_CLOSURE = ('\n[[closure]]\nstart = "2019-02-12 09:00"\nend = "2019-02-13 12:00"\n'
+                 'note = "closure added by the cache test"\n')
+CLOSED_FROM = datetime(2019, 2, 12, 14, tzinfo=UTC)
+CLOSED_UNTIL = datetime(2019, 2, 13, 17, tzinfo=UTC)
+#: The other bar length: 30 minutes. Every open, close, break and closure time
+#: of ``synth_week`` falls on a half hour, so its bars tile the open time.
+HALF_HOUR = 1800
+
+
+def _calendars(config):
+    return {p.stem: load_calendar(p) for p in sorted((config / "calendars").glob("*.toml"))}
+
+
+def _inside(frame, lo, hi):
+    return frame[(frame["ts"] >= pd.Timestamp(lo)) & (frame["ts"] < pd.Timestamp(hi))]
+
+
+def test_a_changed_calendar_record_in_a_copied_configuration_gives_another_series(tmp_path):
+    config = _gate_config(tmp_path)
+    rec = load_instrument(config / "instruments" / "SYNL.toml")
+    assert rec.calendar == "synth_week" and rec.trusted_from == date(2019, 1, 7)
+    before = _calendars(config)
+    first = SynthSource(before, HOUR).fetch(rec, TRUSTED_FROM, END)
+    # The span 2019-02-12 14:00 to 2019-02-13 17:00 UTC is 27 hours of open
+    # market under the copied record (a Tuesday 09:00 to a Wednesday 12:00 New
+    # York, with the 17:00-18:00 break), less any dropped bars.
+    assert len(_inside(first, CLOSED_FROM, CLOSED_UNTIL)) > 20
+    path = config / "calendars" / "synth_week.toml"
+    path.write_text(path.read_text(encoding="utf-8") + ADDED_CLOSURE, encoding="utf-8")
+    after = _calendars(config)
+    assert after["synth_week"] != before["synth_week"]
+    assert len(after["synth_week"].closures) == len(before["synth_week"].closures) + 1
+    second = SynthSource(after, HOUR).fetch(rec, TRUSTED_FROM, END)
+    # Differs from the first: no bar in the closure, and so fewer bars.
+    assert len(_inside(second, CLOSED_FROM, CLOSED_UNTIL)) == 0
+    assert len(second) < len(first)
+    assert not second["ts"].equals(first["ts"])
+    # Equals the series generated for the changed record with the cache cleared.
+    synth.clear_cache()
+    fresh = SynthSource(after, HOUR).fetch(rec, TRUSTED_FROM, END)
+    pd.testing.assert_frame_equal(second, fresh, check_exact=True)
+
+
+def test_the_same_instrument_at_another_bar_length_gives_another_series(tmp_path):
+    config = _gate_config(tmp_path)
+    calendars = _calendars(config)
+    rec = load_instrument(config / "instruments" / "SYNL.toml")
+    first = SynthSource(calendars, HOUR).fetch(rec, TRUSTED_FROM, END)
+    assert len(first) > 1000
+    assert set(first["ts"].dt.minute) == {0}
+    second = SynthSource(calendars, HALF_HOUR).fetch(rec, TRUSTED_FROM, END)
+    # Differs from the first: half-hour bars, so bars opening at :30 and more bars.
+    assert set(second["ts"].dt.minute) == {0, 30}
+    assert len(second) > len(first)
+    # Equals the series generated at that bar length with the cache cleared.
+    synth.clear_cache()
+    fresh = SynthSource(calendars, HALF_HOUR).fetch(rec, TRUSTED_FROM, END)
+    pd.testing.assert_frame_equal(second, fresh, check_exact=True)
