@@ -3,10 +3,13 @@
 Mission: 16 (`meta/BUILDER-16-PROMPT.md`), roadmap step S3.2a repaired. Does not close a milestone; runs no gate. Base 72c7836.
 Container runtime: docker. Image at mission 15's tip: discotrade-sandbox:3b7d75c39621.
 
-Done: none yet.
+Done: U0 ef3ebc4 (plan; D-013, HF-010, HF-011, HF-012 lines; decision 131 (e)).
 
-Unit in progress: U0 (plan). Intent: plan.md, this file, journal line, FINDINGS D-013/HF-010/HF-011/HF-012 lines
-(decision 131 (e)). Done means: the four files in one `plan:` commit, pushed.
+Unit in progress: U1 (one place reads the worker key; decision 128). Intent: providers.key_present(); doctor's
+live_workers key check calls it and stops importing KEY_ENV; the two docstrings state 128 (b) and no more; every
+ProviderError of OpenAICompatProvider has __cause__ and __context__ None. Done means: the source test of 128 (c), the
+key_present tests, the doctor unset/blank-key tests with a failing transport, the cause/context test for status
+error, malformed body and timeout pass; existing provider and doctor tests unchanged; check 3/3; one commit pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-16-m16 (127-131) bind; decisions 1-126 still
 bind; owner files (O-16..O-20, O-22) win. Product files changed only: src/discotrade/doctor.py,
