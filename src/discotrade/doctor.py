@@ -27,8 +27,8 @@ any request, writes nothing and exits 1.
 
 L3, ``--live workers`` (decision 2026-10-16-m15 122 (e)), reads
 ``<config>/models.toml`` and prints each configured model against the worker
-provider's model list, exit 1 when one is not listed. Without
-``NEBIUS_API_KEY``, without ``models.toml`` or with an empty ``base_url`` it
+provider's model list, exit 1 when one is not listed. Without the worker
+key, without ``models.toml`` or with an empty ``base_url`` it
 refuses with one line, exits 1 and makes no request. The rest of L3 (whether a
 seed is accepted, twenty replay days with the real pool) is step S3.2b's.
 
@@ -40,7 +40,6 @@ runtime it refuses, naming that none was found, exits 1 and starts nothing.
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import tomllib
 from collections.abc import Callable
@@ -225,14 +224,14 @@ LIVE["spreads"] = live_spreads
 def live_workers(ctx: Any, out: TextIO, err: TextIO, args: Any = None) -> int:
     """Live check L3 (DESIGN 19.3), its first part: the pool against the provider's list."""
     from discotrade.workers.providers import (
-        KEY_ENV,
         ProviderError,
+        key_present,
         no_key_message,
         openai_compat_from_env,
     )
 
     head = "doctor --live workers: FAIL:"
-    if not os.environ.get(KEY_ENV, "").strip():
+    if not key_present():
         print(f"{head} {no_key_message()}", file=err)
         return 1
     path = ctx.config / "models.toml"

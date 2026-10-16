@@ -252,3 +252,29 @@ def test_live_workers_reports_a_model_the_provider_does_not_list(monkeypatch, ca
     out = capsys.readouterr().out
     assert "maker-b/model-two (pool): NOT listed" in out
     assert "doctor --live workers: FAIL, 1 of 3 configured models not listed" in out
+
+
+@pytest.mark.parametrize("key", [None, "   "], ids=["unset", "spaces"])
+def test_live_workers_without_a_usable_key_never_calls_the_transport(monkeypatch, capsys,
+                                                                     tmp_path, key):
+    """Decision 2026-10-16-m16 128 (a), (c): the key check is ``providers.key_present``."""
+    import httpx
+
+    from discotrade import doctor as doc
+
+    def fail(request):
+        pytest.fail(f"the transport was called: {request.method} {request.url}")
+
+    monkeypatch.setattr(doc, "WORKERS_TRANSPORT", httpx.MockTransport(fail))
+    if key is None:
+        monkeypatch.delenv("NEBIUS_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("NEBIUS_API_KEY", key)
+    config = workers_config(tmp_path)
+    assert doctor("--live", "workers", config=config, track=TRACK) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    lines = captured.err.splitlines()
+    assert len(lines) == 1, lines
+    assert lines[0].startswith("doctor --live workers: FAIL:")
+    assert "no request was made" in lines[0]

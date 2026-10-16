@@ -678,6 +678,28 @@ Until the owner rules, the manifest stays as built.
 
 Status: open
 
+### D-016 — decision 128 (c)'s source test needs two lines outside the files decision 127 (a) names
+
+Severity: low · Component: `src/discotrade/cli.py` and `src/discotrade/doctor.py`'s
+module docstring, with decisions 2026-10-16-m16 127 (a) and 128 (b), (c) · Found:
+2026-10-16, mission 16 U1.
+
+Symptom. Decision 128 (c)'s test asserts that the text `NEBIUS_API_KEY` appears,
+under `src/discotrade/`, only in `workers/providers.py`. At 38c98cc it also stood in
+two texts that read nothing: the `--live` help string of `src/discotrade/cli.py`
+(line 475, "workers (L3) needs NEBIUS_API_KEY and ...") and `doctor.py`'s module
+docstring (line 31). Decision 127 (a) names `doctor.py` and `providers.py` as the
+only product files the mission changes, and the U1 brief names `doctor.py`'s key
+check only.
+
+What U1 did. The simplest change that lets 128 (c)'s test pass: both texts now say
+"the worker key" in place of the name. No behaviour changes; no test asserted
+either text.
+
+Direction (for the architect). Confirm the two text changes, or say another form.
+
+Status: open
+
 ## hands findings (continued)
 
 ### HF-010 — stale git worktrees of earlier aux sessions are left on the machine

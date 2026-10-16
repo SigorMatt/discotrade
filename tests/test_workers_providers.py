@@ -8,6 +8,7 @@ directory. Every key is a made-up string set by the test; none is read from the
 real environment.
 """
 
+import ast
 import json
 import logging
 import math
@@ -360,3 +361,106 @@ def test_only_providers_imports_httpx_or_starts_a_process_under_workers():
                       if any(n in p.read_text(encoding="utf-8")
                              for n in REACHING))
     assert reaching == ["providers.py"]
+
+
+# --- decision 2026-10-16-m16 128: one place reads the worker key ------------------------
+
+DUMMY_KEY = "nb-dummy-key-for-key-present-test"
+SRC = Path(pv.__file__).resolve().parents[1]  # src/discotrade
+PROVIDERS = Path(pv.__file__).resolve()
+PROVIDERS_MODULE = "discotrade.workers.providers"
+
+
+def _module_name(path: Path) -> str:
+    parts = list(path.relative_to(SRC.parent).with_suffix("").parts)
+    return ".".join(parts[:-1] if parts[-1] == "__init__" else parts)
+
+
+def _imported_from(node: ast.ImportFrom, path: Path) -> str:
+    """The absolute module of ``from <module> import ...`` in ``path``."""
+    if node.level == 0:
+        return node.module or ""
+    package = _module_name(path).split(".")
+    if path.name != "__init__.py":
+        package = package[:-1]
+    base = package[:len(package) - (node.level - 1)]
+    return ".".join(base + ([node.module] if node.module else []))
+
+
+def test_the_worker_key_is_named_only_in_providers_and_key_env_is_imported_nowhere():
+    files = sorted(SRC.rglob("*.py"))
+    assert PROVIDERS in files and SRC / "doctor.py" in files and SRC / "cli.py" in files
+    naming = sorted(str(p.relative_to(SRC)) for p in files
+                    if "NEBIUS_API_KEY" in p.read_text(encoding="utf-8"))
+    assert naming == [str(PROVIDERS.relative_to(SRC))]
+    importing = []
+    for path in files:
+        if path == PROVIDERS:
+            continue
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            module = _imported_from(node, path)
+            names = {alias.name for alias in node.names}
+            if module == PROVIDERS_MODULE and ("KEY_ENV" in names or "*" in names):
+                importing.append(str(path.relative_to(SRC)))
+    assert importing == []
+
+
+def test_the_source_test_resolves_a_relative_import_of_key_env():
+    # The test's own reader, on a made-up file: a relative import inside the package.
+    node = ast.parse("from .providers import KEY_ENV").body[0]
+    assert isinstance(node, ast.ImportFrom)
+    assert _imported_from(node, SRC / "workers" / "pool.py") == PROVIDERS_MODULE
+    node = ast.parse("from ..workers.providers import KEY_ENV").body[0]
+    assert isinstance(node, ast.ImportFrom)
+    assert _imported_from(node, SRC / "sources" / "vendor.py") == PROVIDERS_MODULE
+
+
+@pytest.mark.parametrize("value, present", [(None, False), ("", False), ("   ", False),
+                                            ("\t \n", False), (DUMMY_KEY, True)])
+def test_key_present_tells_whether_the_key_is_set_and_not_blank(monkeypatch, value,
+                                                                present):
+    if value is None:
+        monkeypatch.delenv("NEBIUS_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("NEBIUS_API_KEY", value)
+    result = pv.key_present()
+    assert type(result) is bool and result is present
+    # The result is a bool and nothing more: no part of the value can be read from it.
+    assert repr(result) in ("True", "False")
+    assert DUMMY_KEY[:6] not in repr(result) and DUMMY_KEY not in str(result)
+
+
+#: The failures whose ``ProviderError`` must carry no httpx exception (decision 128 (e)).
+CONTEXT_CASES = ["status", "not json", "no choices", "no usage", "content not text",
+                 "timeout", "transport"]
+
+
+def _assert_detached(error: BaseException) -> None:
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert_no_key(str(error), repr(error.args))
+
+
+@pytest.mark.parametrize("case", CONTEXT_CASES)
+def test_openai_compat_complete_errors_have_no_cause_and_no_context(case):
+    reply, _ = FAILURES[case]
+    provider, _ = provider_with(reply)
+    with pytest.raises(pv.ProviderError) as info:
+        provider.complete("openai/gpt-oss-120b", MESSAGES, 64)
+    _assert_detached(info.value)
+
+
+@pytest.mark.parametrize("reply", [FAILURES["status"][0], FAILURES["not json"][0], _timeout,
+                                   _connect_error,
+                                   lambda r: httpx.Response(200, json={"data": [{"n": 1}]}),
+                                   lambda r: httpx.Response(200, json={"nodata": []})],
+                         ids=["status", "not json", "timeout", "transport", "no id",
+                              "no data"])
+def test_openai_compat_list_models_errors_have_no_cause_and_no_context(reply):
+    provider, _ = provider_with(reply)
+    with pytest.raises(pv.ProviderError) as info:
+        provider.list_models()
+    _assert_detached(info.value)

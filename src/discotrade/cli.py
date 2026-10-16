@@ -472,7 +472,7 @@ def _add_doctor(subparsers: argparse._SubParsersAction, common: argparse.Argumen
     doctor.add_argument(
         "--live", metavar="NAME", default=None,
         help="the live check to run: vendor (L1) and spreads (L2) need DATABENTO_API_KEY "
-        "and refuse, exit 1, without it; workers (L3) needs NEBIUS_API_KEY and "
+        "and refuse, exit 1, without it; workers (L3) needs the worker key and "
         "config/models.toml and refuses, exit 1, without either; sandbox (L5) runs the "
         "container self-test and refuses, exit 1, without a container runtime; plain "
         "doctor and the other checks are built by step S5.1",

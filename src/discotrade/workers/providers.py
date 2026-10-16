@@ -9,10 +9,13 @@ Claude Code call with every tool denied. Every failure is one exception class,
 holds no key.
 
 This is the only module under ``discotrade.workers`` that imports ``httpx`` or
-starts a process (decision 122 (f)). The worker key is read from
-``NEBIUS_API_KEY`` only by :func:`openai_compat_from_env`, the code that builds
-the provider; it is never logged, stored in a field or put in a prompt (I-13).
-Nothing here is called from ``run-day`` or ``replay`` (decision 118 (a)).
+starts a process (decision 122 (f)). The worker key (decision 2026-10-16-m16
+128 (b)): under ``src/``, the name ``NEBIUS_API_KEY`` appears only in this
+module. Here, :func:`openai_compat_from_env` is the one function that reads the
+key's value, and it reads it to build the provider. :func:`key_present` only
+tests whether the key is set. :class:`ClaudeWorkerProvider` leaves the key out of
+its child's environment. Nothing here is called from ``run-day`` or ``replay``
+(decision 118 (a)).
 """
 
 from __future__ import annotations
@@ -104,6 +107,11 @@ class ScriptedProvider:
 
 # --- OpenAICompatProvider ---------------------------------------------------------------
 
+def key_present() -> bool:
+    """Whether the worker key is set and not blank; nothing of its value is returned."""
+    return bool(os.environ.get(KEY_ENV, "").strip())
+
+
 def no_key_message() -> str:
     return (f"{KEY_ENV} is not set: the worker provider needs its key in the environment "
             "(I-13); no request was made")
@@ -140,35 +148,48 @@ class OpenAICompatProvider:
         return f"OpenAICompatProvider({self.base_url!r}, timeout={self.timeout!r})"
 
     def _call(self, model: str, method: str, path: str, payload: Any = None) -> Any:
-        """The JSON body of one request; every failure a ``ProviderError`` without the key."""
+        """The JSON body of one request; every failure a ``ProviderError`` without the key.
+
+        Each ``ProviderError`` is raised after its ``except`` block has ended, so that
+        neither ``__cause__`` nor ``__context__`` holds the httpx exception or its
+        request (decision 2026-10-16-m16 128 (e)).
+        """
         url = f"{self.base_url}{path}"
+        failure = ""
         try:
             response = self._client.request(method, url, json=payload)
         except httpx.TimeoutException:
-            raise ProviderError(f"model {model}: timeout after {self.timeout} s on "
-                                f"{method} {path}") from None
+            failure = f"timeout after {self.timeout} s on {method} {path}"
         except httpx.HTTPError as exc:
             # Only the exception's type: its text is the transport's and is not repeated.
-            raise ProviderError(f"model {model}: transport error on {method} {path}: "
-                                f"{type(exc).__name__}") from None
+            failure = f"transport error on {method} {path}: {type(exc).__name__}"
+        if failure:
+            raise ProviderError(f"model {model}: {failure}")
         if not response.is_success:
             raise ProviderError(f"model {model}: status {response.status_code} on "
                                 f"{method} {path}")
+        body: Any = None
         try:
-            return response.json()
+            body = response.json()
         except ValueError:
-            raise ProviderError(f"model {model}: malformed body on {method} {path}: "
-                                "not JSON") from None
+            failure = f"malformed body on {method} {path}: not JSON"
+        if failure:
+            raise ProviderError(f"model {model}: {failure}")
+        return body
 
     def list_models(self) -> list[str]:
         body = self._call("(model list)", "GET", "/models")
+        missing = ""
+        ids: list[Any] = []
         try:
             data = _field(body, "data")
             ids = [_field(entry, "id") for entry in data]
             if not isinstance(data, list) or not all(isinstance(i, str) for i in ids):
                 raise KeyError("data[].id")
         except (KeyError, TypeError) as exc:
-            raise ProviderError(f"model (model list): malformed body: no {exc}") from None
+            missing = str(exc)
+        if missing:  # raised outside the except block: no context (decision 128 (e))
+            raise ProviderError(f"model (model list): malformed body: no {missing}")
         return ids
 
     def complete(self, model: str, messages: Sequence[Message],
@@ -176,13 +197,17 @@ class OpenAICompatProvider:
         payload = {"model": model, "messages": [dict(m) for m in messages],
                    "max_tokens": max_tokens}
         body = self._call(model, "POST", "/chat/completions", payload)
+        missing = ""
+        text = tokens_in = tokens_out = version = None
         try:
             text = _field(body, "choices", 0, "message", "content")
             tokens_in = _field(body, "usage", "prompt_tokens")
             tokens_out = _field(body, "usage", "completion_tokens")
             version = _field(body, "model")
         except KeyError as exc:
-            raise ProviderError(f"model {model}: malformed body: no {exc}") from None
+            missing = str(exc)
+        if missing:  # raised outside the except block: no context (decision 128 (e))
+            raise ProviderError(f"model {model}: malformed body: no {missing}")
         if not isinstance(text, str) or not isinstance(version, str) or not all(
                 isinstance(n, int) and not isinstance(n, bool) for n in (tokens_in, tokens_out)):
             raise ProviderError(f"model {model}: malformed body: a field of the wrong type")
@@ -193,7 +218,14 @@ class OpenAICompatProvider:
 def openai_compat_from_env(base_url: str, timeout: float,
                            transport: httpx.BaseTransport | None = None
                            ) -> OpenAICompatProvider:
-    """The provider with its key read from ``NEBIUS_API_KEY`` here and nowhere else."""
+    """The provider, built with the key's value read from ``NEBIUS_API_KEY``.
+
+    Decision 2026-10-16-m16 128 (b): under ``src/``, the name ``NEBIUS_API_KEY``
+    appears only in this module. Here, this is the one function that reads the
+    key's value, and it reads it to build the provider. :func:`key_present` only
+    tests whether the key is set. :class:`ClaudeWorkerProvider` leaves the key out
+    of its child's environment.
+    """
     return OpenAICompatProvider(base_url, os.environ.get(KEY_ENV, ""), timeout,
                                 transport=transport)
 
