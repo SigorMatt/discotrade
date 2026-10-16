@@ -116,24 +116,30 @@ def test_live_sandbox_with_an_empty_path_refuses_naming_no_runtime_and_starts_no
 # --- L3 workers, offline (decision 2026-10-16-m15 122 (e); I-11, I-13) ------------------
 
 FAKE_NEBIUS = "nb-test-key-0123456789abcdef"
-MODELS_TOML = """base_url = "{base}"
+# A models.toml written by the test into the copied configuration, in the shape
+# config.load_models accepts (decision 2026-10-16-m16 129 (c)); its ids are the test's.
+MODEL_TABLE = """
+[[model]]
+id = "{id}"
+maker = "{maker}"
+cutoff = "2025-01"
+cutoff_basis = "stated"
+pool = {pool}{extra}
 checked = "2026-10-11"
 source = "written by the test"
 verified = false
-
-[[model]]
-id = "maker-a/model-one"
-pool = true
-
-[[model]]
-id = "maker-b/model-two"
-pool = true
-fallback = "maker-b/model-two-small"
-
-[[model]]
-id = "maker-b/model-two-small"
-pool = false
 """
+MODELS_HEAD = """base_url = "{base}"
+checked = "2026-10-11"
+source = "written by the test"
+verified = false
+"""
+MODELS_TOML = (MODELS_HEAD
+               + MODEL_TABLE.format(id="maker-a/model-one", maker="A", pool="true", extra="")
+               + MODEL_TABLE.format(id="maker-b/model-two", maker="B", pool="true",
+                                    extra='\nfallback = "maker-b/model-two-small"')
+               + MODEL_TABLE.format(id="maker-b/model-two-small", maker="B", pool="false",
+                                    extra=""))
 WORKERS_BASE = "https://worker.example.invalid/v1"
 
 
@@ -278,3 +284,115 @@ def test_live_workers_without_a_usable_key_never_calls_the_transport(monkeypatch
     assert len(lines) == 1, lines
     assert lines[0].startswith("doctor --live workers: FAIL:")
     assert "no request was made" in lines[0]
+
+
+# --- L3 reads the loaded configuration (decision 2026-10-16-m16 129; 123 (c), (d)) ------
+
+#: Decision 123 (c)'s four refusals, each a models.toml written by the test.
+REFUSED_MODELS = {
+    "unknown key": MODELS_HEAD + MODEL_TABLE.format(
+        id="maker-a/model-one", maker="A", pool="true", extra="\ncolour = \"red\""),
+    "fallback of another maker": MODELS_HEAD
+    + MODEL_TABLE.format(id="maker-a/model-one", maker="A", pool="true",
+                         extra='\nfallback = "maker-b/model-two-small"')
+    + MODEL_TABLE.format(id="maker-b/model-two-small", maker="B", pool="false", extra=""),
+    "duplicate id": MODELS_HEAD
+    + MODEL_TABLE.format(id="maker-a/model-one", maker="A", pool="true", extra="")
+    + MODEL_TABLE.format(id="maker-a/model-one", maker="A", pool="true", extra=""),
+    "empty pool": MODELS_HEAD
+    + MODEL_TABLE.format(id="maker-a/model-one", maker="A", pool="false", extra=""),
+}
+
+
+def failing_transport(monkeypatch):
+    import httpx
+
+    from discotrade import doctor as doc
+
+    def fail(request):
+        pytest.fail(f"the transport was called: {request.method} {request.url}")
+
+    monkeypatch.setattr(doc, "WORKERS_TRANSPORT", httpx.MockTransport(fail))
+
+
+@pytest.mark.parametrize("case", sorted(REFUSED_MODELS))
+def test_live_workers_refuses_a_models_toml_the_loader_refuses_as_config_check_does(
+        monkeypatch, capsys, tmp_path, case):
+    """In a configuration copied under tmp with the test's models.toml, the doctor's one
+    line carries the text ``discotrade config check`` gives for the same file."""
+    failing_transport(monkeypatch)
+    monkeypatch.setenv("NEBIUS_API_KEY", FAKE_NEBIUS)
+    config = make_config(tmp_path / "config")
+    (config / "models.toml").write_text(REFUSED_MODELS[case], encoding="utf-8")
+    assert main(["--config", str(config), "--track", TRACK, "config", "check"]) == 1
+    checked = capsys.readouterr().err.splitlines()
+    assert len(checked) == 1 and checked[0].startswith("config check: FAIL: "), checked
+    text = checked[0].removeprefix("config check: FAIL: ")
+    assert "models.toml" in text
+    assert doctor("--live", "workers", config=config, track=TRACK) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.splitlines() == [
+        f"doctor --live workers: FAIL: {text}; no request was made"]
+
+
+def test_live_workers_refuses_a_run_toml_the_loader_refuses_with_one_line(
+        monkeypatch, capsys, tmp_path):
+    """A ``[workers]`` table with an unknown key, in a copied configuration."""
+    failing_transport(monkeypatch)
+    monkeypatch.setenv("NEBIUS_API_KEY", FAKE_NEBIUS)
+    config = workers_config(tmp_path)
+    run = config / "run.toml"
+    run.write_text(run.read_text(encoding="utf-8").replace(
+        "[workers]\n", "[workers]\nspeed = 1\n"), encoding="utf-8")
+    assert main(["--config", str(config), "--track", TRACK, "config", "check"]) == 1
+    text = capsys.readouterr().err.splitlines()[0].removeprefix("config check: FAIL: ")
+    assert "run.toml" in text
+    assert doctor("--live", "workers", config=config, track=TRACK) == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert captured.err.splitlines() == [
+        f"doctor --live workers: FAIL: {text}; no request was made"]
+
+
+def test_live_workers_builds_the_provider_with_run_tomls_request_timeout(
+        monkeypatch, capsys, tmp_path):
+    """A copied run.toml with request_timeout_seconds = 17.5 (written here): the
+    request the provider sends carries that timeout."""
+    recorder = _with_list(monkeypatch, ["maker-a/model-one", "maker-b/model-two",
+                                        "maker-b/model-two-small"])
+    config = workers_config(tmp_path)
+    run = config / "run.toml"
+    text = run.read_text(encoding="utf-8")
+    assert "request_timeout_seconds = 300.0" in text
+    run.write_text(text.replace("request_timeout_seconds = 300.0",
+                                "request_timeout_seconds = 17.5"), encoding="utf-8")
+    assert doctor("--live", "workers", config=config, track=TRACK) == 0
+    capsys.readouterr()
+    [request] = recorder.requests
+    assert request.extensions["timeout"] == {"connect": 17.5, "read": 17.5, "write": 17.5,
+                                             "pool": 17.5}
+
+
+def test_live_workers_lists_the_pool_in_file_order_with_its_labels(monkeypatch, capsys,
+                                                                    tmp_path):
+    _with_list(monkeypatch, ["maker-b/model-two-small", "maker-a/model-one"])
+    config = workers_config(tmp_path)
+    assert doctor("--live", "workers", config=config, track=TRACK) == 1
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[1:4] == ["maker-a/model-one (pool): listed",
+                          "maker-b/model-two (pool): NOT listed",
+                          "maker-b/model-two-small (fallback): listed"]
+
+
+def test_doctor_module_holds_no_timeout_constant_and_no_raw_toml_parse():
+    """Decision 129 (a): the timeout and the pool come from the loaded configuration."""
+    import ast
+    from pathlib import Path
+
+    from discotrade import doctor as doc
+    assert not hasattr(doc, "WORKERS_TIMEOUT_SECONDS")
+    tree = ast.parse(Path(doc.__file__).read_text(encoding="utf-8"))
+    imported = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
+    imported |= {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
+    assert "tomllib" not in imported

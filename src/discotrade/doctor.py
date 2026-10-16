@@ -25,11 +25,13 @@ existing table), and reports every instrument with a main-session hour above
 one tick (SPEC decision 14). Without ``DATABENTO_API_KEY`` it refuses before
 any request, writes nothing and exits 1.
 
-L3, ``--live workers`` (decision 2026-10-16-m15 122 (e)), reads
-``<config>/models.toml`` and prints each configured model against the worker
-provider's model list, exit 1 when one is not listed. Without the worker
-key, without ``models.toml`` or with an empty ``base_url`` it
-refuses with one line, exits 1 and makes no request. The rest of L3 (whether a
+L3, ``--live workers`` (decision 2026-10-16-m15 122 (e)), loads
+``<config>/models.toml`` with :func:`discotrade.config.load_models` and takes the
+request timeout from ``run.toml``'s ``[workers]`` (decision 2026-10-16-m16 129),
+then prints each configured model, in file order, against the worker provider's
+model list, exit 1 when one is not listed. Without the worker key, without
+``models.toml``, with a configuration the loaders refuse or with an empty
+``base_url`` it refuses with one line, exits 1 and makes no request. The rest of L3 (whether a
 seed is accepted, twenty replay days with the real pool) is step S3.2b's.
 
 L5, ``--live sandbox``, runs the container self-test of ``discotrade sandbox
@@ -41,12 +43,11 @@ from __future__ import annotations
 
 import argparse
 import sys
-import tomllib
 from collections.abc import Callable
 from datetime import UTC, datetime, time, timedelta
 from typing import Any, TextIO
 
-from discotrade.config import ConfigError, load_calendar, load_track_config
+from discotrade.config import ConfigError, load_calendar, load_models, load_run, load_track_config
 
 #: Where plain ``doctor`` and the checks not built in step S0.2 are built.
 LATER_STEP = "S5.1"
@@ -56,9 +57,6 @@ LIVE: dict[str, Callable[..., int]] = {}
 #: The transport L3 hands the worker provider; ``None`` is the real network. Tests
 #: put an ``httpx.MockTransport`` here (I-11).
 WORKERS_TRANSPORT: Any = None
-#: L3's request timeout in seconds: decision 123 (d)'s ``request_timeout_seconds``,
-#: which step S3.2a U4 adds to ``config/run.toml``.
-WORKERS_TIMEOUT_SECONDS = 300.0
 
 
 def usage_error(message: str) -> int:
@@ -235,21 +233,22 @@ def live_workers(ctx: Any, out: TextIO, err: TextIO, args: Any = None) -> int:
         print(f"{head} {no_key_message()}", file=err)
         return 1
     path = ctx.config / "models.toml"
-    try:
-        data = tomllib.loads(path.read_text(encoding="utf-8"))
-        base_url = data.get("base_url", "")
-        models = [(m["id"], bool(m.get("pool", True))) for m in data.get("model", [])]
-        if not isinstance(base_url, str) or not all(isinstance(i, str) for i, _ in models):
-            raise ValueError("base_url and every model id must be strings")
-    except FileNotFoundError:
+    if not path.is_file():
         print(f"{head} {path} does not exist (step S3.2a U4 creates config/models.toml); "
               "no request was made", file=err)
         return 1
-    except (OSError, ValueError, KeyError, TypeError, AttributeError) as exc:
-        print(f"{head} {path} cannot be read: {exc}; no request was made", file=err)
-        return 1
     try:
-        provider = openai_compat_from_env(base_url, WORKERS_TIMEOUT_SECONDS,
+        pool = load_models(path)
+        workers = load_run(ctx.config).workers
+        if workers is None:
+            raise ConfigError(f"{ctx.config / 'run.toml'}: no [workers] table; the worker "
+                              "provider takes its request timeout from it")
+    except ConfigError as exc:
+        print(f"{head} {exc}; no request was made", file=err)
+        return 1
+    models = [(m.id, m.pool) for m in pool.models]
+    try:
+        provider = openai_compat_from_env(pool.base_url, workers.request_timeout_seconds,
                                           transport=WORKERS_TRANSPORT)
         listed = set(provider.list_models())
     except ProviderError as exc:
