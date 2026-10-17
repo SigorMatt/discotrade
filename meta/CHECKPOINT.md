@@ -7,11 +7,13 @@ Done: U0 e0d19df (plan; HF-006, HF-012, HF-010 lines; HF-013, HF-014 new).
 U1 27a83b9 (table: adjusted_S/E_N/excess, control_moments column, register PENDING empty, 147 (d) exposure
 parameter added; G1.3 one line; three 148 (e) wrong changes red; check 3/3 1121, 1128, 1125 s; G1.3 PASS 855 s
 (above 10 min: D-014 times line due at U6), G1.4 PASS 1 s; image discotrade-sandbox:3b7d75c39621).
+U2 a7854da (stats: alerts.rank_rows `timing_gross`, rows gain timing and gross, stats.t_sf; daily passes the
+exposure records once; four wrong changes red; check 3/3 1153, 1072, 1185 s; G1.1 PASS 424 s; 2.554 -> 2.422 s
+per replay day).
 
-Unit in progress: U2 the timing statistic in the rank rows and the one-sided t-test (O-5, O-6, O-24; decisions
-149, 150). Done means: `stats:` commit pushed; check 3/3; 149 (d) and 150 tests; 149 (d)'s three wrong changes and
-150's two-sided probability seen red; `./scripts/gate M1 G1.1` PASS at the commit; seconds per replay day at
-parent and commit. Speed watch: G1.3 at 855 s after U1, 20-minute cap is FAIL (O-2).
+Unit in progress: U3 `persistent_approach` and `group_edge` on the exposure-adjusted series (O-7, O-16, O-24;
+decision 151). Done means: `alerts:` commit pushed; check 3/3; 151 (c) tests at production thresholds; its five
+wrong changes seen red. Rules not yet called by the day loop (U4 wires them). Check near the 20-minute cap.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-23 to O-25 win, then decisions 146-154, then
 1-145 where not replaced. Add, never replace (O-25): every function a met gate reads keeps its result for today's
