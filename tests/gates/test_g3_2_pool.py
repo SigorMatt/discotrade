@@ -52,6 +52,17 @@ copied in unchanged under the test's temporary directory, the fixture
   response (no second call), and its journal file written and committed in the
   state repository.
 
+For both replays (``m3/`` over G3.1's, ``m3_pool/`` over the pool's), the corpus
+manifest ``tests/fixtures/worker_corpus/manifest.toml``, read with ``tomllib``,
+is checked against the call rows (decision 143 (a)): every response file it lists
+with a ``served`` day gives exactly one call row with that day, that ``attempt``
+and that ``outcome``; every call row with a response maps to a file so listed;
+a file listed with no ``served`` day gives no call row. A row's file is the one
+the cursor served, mapped as above (the k-th response of a model is the model's
+k-th file in name order), and the row's stored ``text`` is asserted equal to its
+bytes; the bytes alone would not name it, since ``m3_pool/`` holds files with
+equal bytes.
+
 Seeds: the synthetic instruments' seeds are their fixture records' (``SEEDS``,
 asserted); no other random draw is made. Time comes only from ``--as-of`` of
 ``init-state`` and the replay's clock. Git runs on local paths only, with
@@ -66,6 +77,7 @@ import numpy as np
 import pytest
 from m1_harness import git
 from m3_harness import (
+    CORPUS,
     M3,
     M3_POOL,
     backend,
@@ -100,6 +112,7 @@ RETRY_TEXT = ("Your reply was refused by the validation, for the reason below. R
 STORED_KEYS = {"attempt", "call", "cell", "date", "messages", "model", "model_version", "raw",
                "text", "tokens_in", "tokens_out"}
 PRODUCTION = REPO_ROOT / "config" / "thresholds.toml"
+MANIFEST = CORPUS / "manifest.toml"
 
 
 def ordinal(day: date) -> int:
@@ -243,6 +256,31 @@ def test_every_response_is_stored_in_full(replayed):
         corpus_file = corpus_files(M3, r["model"])[k]
         assert doc["text"].encode("utf-8") == corpus_file.read_bytes(), (r, corpus_file)
     assert with_response == len(list((state / "responses" / TRACK).rglob("*.json")))
+
+
+def test_the_manifest_gives_each_served_files_day_attempt_and_outcome(replayed, pooled):
+    with open(MANIFEST, "rb") as f:
+        entries = tomllib.load(f)["response"]
+    for (state, _), corpus in ((replayed, M3), (pooled, M3_POOL)):
+        listed = {e["file"]: e for e in entries if e["file"].startswith(f"{corpus.name}/")}
+        assert listed, corpus
+        rows: dict[str, list[tuple]] = {}
+        cursor: dict[str, int] = {}
+        for r in calls(state, TRACK):
+            if r["response"] is None:
+                continue
+            k = cursor.get(r["model"], 0)
+            cursor[r["model"]] = k + 1
+            corpus_file = corpus_files(corpus, r["model"])[k]
+            assert stored(state, r)["text"].encode("utf-8") == corpus_file.read_bytes(), r
+            name = corpus_file.relative_to(CORPUS).as_posix()
+            assert name in listed and "served" in listed[name], (r, name)
+            rows.setdefault(name, []).append((r["date"], r["attempt"], r["outcome"]))
+        for name, e in listed.items():
+            if "served" in e:
+                assert rows.get(name) == [(e["served"], e["attempt"], e["outcome"])], name
+            else:
+                assert name not in rows, (name, rows[name])
 
 
 def test_production_values_of_the_pool_and_budget_keys(pooled, production):

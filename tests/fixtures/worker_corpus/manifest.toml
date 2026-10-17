@@ -1,6 +1,6 @@
 # The worker corpus of gate items G3.1 and G3.2 (DESIGN 13.4, 13.5, 17.1, 18.3;
 # decisions 138 and 122 (b) of meta/decisions/; HF-009). Checked by
-# tests/test_worker_corpus.py; what a replay makes of it is proven by the M3 gate.
+# tests/test_worker_corpus.py; each served file's day, attempt and outcome in a replay is proven by tests/gates/test_g3_2_pool.py::test_the_manifest_gives_each_served_files_day_attempt_and_outcome.
 #
 # [[strategy]]: each new strategy file under strategies/, the family and the
 # horizon of the track test_synth it is written for.

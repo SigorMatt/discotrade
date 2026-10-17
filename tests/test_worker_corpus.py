@@ -16,8 +16,10 @@ are checked from the files alone: the injected description holds a backtick
 and angle brackets, and the budget response's own token count by the scripted
 provider's rule (``ceil(characters / 4)``) plus ``worker_max_output_tokens``
 exceeds ``worker_tokens_per_day``, both read from the production
-``config/thresholds.toml``. What a replay makes of the corpus (the outcomes,
-days and attempts the manifest records) is proven by the M3 gate, not here.
+``config/thresholds.toml``. What a replay makes of the corpus (each served
+file's day, attempt and outcome, as the manifest records them) is proven not
+here but by ``tests/gates/test_g3_2_pool.py``, function
+``test_the_manifest_gives_each_served_files_day_attempt_and_outcome``.
 
 No file is written, no clock is read, no random draw is made and nothing runs a
 strategy.
