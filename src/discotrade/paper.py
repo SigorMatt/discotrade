@@ -41,7 +41,10 @@ means of its members' values (``math.fsum`` in id order over the count) and
 0 in each value with no member, ``clean`` true exactly when every member's row
 is clean; ``portfolio_clean`` has a row only on a day with a clean member,
 ``clean`` true. ``portfolio(records, days, lifecycle_rows, approaches)``
-gives these rows for ``days`` from the approach rows of ``records``.
+gives these rows for ``days`` from the approach rows of ``records``;
+``clean_members`` with the same arguments gives, per day with a
+``portfolio_clean`` row, the ids it averages (decision 2026-10-17-m19 151 (b),
+for ``alerts.group_edge``; ``portfolio`` does not call it and is unchanged).
 
 The API:
 
@@ -269,6 +272,24 @@ def portfolio(records: pd.DataFrame, days: Iterable[date],
         return _empty()
     frame = pa.Table.from_pylist(out, schema=SCHEMA).to_pandas()
     return frame.sort_values(list(KEY), kind="stable").reset_index(drop=True)
+
+
+def clean_members(records: pd.DataFrame, days: Iterable[date],
+                  lifecycle_rows: Sequence[Mapping[str, Any]],
+                  approaches: Sequence[Approach]) -> dict[date, list[str]]:
+    """The members ``portfolio`` counts in ``portfolio_clean`` on each of ``days``
+    (decision 2026-10-17-m19 151 (b)): the approaches live at the start of the
+    day (``members``) with a clean paper row in ``records`` that day, by id. A
+    day with none is left out, as ``portfolio_clean`` has no row on it."""
+    mine = records[records["kind"] == APPROACH]
+    clean = {(str(s), d) for s, d, c in zip(mine["subject"], mine["date"], mine["clean"],
+                                            strict=True) if bool(c)}
+    out = {}
+    for day in sorted(set(days)):
+        ids = [aid for aid in members(lifecycle_rows, approaches, day) if (aid, day) in clean]
+        if ids:
+            out[day] = ids
+    return out
 
 
 def _merge(*frames: pd.DataFrame) -> pd.DataFrame:

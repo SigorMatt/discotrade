@@ -152,6 +152,29 @@ def test_the_portfolio_by_hand_on_each_case():
     assert list(clean.index) == [D2, D3, D4, D5]
 
 
+def test_clean_members_are_the_members_portfolio_clean_counts():
+    # Decision 2026-10-17-m19 151 (b): the members of portfolio_clean on each day, by
+    # the test's own reading of the rows above; a day with none is left out, as
+    # portfolio_clean has no row on it.
+    records = hand_records()
+    days = [D1, D2, D3, D4, D5, D6]
+    got = paper.clean_members(records, days, LIFECYCLE, APPROACHES)
+    want = {}
+    for d in days:
+        today = records[records["date"] == d]
+        clean = [m for m in MEMBERS[d] if bool(today[today["subject"] == m]["clean"].iloc[0])]
+        if clean:
+            want[d] = clean
+    assert got == want
+    assert got == {D2: ["a1", "a4"], D3: ["a1", "a3"], D4: ["a2"], D5: ["a2", "a3"]}
+    out = paper.portfolio(records, days, LIFECYCLE, APPROACHES)
+    clean_rows = out[out["subject"] == "portfolio_clean"].set_index("date")
+    assert list(clean_rows.index) == sorted(got)
+    for d, ids in got.items():
+        today = records[records["date"] == d]
+        assert eq(clean_rows.loc[d, "net_1x"], own(today, ids)["net_1x"])
+
+
 def test_the_rows_are_sorted_by_the_key_and_do_not_depend_on_the_row_order():
     records = hand_records()
     shuffled = records.sample(frac=1.0, random_state=11).reset_index(drop=True)   # seed 11

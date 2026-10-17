@@ -13,6 +13,30 @@ class = "timing_gross"
 note = "the rank row's timing on paper.adjusted gross, each block its own window, beside gross and decision 59's net_1x statistic (O-5, O-24, decision 149)"
 
 [[reader]]
+module = "discotrade.alerts"
+function = "slot_series"
+class = "adjusted"
+note = "each random slot's paper.adjusted net_1x over W, its own average positions, for both finding rules' control figures (O-7, O-24, decision 151)"
+
+[[reader]]
+module = "discotrade.alerts"
+function = "persistent_approach"
+class = "adjusted"
+note = "the rule's figures: Sharpes of paper.adjusted net_1x, net_2x over clean W against slot moments on slot_series, plain beside (O-7, O-24, decision 151 (a))"
+
+[[reader]]
+module = "discotrade.alerts"
+function = "group_edge"
+class = "adjusted"
+note = "the portfolio figure on members' paper.adjusted net_1x over their member days of W, plain sum beside (O-7, O-24, decision 151 (b))"
+
+[[reader]]
+module = "discotrade.alerts"
+function = "bootstrap"
+class = "adjusted"
+note = "group_edge's control portfolios on slot_series, seeded by the date D (O-7, O-24, decision 151 (b))"
+
+[[reader]]
 module = "discotrade.backtest"
 function = "score"
 class = "producer"
