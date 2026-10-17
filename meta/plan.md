@@ -17,6 +17,6 @@ Carried items:
 
 - [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (D-017 status; HF-010, HF-011, HF-006, HF-012 lines; decision 144 (f)). — e6c33ae
 - [x] U1 G3.3: no raw bar and no score, as decision 142 reads them (decision 142; 116, 117, 119 (b), 139 (c); D-017; REVIEW-17 blocker 1; DESIGN §13.1-§13.4, §18.2, §18.3 G3.3). `gate:` commit. — da7634b (3 tests, parts (a)-(c); G3.3 PASS 180.36 s; five wrong changes red; check 3/3 1022, 1030, 1034 s)
-- [ ] U2 The corpus manifest's served day, attempt and outcome (decision 143 (a), (b), (d); 138 (e); REVIEW-17 blocker 2; DESIGN §18.3 G3.2). `gate:` commit.
+- [x] U2 The corpus manifest's served day, attempt and outcome (decision 143 (a), (b), (d); 138 (e); REVIEW-17 blocker 2; DESIGN §18.3 G3.2). `gate:` commit. — ac3e67e (test_the_manifest_gives_each_served_files_day_attempt_and_outcome; no manifest row corrected; G3.2 PASS 177.65 s; three wrong changes red; check 3/3 1001, 923, 931 s)
 - [ ] U3 Gate M3 at the pushed tip (decision 141 (b); DESIGN §18.2, §18.3 M3; REVIEW-17 note 1). `meta:` commit (D-013 times line).
 - [ ] U4 The final report (decisions 141 to 145; DESIGN §18.2).

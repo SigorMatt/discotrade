@@ -9,12 +9,16 @@ rebuilt; (b) 10,080 values, no meeting at rel 1e-9; (c) days 2019-07-15, 07-26, 
 x5/2; m3_harness.scaled_store; G3.3 PASS 180.36 s (REVIEW-17 158.80 s); five 142 (e) wrong changes red; check 3/3
 1022, 1030, 1034 s; image discotrade-sandbox:3b7d75c39621).
 
-Unit in progress: U2 — a gate test in tests/gates/test_g3_2_pool.py (markers gate, gate_m3) over the existing
-m3/ and m3_pool/ replays: every manifest file with a `served` day gives exactly one call row with that day,
-attempt and outcome (file = the one whose bytes the row's stored text equals); every call row with a response maps
-to such a manifest row; a file with no `served` day was not served. tests/test_worker_corpus.py docstring and the
-manifest's third line name that test and claim nothing more. Done means: `gate:` commit, pushed; `./scripts/gate
-M3 G3.2` PASS with wall time beside 183.28 s; the three 143 (d) wrong changes each seen red; check 3/3 green.
+U2 ac3e67e (gate: test_g3_2_pool.py::test_the_manifest_gives_each_served_files_day_attempt_and_outcome over m3/ and
+m3_pool/, mapped by the cursor and checked against the file's bytes (m3_pool has byte-identical files); docstring
+and manifest third line name it; no manifest row corrected; G3.2 PASS 177.65 s (REVIEW-17 183.28 s); three 143 (d)
+wrong changes red by the new test alone; check 3/3 1001, 923, 931 s).
+
+Unit in progress: U3 — at the pushed tip (this checkpoint's commit), ./scripts/check three times, `discotrade
+sandbox build`, then `./scripts/gate M3`, each its own foreground call with a 20-minute timeout, nothing
+uncommitted but git-ignored drafts; output verbatim, wall time and `git rev-parse HEAD` to meta/drafts/. Done
+means: G3.1-G3.3 PASS and `gate M3: PASS`; a `meta:` commit carrying only one D-013 times line appended to
+meta/findings/FINDINGS.md.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-17-m18 (141-145) bind; decisions 1-140
 still bind (139 (c)'s raw-bar/score clause replaced by 142); owner files win. No file under src/, config/ or
