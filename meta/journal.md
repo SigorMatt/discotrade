@@ -169,3 +169,4 @@
 2026-10-17T12:52:38.697Z  consult 0mvcec7gu-n27x (driver done) on builder.done of builder job 0mvcebsin-338p: VERDICT: escalate The builder stopped correctly and waits on the architect. `meta/BUILDER-19-PROMPT.md` does not exist, and writing mission 19 from the owner's decisions of 2026-10-17 is the architect's job (CLAUDE.md rule 10). No driver answer can unblock the builder, so I sent it nothing.
 2026-10-17T13:16:51.651Z  consult 0mvcesphx-jp2b (architect done) on aux.done of aux job 0mvceshpn-iirs: VERDICT: next kit mission-19-kit
 - 2026-10-17 mission 19 U0 started at 031f5e4: plan, checkpoint, decision 154 (b)'s five FINDINGS lines (HF-013, HF-014 new).
+- 2026-10-17 mission 19 U0 done e0d19df: plan; FINDINGS HF-006, HF-012, HF-010 lines, HF-013, HF-014; U1 started.

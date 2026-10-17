@@ -3,11 +3,12 @@
 Mission: 19 (`meta/BUILDER-19-PROMPT.md`), roadmap step S4.1. Closes no milestone. Base 031f5e4.
 Container runtime: docker. Image at mission 18's tip: discotrade-sandbox:3b7d75c39621.
 
-Done: none yet.
+Done: U0 e0d19df (plan; HF-006, HF-012, HF-010 lines; HF-013, HF-014 new).
 
-Unit in progress: U0 Plan. Intent: write meta/plan.md, this file, a journal line and decision 154 (b)'s five
-FINDINGS lines (HF-006, HF-012, HF-010 status; HF-013, HF-014 new). Done means: the four files committed and pushed
-in one `plan:` commit.
+Unit in progress: U1 `control_moments`'s column, the register, the table's adjusted deflated figures (O-23,
+O-24; decisions 147, 148). Done means: `table:` commit pushed; check 3/3 green; decision 147 (a) default/named
+column test, 148 (e) figure tests; 148 (e)'s three wrong changes seen red; register PENDING empty; G1.3 one line;
+`./scripts/gate M1 G1.3` and `G1.4` PASS at the commit, outputs and times in the body.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-23 to O-25 win, then decisions 146-154, then
 1-145 where not replaced. Add, never replace (O-25): every function a met gate reads keeps its result for today's

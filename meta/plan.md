@@ -19,7 +19,7 @@ Left items:
 - the `no_finding` call by the day loop, the digest and the issues — step S4.2 (decision 152 (e), (f));
 - G4.5 — step S4.3 (decision 153 (d)).
 
-- [ ] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (HF-006, HF-012, HF-010 lines; HF-013, HF-014; decision 154 (b)).
+- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (HF-006, HF-012, HF-010 lines; HF-013, HF-014; decision 154 (b)). — e0d19df
 - [ ] U1 `control_moments`'s column, the register, and the table's adjusted deflated figures (O-23, O-24; decisions 147, 148; DESIGN §10.4, §11.2). `table:` commit. G1.3 and G1.4 run at the commit.
 - [ ] U2 The timing statistic in the rank rows and the one-sided t-test (O-5, O-6, O-24; decisions 149, 150; DESIGN §11.1, §15.1, §16.1 step 6). `stats:` commit. G1.1 run at the commit.
 - [ ] U3 `persistent_approach` and `group_edge` on the exposure-adjusted series (O-7, O-16, O-24; decision 151; DESIGN §15.1, §11.2-§11.4). `alerts:` commit.
