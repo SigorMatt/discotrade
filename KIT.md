@@ -1,1 +1,1 @@
-plan: mission 17 kit (S3.2b, workers in the day, scoring on T, gate M3)
+plan: mission 18 kit (S3.2b closer, G3.3 bar and score reading, gate M3)
