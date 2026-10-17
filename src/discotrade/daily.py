@@ -63,9 +63,12 @@ releasing it on success and on failure:
   block starting on or after the first journaled day, no row yet), in
   ascending order, decision 59's row over the approaches whose state after
   ``D``'s steps is ``live`` or ``dormant`` (each on the track's basket, with
-  ``alerts.rank_min_population``) is appended to
-  ``stats/<track>/rank_persistence.jsonl`` in the staging directory
-  (``stats.append_rank_rows``); a re-run computes none. Then, when the day is
+  ``alerts.rank_min_population``), with ``timing`` and ``gross`` added
+  (``alerts.rank_rows``, decision 2026-10-17-m19 149; the day's staged unit and
+  position records handed to it, so that they are not read again), is appended
+  to ``stats/<track>/rank_persistence.jsonl`` in the staging directory
+  (``stats.append_rank_rows``); a re-run computes none. Rows written before
+  mission 19 are not rewritten and have neither key (I-5). Then, when the day is
   new, the table (DESIGN 10.4; decision 71; ``table.build`` and ``table.write``):
   ``table/<track>/table.json`` and ``table.md`` written to the staging
   directory; a re-run writes neither. Only when all of
@@ -168,8 +171,8 @@ from typing import Any
 
 import pandas as pd
 
+from discotrade import alerts, journal, ledger, lifecycle, paper, sources, state, stats, table
 from discotrade import coordinator as coord
-from discotrade import journal, ledger, lifecycle, paper, sources, state, stats, table
 from discotrade.bars.gaps import check_gaps, day_end, latest_closed_day
 from discotrade.bars.store import BarStore, BarStoreError, day_run, finite_rows
 from discotrade.clock import Clock
@@ -337,8 +340,12 @@ def _move(staging: Path, state_dir: Path) -> list[str]:
 
 
 def _rank_persistence(state_dir: Path, setup: journal.Setup, day: date, first: date,
-                      records: pd.DataFrame, staging: Path) -> list[Mapping[str, object]]:
-    """Decision 70's rows of the new day ``day``, appended in ``staging``."""
+                      records: pd.DataFrame, staging: Path,
+                      exposure: tuple[pd.DataFrame, pd.DataFrame] | None = None
+                      ) -> list[Mapping[str, object]]:
+    """Decision 70's rows of the new day ``day``, appended in ``staging``, each
+    with ``timing`` and ``gross`` (``alerts.rank_rows``, decision 2026-10-17-m19
+    149 (b)); ``exposure`` is the day's unit and position records, staged."""
     track = setup.track
     done = {int(row["block"]) for row in stats.read_rank_rows(state_dir, track.name,
                                                               into=staging)}
@@ -350,12 +357,8 @@ def _rank_persistence(state_dir: Path, setup: journal.Setup, day: date, first: d
     basket = [setup.calendars[inst.calendar] for inst in setup.instruments]
     population = {aid: basket for aid, s in after.items()
                   if s.state in (lifecycle.LIVE, lifecycle.DORMANT)}
-    out = [stats.rank_persistence(records, population, epoch=track.epoch,
-                                  block_days=track.block_days, bar_seconds=track.bar_seconds,
-                                  k=k,
-                                  min_population=int(
-                                      setup.thresholds["alerts.rank_min_population"]))
-           for k in blocks]
+    out = alerts.rank_rows(state_dir, setup, records, population, blocks, overlay=staging,
+                           exposure=exposure)
     return stats.append_rank_rows(state_dir, track.name, out, into=staging)
 
 
@@ -526,7 +529,8 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
             if admission is not None:
                 changes += admission.lifecycle
         if result.status == journal.WRITTEN:
-            _rank_persistence(state_dir, setup, d, min(journaled | {d}), records, staging)
+            _rank_persistence(state_dir, setup, d, min(journaled | {d}), records, staging,
+                              (unit, positions))
             table.write(staging, track, table.build(state_dir, setup, d, records,
                                                     into=staging))
         moved = _move(staging, state_dir)

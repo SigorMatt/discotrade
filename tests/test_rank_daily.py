@@ -28,7 +28,10 @@ appended on the first new day on or after that, Monday 06-24, and not on
 Friday 06-21, its last trading day. Every expected value is computed in the
 test: the population from the lifecycle ledger and the paper rows, the
 trading days from the journal index (the track's trading days, decision 51),
-the ranks by counting, the correlation with ``math``. The synthetic
+the ranks by counting, the correlation with ``math``; the row's ``timing``
+and ``gross`` (decision 2026-10-17-m19 149) from the paper gross and the
+stored unit and position records, ``hbar_i`` per block by the test's own sums
+(O-4, O-5). The synthetic
 instruments' seeds are those of their fixture records (``SEEDS``, asserted);
 no other random draw is made. Time comes only from ``--as-of`` and the
 replay's clock. Every git run is on local paths with ``GIT_ALLOW_PROTOCOL=file``
@@ -164,13 +167,43 @@ def own_spearman(x, y):
     return num / den
 
 
+def own_gross_and_timing(state, names, blocks):
+    """Per block, the subjects' summed paper gross and summed gross timing
+    return: gross less the mean over the four instruments of ``hbar_i`` (the
+    block's summed position over its row count, 0 with none) times ``R_i(D)``,
+    read from the stored ``unit.parquet`` and ``positions.parquet``."""
+    held = paper.read(state, TRACK)
+    units = paper.read_unit(state, TRACK)
+    positions = paper.read_positions(state, TRACK)
+    symbols = sorted(SEEDS)
+    unit = {(str(s), d): float(v) for s, d, v in zip(units["instrument"], units["date"],
+                                                     units["unit"], strict=True)}
+    gross_sums, timing_sums = ([], []), ([], [])
+    for b, block in enumerate(blocks):
+        for name in names:
+            mine = held[held["subject"] == name]
+            gross = dict(zip(mine["date"], mine["gross"], strict=True))
+            pos = positions[(positions["subject"] == name) & positions["date"].isin(block)]
+            hbar = {}
+            for s in symbols:
+                leg = pos[pos["instrument"] == s]
+                rows = int(sum(int(x) for x in leg["rows"]))
+                hbar[s] = math.fsum(float(x) for x in leg["position"]) / rows if rows else 0.0
+            gross_sums[b].append(math.fsum(float(gross[d]) for d in block))
+            timing_sums[b].append(math.fsum(
+                float(gross[d]) - math.fsum(hbar[s] * unit.get((s, d), 0.0) for s in symbols) / 4
+                for d in block))
+    return gross_sums, timing_sums
+
+
 def test_monday_appends_block_2s_row_over_the_live_and_dormant_approaches(ran):
     state, breaks, _, _ = ran
     rows = rank_rows(state)
     assert len(rows) == 1
     [row] = rows
+    # O-24, decision 2026-10-17-m19 149 (a): the row gains `timing` and `gross`
     assert set(row) == {"block", "first", "last", "previous_first", "previous_last",
-                        "subjects", "size", "statistic"}
+                        "subjects", "size", "statistic", "timing", "gross"}
     assert (row["block"], row["first"], row["last"], row["previous_first"],
             row["previous_last"]) == (2, BLOCK_2[0].isoformat(), BLOCK_2[1].isoformat(),
                                       BLOCK_1[0].isoformat(), BLOCK_1[1].isoformat())
@@ -200,6 +233,14 @@ def test_monday_appends_block_2s_row_over_the_live_and_dormant_approaches(ran):
     assert "portfolio" not in row["subjects"]
     want = own_spearman([sums[a][0] for a in sorted(sums)], [sums[a][1] for a in sorted(sums)])
     assert abs(row["statistic"] - want) <= 1e-12
+    # Decision 2026-10-17-m19 149: `gross` on the summed paper gross, `timing` on
+    # the summed gross timing return, each block its own window (O-4, O-5), from
+    # the derived exposure records the day loop stored.
+    gross_sums, timing_sums = own_gross_and_timing(state, sorted(sums), blocks)
+    want_gross = own_spearman(*gross_sums)
+    want_timing = own_spearman(*timing_sums)
+    assert abs(row["gross"] - want_gross) <= 1e-12
+    assert abs(row["timing"] - want_timing) <= 1e-12
     # The line is sorted JSON, staged and committed with Monday's run.
     text = rank_path(state).read_text(encoding="utf-8")
     assert text == ledger.line(row) + "\n"

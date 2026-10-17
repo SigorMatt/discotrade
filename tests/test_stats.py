@@ -391,3 +391,37 @@ def test_clean_and_exposed_counts():
     assert stats.clean_counts(out, "a1") == (2, 2)
     assert stats.clean_counts(out, "r1") == (1, 0)
     assert stats.clean_counts(out, "nobody") == (0, 0)
+
+
+# ------------------------------------------------------------------ 15.1 the t-test
+
+
+# Decision 2026-10-17-m19 150: the upper tail of Student's t, against values the
+# test writes as literals or computes in closed form, never through ``t_sf``.
+
+
+def test_t_sf_at_one_degree_of_freedom():
+    assert abs(stats.t_sf(1, 1) - 0.25) <= 1e-12
+    assert abs(stats.t_sf(0, 1) - 0.5) <= 1e-12
+
+
+@pytest.mark.parametrize("t", [0.5, 2.0, 5.0])
+def test_t_sf_at_two_degrees_of_freedom_in_closed_form(t):
+    assert abs(stats.t_sf(t, 2) - 0.5 * (1 - t / math.sqrt(t * t + 2))) <= 1e-12
+
+
+@pytest.mark.parametrize("t", [1.0, 3.0])
+def test_t_sf_at_three_degrees_of_freedom_in_closed_form(t):
+    a = math.atan(t / math.sqrt(3))
+    assert abs(stats.t_sf(t, 3) - (0.5 - (a + math.sin(a) * math.cos(a)) / math.pi)) <= 1e-12
+
+
+@pytest.mark.parametrize("t, df", [(2.015048373, 5), (1.795884819, 11)])
+def test_t_sf_at_the_one_sided_five_percent_critical_values(t, df):
+    assert abs(stats.t_sf(t, df) - 0.05) <= 1e-6
+
+
+@pytest.mark.parametrize("t, df", [(0.5, 1), (2.0, 2), (1.0, 3), (2.015048373, 5),
+                                   (1.795884819, 11), (0.3, 30), (4.0, 7)])
+def test_t_sf_of_minus_t_is_one_minus_t_sf_of_t(t, df):
+    assert abs(stats.t_sf(-t, df) - (1 - stats.t_sf(t, df))) <= 1e-12

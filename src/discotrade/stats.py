@@ -63,6 +63,16 @@ Deflated scores and tightening (11.2, 11.4, decision 60):
 - ``threshold(mu_c, sd_c, n, base, false_alerts_per_year)``:
   ``mu_c + z(p(N)) * sd_c``.
 
+The one-sided t-test of the ``rank_persistence`` rule (15.1, decision
+2026-10-17-m19 150):
+
+- ``t_sf(t, df)``: the upper-tail probability ``P(T > t)`` of Student's t
+  with ``df > 0`` degrees of freedom, one-sided, ``0.5 * I_x(df / 2, 1 / 2)``
+  with ``x = df / (df + t * t)`` for ``t >= 0`` and ``1 - t_sf(-t, df)``
+  below, ``I`` the regularized incomplete beta by its continued fraction
+  (modified Lentz), with ``math`` only; not a number for a ``t`` that is not
+  a number, 0 and 1 at the two infinities.
+
 Clean and exposed observations (11.3, decision 61):
 
 - ``clean_counts(paper, subject)``: the subject's count of paper rows whose
@@ -296,6 +306,61 @@ def threshold(mu_c: float, sd_c: float, n: int, base: float,
     if math.isnan(mu_c) or math.isnan(sd_c):
         return math.nan
     return mu_c + z(tightened_percentile(n, base, false_alerts_per_year)) * sd_c
+
+
+# ------------------------------------------------------------------ 15.1
+
+_BETA_EPS = 4 * 2.220446049250313e-16
+_BETA_TINY = 1e-300
+_BETA_STEPS = 10000
+
+
+def _beta_fraction(a: float, b: float, x: float) -> float:
+    """The continued fraction of ``I_x(a, b)`` (modified Lentz)."""
+    c, d = 1.0, 1.0 - (a + b) * x / (a + 1.0)
+    d = 1.0 / (d if abs(d) >= _BETA_TINY else _BETA_TINY)
+    h = d
+    for m in range(1, _BETA_STEPS + 1):
+        for aa in (m * (b - m) * x / ((a + 2 * m - 1.0) * (a + 2 * m)),
+                   -(a + m) * (a + b + m) * x / ((a + 2 * m) * (a + 2 * m + 1.0))):
+            d = 1.0 + aa * d
+            d = 1.0 / (d if abs(d) >= _BETA_TINY else _BETA_TINY)
+            c = 1.0 + aa / c
+            c = c if abs(c) >= _BETA_TINY else _BETA_TINY
+            step = c * d
+            h *= step
+        if abs(step - 1.0) <= _BETA_EPS:
+            return h
+    raise ArithmeticError(f"the incomplete beta fraction of a={a}, b={b}, x={x} "
+                          f"did not converge")
+
+
+def _beta_regularized(a: float, b: float, x: float, y: float) -> float:
+    """``I_x(a, b)``, with ``y = 1 - x`` given so that neither is cancelled."""
+    if x <= 0.0:
+        return 0.0
+    if y <= 0.0:
+        return 1.0
+    front = math.exp(math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+                     + a * math.log(x) + b * math.log(y))
+    if x < (a + 1.0) / (a + b + 2.0):
+        return front * _beta_fraction(a, b, x) / a
+    return 1.0 - front * _beta_fraction(b, a, y) / b
+
+
+def t_sf(t: float, df: float) -> float:
+    """``P(T > t)`` for Student's t with ``df`` degrees of freedom, one-sided
+    (decision 2026-10-17-m19 150)."""
+    t, df = float(t), float(df)
+    if not df > 0 or math.isinf(df):
+        raise ValueError(f"{df} is not a number of degrees of freedom")
+    if math.isnan(t):
+        return math.nan
+    if math.isinf(t):
+        return 0.0 if t > 0 else 1.0
+    tt = t * t
+    tail = 0.5 * _beta_regularized(df / 2.0, 0.5, df / (df + tt), tt / (df + tt))
+    return tail if t >= 0 else 1.0 - tail
 
 
 # ------------------------------------------------------------------ 11.3

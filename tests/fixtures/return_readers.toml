@@ -7,6 +7,12 @@
 # decision 2026-10-17-m19 147 (c)). Audited by tests/test_return_readers.py.
 
 [[reader]]
+module = "discotrade.alerts"
+function = "rank_rows"
+class = "timing_gross"
+note = "the rank row's timing on paper.adjusted gross, each block its own window, beside gross and decision 59's net_1x statistic (O-5, O-24, decision 149)"
+
+[[reader]]
 module = "discotrade.backtest"
 function = "score"
 class = "producer"
