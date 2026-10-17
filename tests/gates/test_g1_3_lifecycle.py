@@ -640,7 +640,7 @@ def test_table_matches_a_hand_count(ran, records, journal_sums, exposure, setup_
     assert [(r["section"], r["subject"]) for r in got["rows"]] == [
         (r["section"], r["subject"]) for r in want["rows"]]
     for g, w in zip(got["rows"], want["rows"], strict=True):
-        assert set(g) == set(w), g["subject"]
+        assert set(g) == set(w) | {"adjusted_S", "adjusted_E_N", "adjusted_excess"}, g["subject"]
         for key in w:
             assert same(g[key], w[key]), (day, g["subject"], key, g[key], w[key])
     # What each table shows, by the scenario: 06-13 trend_ma live, the flat

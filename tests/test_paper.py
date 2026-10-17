@@ -280,6 +280,35 @@ def test_the_clean_column_follows_each_approachs_recorded_cutoff(ran, setup, tmp
     assert other["clean"].all()
 
 
+def test_adjusted_given_the_exposure_records_already_read_equals_the_call_without(
+        ran, setup):
+    """Decision 2026-10-17-m19 147 (d), O-25: ``exposure``, the unit and position
+    frames already read, gives exactly the series of the same call without it,
+    for an approach, a random slot and a buy-and-hold control, each column, over
+    every day and over a part of them; the frames a caller cut to the days it
+    asks for give the same series too."""
+    state, subjects = ran
+    records = paper.read(state, TRACK)
+    held = (paper.read_unit(state, TRACK), paper.read_positions(state, TRACK))
+    assert held[0] is not None and held[1] is not None
+    part = set(DAYS[2:5])
+    cut = tuple(f[f["date"].isin(part)] for f in held)
+    seen = 0
+    for subject in [*subjects, "rc:0", "rc:7", f"bh:{sorted(SEEDS)[0]}"]:
+        for column in ("gross", "net_1x", "net_2x"):
+            for window, frames in ((set(DAYS), held), (part, held), (part, cut)):
+                want = paper.adjusted(state, setup, subject, window, column)
+                got = paper.adjusted(state, setup, subject, window, column,
+                                     exposure=frames)
+                again = paper.adjusted(state, setup, subject, window, column,
+                                       records=records, exposure=frames)
+                assert len(want) > 0, (subject, column)
+                pd.testing.assert_series_equal(got, want, check_exact=True)
+                pd.testing.assert_series_equal(again, want, check_exact=True)
+                seen += 1
+    assert seen == 5 * 3 * 3
+
+
 # ------------------------------------------------------------- an interrupted day (decision 78)
 
 #: The days run before the stored paper file is damaged, and the next day.

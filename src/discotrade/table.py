@@ -44,8 +44,19 @@ days, the staged records read with ``overlay`` ``into``), ``avg_position``
 ``paper.hbar`` on the derived position records; 0 with no row) and
 ``adjusted_admission_score`` (``adjusted_t["sharpe"]`` of the trial row
 ``admission_score`` reads; ``null`` where that is ``null`` or the row has no
-``adjusted_t``). The deflated figures stay on the plain paper ``net_1x`` (O-10
-item 4 puts O-7 in step S4.1).
+``adjusted_t``). Beside the plain deflated figures (``S``, ``E_N``,
+``excess``, on the plain paper ``net_1x``, which keep their meaning and values,
+O-23), each approach row holds the adjusted ones of decision 2026-10-17-m19 148
+(O-7, O-23, O-24), computed by ``adjusted_deflated``: ``adjusted_S`` the
+``metrics.sharpe`` of ``paper.adjusted(..., column "net_1x")`` over all its
+paper days (the number ``adjusted_sharpe`` holds), ``adjusted_E_N``
+``stats.expected_max`` with the same ``N`` of ``stats.control_moments`` called
+with ``column`` on a frame holding, for each random control slot with a paper
+row on each of those days, its ``paper.adjusted`` net 1x series over those
+days (each slot with its own average positions over them), and
+``adjusted_excess`` ``stats.excess(adjusted_S, adjusted_E_N)``. The derived
+exposure records are read once per ``build`` and handed to ``paper.adjusted``
+(decision 147 (d)), which gives the same series as reading them itself.
 
 The approach fields, the adjusted figures, ``state_history`` and the deflated
 figures are ``null`` for the controls and the portfolio series, and
@@ -96,20 +107,25 @@ _BPS = 10000.0
 FIELDS = ("cell", "description", "model_id", "model_version", "admitted", "admission_score",
           "adjusted_admission_score", "days", "clean_days", "sharpe", "sharpe_2x",
           "adjusted_sharpe", "adjusted_sharpe_2x", "avg_position", "trades", "max_drawdown",
-          "breakeven_cost", "S", "E_N", "excess", "state_history")
+          "breakeven_cost", "S", "E_N", "excess", "adjusted_S", "adjusted_E_N",
+          "adjusted_excess", "state_history")
 _APPROACH_FIELDS = ("cell", "description", "model_id", "model_version", "admitted",
                     "admission_score", "adjusted_admission_score", "adjusted_sharpe",
                     "adjusted_sharpe_2x", "avg_position", "S", "E_N", "excess",
-                    "state_history")
+                    "adjusted_S", "adjusted_E_N", "adjusted_excess", "state_history")
 _REALS = frozenset(("admission_score", "adjusted_admission_score", "sharpe", "sharpe_2x",
                     "adjusted_sharpe", "adjusted_sharpe_2x", "max_drawdown",
-                    "breakeven_cost", "S", "E_N", "excess"))
+                    "breakeven_cost", "S", "E_N", "excess", "adjusted_S", "adjusted_E_N",
+                    "adjusted_excess"))
 PLAIN, ADJUSTED = "plain", "adjusted"
 #: Decision 88: each figure column of ``table.md`` labelled as adjusted or plain.
 LABELS = {"admission_score": PLAIN, "adjusted_admission_score": ADJUSTED,
           "sharpe": PLAIN, "sharpe_2x": PLAIN, "adjusted_sharpe": ADJUSTED,
           "adjusted_sharpe_2x": ADJUSTED, "avg_position": ADJUSTED, "max_drawdown": PLAIN,
-          "breakeven_cost": PLAIN, "S": PLAIN, "E_N": PLAIN, "excess": PLAIN}
+          "breakeven_cost": PLAIN, "S": PLAIN, "E_N": PLAIN, "excess": PLAIN,
+          "adjusted_S": ADJUSTED, "adjusted_E_N": ADJUSTED, "adjusted_excess": ADJUSTED}
+#: The column of ``adjusted_deflated``'s slot frame that ``stats.control_moments`` reads.
+SLOT_COLUMN = "adjusted_net"
 
 #: (track, day, content hash) -> subject -> (gross, trade, rolled turnover) sums.
 _DAY_SUMS: dict[tuple[str, str, str], dict[str, tuple[float, float, float]]] = {}
@@ -178,6 +194,40 @@ def _record(mine: pd.DataFrame | None) -> dict[str, Any]:
             "trades": int(mine["trades"].sum()), "max_drawdown": max_drawdown(mine["net_1x"])}
 
 
+def adjusted_deflated(state_dir: Path, setup: Any, subject: str, days: Sequence[date],
+                      n: int, records: pd.DataFrame, into: Path | None = None,
+                      exposure: tuple[pd.DataFrame, pd.DataFrame] | None = None
+                      ) -> dict[str, float]:
+    """Decision 2026-10-17-m19 148 (a) (O-7, O-23, O-24): ``adjusted_S``,
+    ``adjusted_E_N`` and ``adjusted_excess`` of ``subject`` over its paper days
+    ``days``, with ``N`` ``n``. ``exposure`` is passed on to ``paper.adjusted``
+    (decision 147 (d)); only its rows dated in ``days`` are handed on, which
+    are the rows ``paper.adjusted`` reads, so the figures are the same."""
+    span = sorted(set(days))
+    wanted = set(span)
+    if exposure is not None:
+        exposure = (exposure[0][exposure[0]["date"].isin(wanted)],
+                    exposure[1][exposure[1]["date"].isin(wanted)])
+    near = records[records["date"].isin(wanted)]
+    s = sharpe(paper.adjusted(state_dir, setup, subject, span, "net_1x", records=near,
+                              overlay=into, exposure=exposure))
+    frames = []
+    slots = near[near["kind"] == stats.CONTROL_RANDOM]
+    for slot, mine in slots.groupby("subject", sort=True):
+        if not span or set(mine["date"]) != wanted:
+            continue
+        series = paper.adjusted(state_dir, setup, str(slot), span, "net_1x", records=near,
+                                overlay=into, exposure=exposure)
+        frames.append(pd.DataFrame({"subject": str(slot), "kind": stats.CONTROL_RANDOM,
+                                    "date": list(series.index),
+                                    SLOT_COLUMN: series.to_numpy(dtype=np.float64)}))
+    frame = (pd.concat(frames, ignore_index=True) if frames
+             else pd.DataFrame(columns=["subject", "kind", "date", SLOT_COLUMN]))
+    mu_c, sd_c = stats.control_moments(frame, span, column=SLOT_COLUMN)
+    e_n = stats.expected_max(mu_c, sd_c, n)
+    return {"adjusted_S": s, "adjusted_E_N": e_n, "adjusted_excess": stats.excess(s, e_n)}
+
+
 def _approaches(state_dir: Path, into: Path | None) -> list[Approach]:
     held = {a.id: a for a in state.read_approaches(state_dir)}
     if into is not None:
@@ -200,17 +250,24 @@ def build(state_dir: Path, setup: Any, day: date, records: pd.DataFrame,
               for s, g in records.groupby("subject", sort=False)}
     sums = journal_sums(state_dir, track, into)
     symbols = [inst.symbol for inst in setup.instruments]
-    held: list[pd.DataFrame] = []
+    held: list[tuple[pd.DataFrame, pd.DataFrame]] = []
+
+    def exposure() -> tuple[pd.DataFrame, pd.DataFrame]:
+        """The unit and position records, ``into``'s first, read once."""
+        if not held:
+            pair = []
+            for reader in (paper.read_unit, paper.read_positions):
+                frame = None if into is None else reader(into, track)
+                if frame is None:
+                    frame = reader(state_dir, track)
+                if frame is None:
+                    raise ValueError(f"{track} has no derived exposure records")
+                pair.append(frame)
+            held.append((pair[0], pair[1]))
+        return held[0]
 
     def positions() -> pd.DataFrame:
-        if not held:
-            frame = None if into is None else paper.read_positions(into, track)
-            if frame is None:
-                frame = paper.read_positions(state_dir, track)
-            if frame is None:
-                raise ValueError(f"{track} has no derived exposure records")
-            held.append(frame)
-        return held[0]
+        return exposure()[1]
 
     live = sorted((str(by_id[a].meta["cell"]), a) for a, s in after.items() if s.state == LIVE)
     dormant = sorted(a for a, s in after.items() if s.state == DORMANT)
@@ -237,6 +294,8 @@ def build(state_dir: Path, setup: Any, day: date, records: pd.DataFrame,
                    else dict.fromkeys(symbols, 0.0))
         mu_c, sd_c = stats.control_moments(records, days)
         e_n = stats.expected_max(mu_c, sd_c, n)
+        deflated = adjusted_deflated(state_dir, setup, aid, days, n, records, into,
+                                     exposure() if days else None)
         return {"section": section, "subject": aid, "cell": a.meta["cell"],
                 "description": a.meta["description"], "model_id": a.meta["model_id"],
                 "model_version": a.meta["model_version"], "admitted": a.meta["admitted"],
@@ -245,6 +304,7 @@ def build(state_dir: Path, setup: Any, day: date, records: pd.DataFrame,
                 "adjusted_sharpe_2x": adjusted["net_2x"], "avg_position": average,
                 "breakeven_cost": breakeven(sums.get(aid, [])),
                 "S": record["sharpe"], "E_N": e_n, "excess": stats.excess(record["sharpe"], e_n),
+                **deflated,
                 "state_history": [{"date": r["date"], "from": r["from"], "to": r["to"],
                                    "reason": r["reason"]} for r in life if r["id"] == aid]}
 

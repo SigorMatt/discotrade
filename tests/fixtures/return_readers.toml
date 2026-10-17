@@ -3,8 +3,8 @@
 # module (dotted), function (qualified within the module: Class.method,
 # outer.inner for a nested function), class (producer, display,
 # stage3_money, adjusted or timing_gross; a function of two classes under the
-# stricter), note (one line). pending = "S4.1" only on the three readers of
-# decision 89 (c). Audited by tests/test_return_readers.py.
+# stricter), note (one line). No entry carries pending since step S4.1 (O-24,
+# decision 2026-10-17-m19 147 (c)). Audited by tests/test_return_readers.py.
 
 [[reader]]
 module = "discotrade.backtest"
@@ -153,16 +153,14 @@ note = "checks a scripted candidate's adjusted_t figures and avg_position agains
 [[reader]]
 module = "discotrade.stats"
 function = "rank_persistence"
-class = "timing_gross"
-pending = "S4.1"
-note = "rank persistence sums paper net_1x per block; O-5 moves it to gross timing return in S4.1 (O-10)"
+class = "producer"
+note = "computes the rank persistence statistic of the column it is handed; the caller chooses the series and decides (O-24)"
 
 [[reader]]
 module = "discotrade.stats"
 function = "control_moments"
-class = "adjusted"
-pending = "S4.1"
-note = "moments of the random controls' plain paper net_1x Sharpes; O-7 adjusts it in S4.1 (decision 88, O-10)"
+class = "producer"
+note = "computes the moments of the random slots' Sharpes of the column it is handed (net_1x by default); decides nothing (O-24)"
 
 [[reader]]
 module = "discotrade.table"
@@ -179,9 +177,14 @@ note = "the table's plain paper record: Sharpe at 1x and 2x and drawdown of pape
 [[reader]]
 module = "discotrade.table"
 function = "build.approach_row"
+class = "display"
+note = "the plain S, E_N, excess on paper net_1x, the display record, admission scores and adjusted columns; nothing selects on them (O-23, O-24)"
+
+[[reader]]
+module = "discotrade.table"
+function = "adjusted_deflated"
 class = "adjusted"
-pending = "S4.1"
-note = "computes S, E_N, excess on plain paper net_1x (O-7 in S4.1); also the display record, admission scores, adjusted columns"
+note = "adjusted_S, adjusted_E_N, adjusted_excess on paper.adjusted net_1x, each random slot with its own average positions; the gates panel reads them (O-23, O-24)"
 
 [[reader]]
 module = "discotrade.validation.sequence"

@@ -339,6 +339,34 @@ def test_control_moments_over_slots_with_a_row_on_each_day():
     assert not eq(sd, statistics.pstdev(sharpes))
 
 
+def test_control_moments_read_net_1x_by_default_and_the_named_column_when_given():
+    """Decision 147 (a), O-24: a frame with a second column gives today's
+    result by default and that column's moments when it is named."""
+    span = days(date(2020, 1, 6), date(2020, 1, 10))
+    plain = {"r1": [0.01, -0.02, 0.03, 0.005, 0.0],
+             "r2": [0.002, 0.004, -0.001, 0.003, 0.001],
+             "r3": [-0.01, 0.02, -0.03, 0.01, -0.004]}
+    other = {"r1": [0.004, 0.001, -0.002, 0.006, 0.003],
+             "r2": [-0.003, 0.002, 0.001, -0.001, 0.0005],
+             "r3": [0.02, -0.01, 0.015, 0.0, 0.01]}
+    rows = []
+    for name, xs in plain.items():
+        rows += [(name, "control_random", d, x) for d, x in zip(span, xs, strict=True)]
+    held = frame(rows)
+    held["second"] = [x for name in plain for x in other[name]]
+    by_hand = {}
+    for key, series in (("net_1x", plain), ("second", other)):
+        sharpes = [sharpe_by_hand(series[k]) for k in ("r1", "r2", "r3")]
+        by_hand[key] = (statistics.mean(sharpes), statistics.stdev(sharpes))
+    assert not eq(by_hand["net_1x"][0], by_hand["second"][0])
+    default = stats.control_moments(held, span)
+    assert default == stats.control_moments(held[list(paper.COLUMNS)], span)
+    assert eq(default[0], by_hand["net_1x"][0]) and eq(default[1], by_hand["net_1x"][1])
+    named = stats.control_moments(held, span, column="second")
+    assert eq(named[0], by_hand["second"][0]) and eq(named[1], by_hand["second"][1])
+    assert stats.control_moments(held, span, column="net_1x") == default
+
+
 def test_fewer_than_two_slots_give_moments_not_a_number():
     span = days(date(2020, 1, 6), date(2020, 1, 8))
     rows = [("r1", "control_random", d, x) for d, x in zip(span, [0.01, -0.02, 0.03],

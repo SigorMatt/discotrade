@@ -79,22 +79,30 @@ EARLY = [(REF / "trend_ma.py", "trend/short", None, 1.25),
 LATE_ONE = (REF / "trend_ma.py", "trend/short", {"fast": 6, "slow": 24}, 3.5)
 # Decision 2026-10-14 88 adds adjusted_admission_score, adjusted_sharpe,
 # adjusted_sharpe_2x and avg_position to the row (approach rows only).
+# Decision 2026-10-17-m19 148 (O-23) adds adjusted_S, adjusted_E_N and
+# adjusted_excess after excess (approach rows only), labelled adjusted; the
+# plain S, E_N and excess keep their values (item 146 (c): these constants
+# admit the three keys, and nothing asserted before is loosened).
+ADJUSTED_DEFLATED = ("adjusted_S", "adjusted_E_N", "adjusted_excess")
 REALS = ("admission_score", "adjusted_admission_score", "sharpe", "sharpe_2x",
          "adjusted_sharpe", "adjusted_sharpe_2x", "max_drawdown", "breakeven_cost", "S",
-         "E_N", "excess")
+         "E_N", "excess", *ADJUSTED_DEFLATED)
 FIELDS = ("cell", "description", "model_id", "model_version", "admitted",
           "admission_score", "adjusted_admission_score", "days", "clean_days", "sharpe",
           "sharpe_2x", "adjusted_sharpe", "adjusted_sharpe_2x", "avg_position", "trades",
-          "max_drawdown", "breakeven_cost", "S", "E_N", "excess", "state_history")
+          "max_drawdown", "breakeven_cost", "S", "E_N", "excess", *ADJUSTED_DEFLATED,
+          "state_history")
 APPROACH_ONLY = ("cell", "description", "model_id", "model_version", "admitted",
                  "admission_score", "adjusted_admission_score", "adjusted_sharpe",
-                 "adjusted_sharpe_2x", "avg_position", "S", "E_N", "excess", "state_history")
+                 "adjusted_sharpe_2x", "avg_position", "S", "E_N", "excess",
+                 *ADJUSTED_DEFLATED, "state_history")
 #: Decision 88: each figure column of table.md labelled as adjusted or plain.
 LABELS = {"admission_score": "plain", "adjusted_admission_score": "adjusted",
           "sharpe": "plain", "sharpe_2x": "plain", "adjusted_sharpe": "adjusted",
           "adjusted_sharpe_2x": "adjusted", "avg_position": "adjusted",
           "max_drawdown": "plain", "breakeven_cost": "plain", "S": "plain", "E_N": "plain",
-          "excess": "plain"}
+          "excess": "plain", "adjusted_S": "adjusted", "adjusted_E_N": "adjusted",
+          "adjusted_excess": "adjusted"}
 
 
 def git(repo, *args) -> str:
@@ -314,11 +322,14 @@ def own_unit(state, track, symbol) -> dict:
     return out
 
 
-def own_adjusted(state, track, symbols, subject):
+def own_adjusted(state, track, symbols, subject, window=None):
     """``(days, net_1x adjusted, net_2x adjusted, hbar)`` over all the paper
-    days of ``subject`` (the dates of its journal rows)."""
+    days of ``subject`` (the dates of its journal rows), or over those in
+    ``window`` when given (``hbar`` then over its rows dated in ``window``)."""
     rows = own_journal(state, track)
     mine = rows[rows["subject"] == subject]
+    if window is not None:
+        mine = mine[mine["date"].isin(set(window))]
     days = sorted(set(mine["date"]))
     n = len(symbols)
     hbar = {}
@@ -339,6 +350,35 @@ def own_adjusted(state, track, symbols, subject):
             values.append(plain - sum(hbar[s] * units.get((s, d), 0.0) for s in symbols) / n)
         series[column] = values
     return days, series["net_1x"], series["net_2x"], hbar
+
+
+def own_slot_series(state, track, symbols, slots, days):
+    """Each random slot with a paper row on every one of ``days``: its adjusted
+    net 1x over ``days``, with its own ``hbar`` over ``days`` (O-7, decision
+    148 (a))."""
+    held = paper.read(state, track)
+    out = {}
+    for slot in slots:
+        mine = set(held[held["subject"] == slot]["date"])
+        if days and all(d in mine for d in days):
+            got, adj_1x, _, hbar = own_adjusted(state, track, sorted(symbols), slot, days)
+            assert got == sorted(set(days))
+            out[slot] = (adj_1x, hbar)
+    return out
+
+
+def own_adjusted_deflated(state, track, symbols, slots, n, aid, days):
+    """``(adjusted_S, adjusted_E_N)`` of decision 148 (a), by the test's own rules:
+    the approach's adjusted net 1x Sharpe over all its paper days, and ``E(N)``
+    from the moments of the random slots' adjusted net 1x Sharpes over those
+    days, each slot with its own average positions."""
+    _, adj_1x, _, _ = own_adjusted(state, track, sorted(symbols), aid)
+    sharpes = [own_sharpe(x) for x, _ in own_slot_series(state, track, symbols, slots,
+                                                         days).values()]
+    sharpes = [x for x in sharpes if not math.isnan(x)]
+    mu, sd = ((statistics.fmean(sharpes), statistics.stdev(sharpes))
+              if len(sharpes) >= 2 else (math.nan, math.nan))
+    return own_sharpe(adj_1x), own_expected(mu, sd, n)
 
 
 def own_expected_rows(state, setup, n, track=TRACK, last=LAST):
@@ -383,6 +423,7 @@ def own_expected_rows(state, setup, n, track=TRACK, last=LAST):
         s = math.nan if rec["sharpe"] is None else rec["sharpe"]
         trial = [t for t in trials if t["id"] == aid]
         _, adj_1x, adj_2x, hbar = own_adjusted(state, track, sorted(symbols), aid)
+        adj_s, adj_e_n = own_adjusted_deflated(state, track, symbols, slots, n, aid, days)
         adjusted_t = trial[-1].get("adjusted_t") or {}
         return {"section": section, "subject": aid, "cell": meta["cell"],
                 "description": meta["description"], "model_id": meta["model_id"],
@@ -393,7 +434,8 @@ def own_expected_rows(state, setup, n, track=TRACK, last=LAST):
                 "adjusted_sharpe_2x": real(own_sharpe(adj_2x)),
                 "avg_position": hbar, **rec,
                 "breakeven_cost": be(aid), "S": rec["sharpe"], "E_N": real(e_n),
-                "excess": real(s - e_n),
+                "excess": real(s - e_n), "adjusted_S": real(adj_s),
+                "adjusted_E_N": real(adj_e_n), "adjusted_excess": real(adj_s - adj_e_n),
                 "state_history": [{k: r[k] for k in ("date", "from", "to", "reason")}
                                   for r in life if r["id"] == aid]}
 
@@ -723,3 +765,79 @@ def test_a_rerun_of_the_mixed_replay_writes_nothing(tmp_path, mixed, config):
     assert main(["--state", str(state), "--config", str(config), "--track", MIXED, "replay",
                  "--from", MIXED_LAST.isoformat(), "--to", MIXED_LAST.isoformat()]) == 0
     assert files(state) == before and git(state, "rev-parse", "HEAD") == head
+
+
+# ------------------------------------- the adjusted deflated figures (decision 148)
+#
+# Decision 2026-10-17-m19 148 (a), (e), O-23: ``adjusted_S`` the Sharpe at 1x
+# of the approach's adjusted net series over all its paper days,
+# ``adjusted_E_N`` ``E(N)`` from the moments of the random slots' adjusted net
+# 1x Sharpes over those days (each slot with its own average positions over
+# them), ``adjusted_excess`` their difference; every figure the test's own
+# (``own_adjusted_deflated``), none from table.py.
+
+POOL = 4                                  # ``controls.random_pool`` in this module's copy
+
+
+def test_the_adjusted_deflated_figures_are_the_tests_own_and_differ_from_the_plain(
+        mixed, mixed_setup):
+    state, ids = mixed
+    got = {r["subject"]: r for r in table_json(state, MIXED)["rows"]}
+    n = len(ledger.read(state, MIXED, ledger.TRIALS))
+    symbols = sorted(MIXED_SEEDS)
+    slots = [f"rc:{k}" for k in range(POOL)]
+    held = paper.read(state, MIXED)
+    for aid in ids:
+        row = got[aid]
+        days = sorted(held[held["subject"] == aid]["date"])
+        _, _, _, hbar = own_adjusted(state, MIXED, symbols, aid)
+        series = own_slot_series(state, MIXED, symbols, slots, days)
+        assert len(series) == POOL
+        # The state the item asks for: an approach that leans long on an
+        # instrument, and slots whose average positions over its days differ.
+        assert max(hbar.values()) > 1e-6, (aid, hbar)
+        averages = [tuple(round(h[s], 12) for s in symbols) for _, h in series.values()]
+        assert len(set(averages)) == POOL, averages
+        adj_s, adj_e_n = own_adjusted_deflated(state, MIXED, symbols, slots, n, aid, days)
+        assert all(math.isfinite(x) for x in (adj_s, adj_e_n))
+        assert eq(row["adjusted_S"], adj_s)
+        assert eq(row["adjusted_E_N"], adj_e_n)
+        assert eq(row["adjusted_excess"], adj_s - adj_e_n)
+        # The three differ from the plain three, which keep their meaning.
+        for a, p in (("adjusted_S", "S"), ("adjusted_E_N", "E_N"),
+                     ("adjusted_excess", "excess")):
+            assert row[a] is not None and row[p] is not None and not eq(row[a], row[p]), a
+        assert eq(row["S"], row["sharpe"])
+        assert eq(row["excess"], row["S"] - row["E_N"])
+
+
+def test_adjusted_s_is_the_rows_adjusted_sharpe(ran, mixed):
+    for state, track in ((ran[0], TRACK), (mixed[0], MIXED)):
+        rows = [r for r in table_json(state, track)["rows"]
+                if r["section"] in ("live", "dormant")]
+        assert rows
+        for r in rows:
+            assert r["adjusted_S"] == r["adjusted_sharpe"], r["subject"]
+
+
+def test_the_adjusted_deflated_figures_are_null_on_controls_and_portfolio_rows(ran, mixed):
+    for state, track in ((ran[0], TRACK), (mixed[0], MIXED)):
+        rows = [r for r in table_json(state, track)["rows"]
+                if r["section"] in ("control", "portfolio")]
+        assert {r["section"] for r in rows} == {"control", "portfolio"}
+        for r in rows:
+            assert all(k in r and r[k] is None for k in ADJUSTED_DEFLATED), r["subject"]
+            assert r["S"] is None and r["E_N"] is None and r["excess"] is None
+
+
+def test_table_md_heads_the_adjusted_deflated_columns_adjusted(mixed):
+    state, _ = mixed
+    text = (state / "table" / MIXED / "table.md").read_text(encoding="utf-8")
+    heads = [line for line in text.splitlines() if line.startswith("| subject |")]
+    assert len(heads) == 4
+    for head in heads:
+        cells = head[2:-2].split(" | ")
+        at = cells.index("excess (plain)")
+        assert cells[at - 2:at + 4] == ["S (plain)", "E_N (plain)", "excess (plain)",
+                                        "adjusted_S (adjusted)", "adjusted_E_N (adjusted)",
+                                        "adjusted_excess (adjusted)"]

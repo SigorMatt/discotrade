@@ -576,12 +576,17 @@ def _read_staged(reader: Any, state_dir: Path, track: str,
 
 def adjusted(state_dir: Path, setup: journal.Setup, subject: str, days: Iterable[date],
              column: str, records: pd.DataFrame | None = None,
-             overlay: Path | None = None) -> pd.Series:
+             overlay: Path | None = None,
+             exposure: tuple[pd.DataFrame, pd.DataFrame] | None = None) -> pd.Series:
     """``column`` of ``subject``'s paper record minus its static exposure, on
     each of its paper days in ``days`` (decision 81 (a)), indexed by date in
     order, from the derived exposure records (decision 84; ``overlay``'s
     first). ``records`` are the paper records (the stored ones when None); a
-    caller passing staged records passes ``overlay`` too."""
+    caller passing staged records passes ``overlay`` too. ``exposure`` is the
+    pair (unit records, position records) a caller has already read, as this
+    function reads them, holding at least their rows dated in ``days``; None
+    reads them here, and the result is the same (decision 2026-10-17-m19
+    147 (d))."""
     if column not in _VALUES:
         raise ValueError(f"{column!r} is not one of {', '.join(_VALUES)}")
     state_dir = Path(state_dir)
@@ -598,8 +603,11 @@ def adjusted(state_dir: Path, setup: journal.Setup, subject: str, days: Iterable
     kinds = sorted(set(mine["kind"]))
     if kinds == [PORTFOLIO_KIND] or len(kinds) != 1:
         raise ValueError(f"{subject} is not a subject of the journal")
-    unit_frame = _read_staged(read_unit, state_dir, track, overlay)
-    positions = _read_staged(read_positions, state_dir, track, overlay)
+    if exposure is None:
+        unit_frame = _read_staged(read_unit, state_dir, track, overlay)
+        positions = _read_staged(read_positions, state_dir, track, overlay)
+    else:
+        unit_frame, positions = exposure
     if kinds[0] == BH:
         held = positions[(positions["subject"] == subject) & positions["date"].isin(wanted)]
         symbols = sorted(set(held["instrument"]))

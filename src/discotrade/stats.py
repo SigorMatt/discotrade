@@ -47,12 +47,15 @@ Rank persistence (11.1, decision 59):
 Deflated scores and tightening (11.2, 11.4, decision 60):
 
 - ``z(p)``: the standard normal quantile, ``statistics.NormalDist().inv_cdf``.
-- ``control_moments(paper, days)``: ``(mu_c, sd_c)``, the mean and sample
-  standard deviation (ddof 1) of the paper net Sharpes at 1x (``metrics.sharpe``,
-  decision 30) over ``days`` of the random control slots (kind
-  ``control_random``) with a paper row on each of those days, a slot whose
-  Sharpe is not a number left out; both not a number with fewer than two
-  such slots.
+- ``control_moments(paper, days, column="net_1x")``: ``(mu_c, sd_c)``, the
+  mean and sample standard deviation (ddof 1) of the Sharpes
+  (``metrics.sharpe``, decision 30) of the frame's ``column`` over ``days`` of
+  the random control slots (kind ``control_random``) with a row on each of
+  those days, a slot whose Sharpe is not a number left out; both not a number
+  with fewer than two such slots. By default ``column`` is ``net_1x``, the
+  paper net Sharpe at 1x, as before; the table's adjusted fields name the
+  column of a frame of exposure-adjusted net returns (decision 2026-10-17-m19
+  147 (a), O-24).
 - ``expected_max(mu_c, sd_c, n)``: ``E(N)`` with ``max(n, 2)``.
 - ``excess(s, e)``: ``s - e``; not a number when either is.
 - ``tightened_percentile(n, base, false_alerts_per_year)``: ``p(N)`` with
@@ -248,13 +251,15 @@ def z(p: float) -> float:
     return _NORMAL.inv_cdf(p)
 
 
-def control_moments(paper: pd.DataFrame, days: Iterable[date]) -> tuple[float, float]:
-    """``(mu_c, sd_c)`` of the random control slots' paper Sharpes over ``days``."""
+def control_moments(paper: pd.DataFrame, days: Iterable[date],
+                    column: str = "net_1x") -> tuple[float, float]:
+    """``(mu_c, sd_c)`` of the random control slots' Sharpes of ``column``
+    (``net_1x`` by default) over ``days``."""
     span = sorted(set(days))
     slots = paper[paper["kind"] == CONTROL_RANDOM]
     sharpes = []
     for _, mine in slots.groupby("subject", sort=True):
-        by_day = dict(zip(mine["date"], mine["net_1x"], strict=True))
+        by_day = dict(zip(mine["date"], mine[column], strict=True))
         if not span or any(d not in by_day for d in span):
             continue
         s = sharpe(pd.Series([float(by_day[d]) for d in span], dtype=np.float64))

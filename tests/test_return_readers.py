@@ -3,8 +3,10 @@
 
 The register is ``tests/fixtures/return_readers.toml``: one ``[[reader]]``
 table per function, with ``module`` (dotted, under ``discotrade``),
-``function``, ``class`` (one of O-18's five), ``note`` (one line) and, on
-exactly the three entries of decision 89 (c), ``pending = "S4.1"``.
+``function``, ``class`` (one of O-18's five) and ``note`` (one line). The
+form admits ``pending``, which decision 89 (c) put on three entries until step
+S4.1; since step S4.1 no entry carries it (O-24, decision 2026-10-17-m19
+147 (c)).
 
 Notation of ``function``: the names of the enclosing ``def`` and ``class``
 statements from the module down, joined by ``.``: a module function
@@ -64,12 +66,9 @@ METRIC_NAMES = frozenset(("sharpe", "total_return", "max_drawdown"))
 COLUMN_ATTRIBUTES = frozenset(("gross", "net_1x", "net_2x"))
 KEYS = frozenset(("module", "function", "class", "note"))
 
-#: Decision 89 (c): the only entries carrying ``pending``; step S4.1 removes them.
-PENDING = {
-    ("discotrade.stats", "rank_persistence", "timing_gross", "S4.1"),
-    ("discotrade.stats", "control_moments", "adjusted", "S4.1"),
-    ("discotrade.table", "build.approach_row", "adjusted", "S4.1"),
-}
+#: The entries carrying ``pending``: none since step S4.1 (O-24, decision
+#: 2026-10-17-m19 147 (c), which removed decision 89 (c)'s three).
+PENDING: set[tuple[str, str, str, str]] = set()
 
 _SCOPES = (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
 _FUNCTIONS = (ast.FunctionDef, ast.AsyncFunctionDef)
@@ -259,7 +258,7 @@ def test_the_register_has_its_form():
     assert register_errors(entries) == []
 
 
-def test_the_pending_entries_are_the_three_of_decision_89():
+def test_no_entry_carries_pending():
     assert pending(read_register(REGISTER)) == PENDING
 
 
