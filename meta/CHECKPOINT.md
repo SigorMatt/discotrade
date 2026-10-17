@@ -1,45 +1,30 @@
 # CHECKPOINT
 
-Mission: 17 (`meta/BUILDER-17-PROMPT.md`), roadmap step S3.2b. Closes milestone M3. Base af85e55.
-Container runtime: docker. Image at mission 16's tip: discotrade-sandbox:3b7d75c39621.
+Mission: 18 (`meta/BUILDER-18-PROMPT.md`), roadmap step S3.2b, continued. Closes milestone M3. Base 63c6d57.
+Container runtime: docker. Image at mission 17's tip: discotrade-sandbox:3b7d75c39621.
 
-Done: U0 1a04ee1 (plan; D-016 answered; HF-010, HF-011, HF-012 lines).
-U1 014f06a (daily.score_on_t via sequence.dry_run_and_grid on T; producer entry; tests/test_daily_score_t.py 7 tests;
-three wrong changes seen red; check 3/3 844, 838, 834 s; image discotrade-sandbox:3b7d75c39621).
-U2 db29997 (run_day steps 3-5 with a provider passed in; tests/test_daily_generation.py 11 tests; three wrong changes
-seen red; check 3/3 867, 918, 923 s, two above 15 min, D-013 times line appended; module ~36 s).
-U3 545e7ec (--provider/--coordinator on run-day and replay; provider once per command; scripted start from stored
-responses; tests/test_cli_provider.py 17 tests; two wrong changes seen red; providers.py docstring sentence; check 3/3
-925, 928, 963 s, D-013 times line).
-U4 446b0a8 (tests/fixtures/worker_corpus/: 16 strategies, m3/ 27 responses, m3_pool/ 21, manifest.toml;
-tests/test_worker_corpus.py 6 tests <1 s; G3.1 span 2019-07-15..2019-08-09 (ordinals 29-48) after init-state
-2019-06-03, measured 15 trials (MiniMax 5, nemotron 6, openai 4), max |corr| 0.609; m3_pool 2019-07-15..07-31: budget
-07-15, model_removed 07-29; check 3/3 1281, 1024, 1079 s on a shared machine, D-013 times and HF-006 status lines).
-U5 8d54f9f (gate: tests/gates/m3_harness.py, test_g3_1/2/3, 18 tests; tests/test_gate_script.py M3->M4 for the
-no-gate-tests cases; D-017 filed (two-decimal forms), D-013 and D-014 times lines; seven wrong changes red (the
-unsanitized description only via G3.3's direct test); check 3/3 1116, 1054, 1180 s; gates at 45dc893 + the uncommitted
-gate files: M3 PASS 555 s (218/175/161), M2 PASS 142 s, G1.1 450, G1.2 204, G1.3 542, G1.4 1 s PASS, M0 PASS 247 s;
-outputs meta/drafts/m17-*.txt; image discotrade-sandbox:3b7d75c39621).
-U6 d1abd9e (meta/FINAL-REPORT-17.md; check 3/3 at 7f18206 1021, 1043, 1024 s, D-013 times line; 133 (b): neither
-doctor case red under either wrong change, a later blank-key refusal gives the same line and exit).
+Done: U0 (plan; D-017 answered; HF-010, HF-011, HF-006, HF-012 lines).
 
-Unit in progress: none. Mission 17 finished; meta/FINAL-REPORT-17.md exists.
+Unit in progress: U1 — G3.3 asserts "no raw bar" and "no score" as decision 142 reads them: (a) every numeric
+token of every stored message accounted for by a source of its part; (b) every harness-computed value (finite
+real profile leaves, cost-line figures) meets no OHLC of W/T (as stored and times the factor) and no non-integral
+earlier trial figure at rel 1e-9; (c) the profile under prices x7/3, volumes x5/2 equal to the profile, three days.
+Done means: `gate:` commit touching only tests/gates/test_g3_3_prompts.py (and m3_harness.py for a helper without
+seed, date or assertion), pushed; `./scripts/gate M3 G3.3` PASS with its wall time beside 158.80 s; the five wrong
+changes of 142 (e) each seen red and named; check 3/3 green.
 
-Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-16-m17 (132-140) bind; decisions 1-131 still
-bind; owner files (O-11, O-13, O-16..O-20, O-22) win. No file under config/ or tests/fixtures/rejected/, no existing
-file under tests/gates/ (O-19; U5 adds test_g3_*.py and m3_harness.py), no record under tests/fixtures/config/, no
-entry of tests/fixtures/config_frozen.json changes; a test needing another configuration copies one under tmp
-(thresholds_gate.toml copied unchanged, decision 72). return_readers.toml may gain producer/display entries named in
-the body (O-18); no adjusted entry reclassified, no second stage3_money. Only workers/providers.py under
-src/discotrade/workers/ imports httpx or starts a process (122 (f)). Providers in tests: ScriptedProvider over a
-fixture/tmp dir, or httpx.MockTransport for the openai refusal; a key only as a dummy via monkeypatch.setenv. Every
-source a backend runs is byte-identical to a file under reference/ or tests/fixtures/ (104 (d)); no test builds the
-image. Tests write state/job dirs only under tmp, read time only via FixedClock, --as-of or the replay's clock, run
-`discotrade` in-process; bars on test_mixed/test_synth, seeds/dates/bar lengths in the file; figures by the test's own
-computation (adjusted figures without paper.adjusted*, unit_bars, unit_returns, average_positions). Check tests replay
-a few days at most; twenty-day replays are the gate's (140). Test-first, or the wrong change made, seen red, reverted,
-named in the body; "seen to fail" only of a test seen to fail (REVIEW-16 should-fix 1). Existing tests unchanged in
-what they assert unless a cited decision changes it (body says so). One commit per unit, files listed, never
-`git add -A`, push. Each sub-agent runs `discotrade sandbox build` first (20-min timeout), then ./scripts/check three
-times, each its own foreground call with a 20-minute timeout (HF-006); a unit adding >60 s says so; a run >15 min is a
-finding. Sub-agents in the foreground only.
+Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-17-m18 (141-145) bind; decisions 1-140
+still bind (139 (c)'s raw-bar/score clause replaced by 142); owner files win. No file under src/, config/ or
+tests/fixtures/rejected/, no record under tests/fixtures/config/, no entry of tests/fixtures/config_frozen.json
+changes. Under tests/gates/ only test_g3_3_prompts.py, test_g3_2_pool.py and m3_harness.py change (O-19); among
+other tests only tests/test_worker_corpus.py (docstring) and tests/fixtures/worker_corpus/manifest.toml (third
+line, a row only if measured differently). A real leak or an unexplained meeting of values: stop, finding, the
+builder replies VERDICT: question (141 (a), 142 (b)). Gate config under tmp with thresholds_gate.toml copied
+unchanged (72); dates and seeds in the test file; m3_harness.py holds no seed, date or assertion. Tests write
+state/job dirs only under tmp, read time only via --as-of or the replay's clock, run `discotrade` in-process; a
+test computes expected figures itself; ScriptedProvider over tests/fixtures/worker_corpus/; no network, secret,
+real model or claude binary; no test builds the image. Wrong changes made one at a time, seen red, reverted,
+named in the body; "seen to fail" only of a test seen to fail; a claim names the test that holds it (REVIEW-17
+note 14). Each sub-agent runs `discotrade sandbox build` first, then ./scripts/check three times, each its own
+foreground call with a 20-minute timeout (HF-006); a run past the cap is waited for and recorded (145). One
+commit per unit, files listed, never `git add -A`, push. Sub-agents in the foreground only.
