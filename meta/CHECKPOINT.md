@@ -10,10 +10,13 @@ parameter added; G1.3 one line; three 148 (e) wrong changes red; check 3/3 1121,
 U2 a7854da (stats: alerts.rank_rows `timing_gross`, rows gain timing and gross, stats.t_sf; daily passes the
 exposure records once; four wrong changes red; check 3/3 1153, 1072, 1185 s; G1.1 PASS 424 s; 2.554 -> 2.422 s
 per replay day).
+U3 efc35de (alerts: persistent_approach, group_edge, bootstrap, slot_series all `adjusted`; paper.clean_members,
+portfolio unchanged; five 151 (c) wrong changes red; check 3/3 1019, 1000, 997 s; finished from the tree under §R).
 
-Unit in progress: U3 `persistent_approach` and `group_edge` on the exposure-adjusted series (O-7, O-16, O-24;
-decision 151). Done means: `alerts:` commit pushed; check 3/3; 151 (c) tests at production thresholds; its five
-wrong changes seen red. Rules not yet called by the day loop (U4 wires them). Check near the 20-minute cap.
+Unit in progress: U4 alert state, payloads, `rank_persistence` and `revival` rules, health alerts, the day loop's
+step 6 (decisions 152, 149 (c)). Done means: `alerts:` commit pushed; check 3/3; 152 (g) tests; its four wrong
+changes seen red; `./scripts/gate M1 G1.2` and `G1.3` PASS at the commit; seconds per replay day at parent and
+commit. Step 6 on a new day only, into staging; no_finding not called by the day loop (152 (e)).
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-23 to O-25 win, then decisions 146-154, then
 1-145 where not replaced. Add, never replace (O-25): every function a met gate reads keeps its result for today's

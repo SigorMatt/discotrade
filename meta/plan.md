@@ -22,7 +22,7 @@ Left items:
 - [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (HF-006, HF-012, HF-010 lines; HF-013, HF-014; decision 154 (b)). — e0d19df
 - [x] U1 `control_moments`'s column, the register, and the table's adjusted deflated figures (O-23, O-24; decisions 147, 148; DESIGN §10.4, §11.2). `table:` commit. G1.3 and G1.4 run at the commit. — 27a83b9 (147 (d) parameter added; three wrong changes red; check 3/3 1121, 1128, 1125 s; G1.3 PASS 855 s, G1.4 PASS 1 s)
 - [x] U2 The timing statistic in the rank rows and the one-sided t-test (O-5, O-6, O-24; decisions 149, 150; DESIGN §11.1, §15.1, §16.1 step 6). `stats:` commit. G1.1 run at the commit. — a7854da (four wrong changes red; check 3/3 1153, 1072, 1185 s; G1.1 PASS 424 s; 2.554 -> 2.422 s per replay day)
-- [ ] U3 `persistent_approach` and `group_edge` on the exposure-adjusted series (O-7, O-16, O-24; decision 151; DESIGN §15.1, §11.2-§11.4). `alerts:` commit.
+- [x] U3 `persistent_approach` and `group_edge` on the exposure-adjusted series (O-7, O-16, O-24; decision 151; DESIGN §15.1, §11.2-§11.4). `alerts:` commit. — efc35de (five wrong changes red; check 3/3 1019, 1000, 997 s; resumed under §R)
 - [ ] U4 Alert state, payloads, `rank_persistence` and `revival` rules, health alerts, the day loop's step 6 (decisions 152, 149 (c); DESIGN §15.1-§15.3, §16.1 step 6, §16.2). `alerts:` commit. G1.2 and G1.3 run at the commit.
 - [ ] U5 The dashboard (O-6, O-14, O-16, O-18; decision 153; DESIGN §15.5, §3; SPEC §13, §14). `dashboard:` commit.
 - [ ] U6 The regression gates at the pushed tip (O-2, O-25; decisions 146 (a), 154 (c), (d); DESIGN §18.2). `meta:` commit (D-013 and D-014 times lines).

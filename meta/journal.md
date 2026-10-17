@@ -172,3 +172,5 @@
 - 2026-10-17 mission 19 U0 done e0d19df: plan; FINDINGS HF-006, HF-012, HF-010 lines, HF-013, HF-014; U1 started.
 - 2026-10-17 mission 19 U1 done 27a83b9: table adjusted figures, register settled; check 3/3 (1121, 1128, 1125 s); G1.3 PASS 855 s, G1.4 PASS 1 s; U2 started.
 - 2026-10-17 mission 19 U2 done a7854da: timing and gross in rank rows, t_sf; check 3/3 (1153, 1072, 1185 s); G1.1 PASS 424 s; U3 started.
+- 2026-10-17 mission 19 U3 resumed under §R: working tree dirty (alerts.py, paper.py, return_readers.toml, test_alerts.py, test_portfolio.py); finishing it from the tree.
+- 2026-10-17 mission 19 U3 done efc35de: persistent_approach and group_edge on the adjusted series; check 3/3 (1019, 1000, 997 s); U4 started.
