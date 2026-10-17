@@ -165,3 +165,4 @@
 - 2026-10-17 mission 18 U2 done ac3e67e: manifest day/attempt/outcome gate test; G3.2 PASS 177.65 s; three wrong changes red; check 3/3 (1001, 923, 931 s); U3 started.
 - 2026-10-17 mission 18 U3 done db527f3: gate M3 PASS at e9076d5 (514 s; G3.1 195, G3.2 158, G3.3 159 s); check 3/3 (917, 921, 926 s); U4 started.
 - 2026-10-17 mission 18 U4 done 95d7585: final report; check 3/3 at d8a129a (919, 922, 931 s); mission 18 finished.
+2026-10-17T11:28:09.043Z  consult 0mvcb4y2e-1qh6 (architect done) on aux.done of aux job 0mvc94tjp-wf6t: VERDICT: escalate ruling: step S4.1's table change (O-7) breaks gate item G1.3 of milestone M1, which is already met, and its two pending return readers can't change without editing gate items G1.1 and G1.4 or reclassifying adjusted register entries; under O-18 and O-19 only the owner can rule on these
