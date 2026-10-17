@@ -11,11 +11,15 @@ seen red; check 3/3 867, 918, 923 s, two above 15 min, D-013 times line appended
 U3 545e7ec (--provider/--coordinator on run-day and replay; provider once per command; scripted start from stored
 responses; tests/test_cli_provider.py 17 tests; two wrong changes seen red; providers.py docstring sentence; check 3/3
 925, 928, 963 s, D-013 times line).
+U4 446b0a8 (tests/fixtures/worker_corpus/: 16 strategies, m3/ 27 responses, m3_pool/ 21, manifest.toml;
+tests/test_worker_corpus.py 6 tests <1 s; G3.1 span 2019-07-15..2019-08-09 (ordinals 29-48) after init-state
+2019-06-03, measured 15 trials (MiniMax 5, nemotron 6, openai 4), max |corr| 0.609; m3_pool 2019-07-15..07-31: budget
+07-15, model_removed 07-29; check 3/3 1281, 1024, 1079 s on a shared machine, D-013 times and HF-006 status lines).
 
-Unit in progress: U4 The worker corpus (decision 138). Intent: tests/fixtures/worker_corpus/ (m3/, m3_pool/,
-strategies/, manifest.toml) and tests/test_worker_corpus.py; yield arranged and measured with a throwaway replay
-outside the repository. Done means: the corpus test passes in under 5 s, the one-character wrong change seen red,
-check green 3/3, one commit pushed.
+Unit in progress: U5 The gate tests of M3 and the gate runs (decisions 132 (b), 139). Intent: tests/gates/test_g3_1,
+test_g3_2, test_g3_3 and m3_harness.py; the seven wrong changes of 139 (d) seen red; check 3/3 at the tip; sandbox
+build; gate M3, M2, M1 G1.1-G1.4, M0, each its own call, outputs kept in meta/drafts/m17-*.txt. Done means: one
+`gate:` commit (gate files + D-014 times line) pushed, all gates PASS at the tip.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-16-m17 (132-140) bind; decisions 1-131 still
 bind; owner files (O-11, O-13, O-16..O-20, O-22) win. No file under config/ or tests/fixtures/rejected/, no existing

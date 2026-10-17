@@ -156,3 +156,4 @@
 - 2026-10-16 mission 17 U1 done 014f06a: daily.score_on_t, producer entry, 7 tests; check 3/3 (844, 838, 834 s); U2 started.
 - 2026-10-17 mission 17 U2 done db29997: run_day steps 3-5 with a provider, 11 tests; check 3/3 (867, 918, 923 s; two above 15 min, D-013 times line); U3 started.
 - 2026-10-17 mission 17 U3 done 545e7ec: --provider/--coordinator, scripted cursor from stored responses, 17 tests; check 3/3 (925, 928, 963 s; D-013 times line); U4 started.
+- 2026-10-17 mission 17 U4 done 446b0a8: worker corpus (16 strategies, 27+21 responses, manifest), 6 tests; measured 15 trials over 2019-07-15..08-09; check 3/3 (1281, 1024, 1079 s, shared machine); U5 started.
