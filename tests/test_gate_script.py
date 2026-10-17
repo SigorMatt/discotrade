@@ -23,14 +23,14 @@ def run_gate(*args, cwd=REPO):
 
 
 def test_milestone_without_gate_tests_fails():
-    # M3 has no gate test yet (M2 gained its gate tests in mission 13, U6).
-    assert not list((REPO / "tests" / "gates").glob("test_g3_*.py"))
-    proc = run_gate("M3")
+    # M4 has no gate test yet (M3 gained its gate tests in mission 17, U5).
+    assert not list((REPO / "tests" / "gates").glob("test_g4_*.py"))
+    proc = run_gate("M4")
     assert proc.returncode != 0
     lines = proc.stdout.splitlines()
-    assert lines[-1] == "gate M3: FAIL"
-    items = [line.split()[0] for line in lines[:-1] if line.startswith("G3.")]
-    assert items == ["G3.1", "G3.2", "G3.3"], lines
+    assert lines[-1] == "gate M4: FAIL"
+    items = [line.split()[0] for line in lines[:-1] if line.startswith("G4.")]
+    assert items == ["G4.1", "G4.2", "G4.3", "G4.4", "G4.5", "G4.6"], lines
     for item in items:
         assert any(line.startswith(f"{item} FAIL") for line in lines), item
 
@@ -41,15 +41,15 @@ def test_m2_counts_five_items():
 
 
 def test_one_item_without_gate_tests_fails():
-    # An M3 item: M2's items gained their gate tests in mission 13 (U6).
-    assert not list((REPO / "tests" / "gates").glob("test_g3_2_*.py"))
-    proc = run_gate("M3", "G3.2")
+    # An M4 item: M3's items gained their gate tests in mission 17 (U5).
+    assert not list((REPO / "tests" / "gates").glob("test_g4_2_*.py"))
+    proc = run_gate("M4", "G4.2")
     assert proc.returncode != 0
     lines = proc.stdout.splitlines()
-    assert lines[0].startswith("G3.2 FAIL")
-    assert not any(line.startswith("G3.1") for line in lines)
-    assert lines[-1] == "gate M3 G3.2: FAIL"
-    assert "gate M3: FAIL" not in lines
+    assert lines[0].startswith("G4.2 FAIL")
+    assert not any(line.startswith("G4.1") for line in lines)
+    assert lines[-1] == "gate M4 G4.2: FAIL"
+    assert "gate M4: FAIL" not in lines
 
 
 @pytest.mark.parametrize("args", [[], ["M9"], ["M0", "G1.1"], ["M0", "G0.1", "x"]])

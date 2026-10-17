@@ -700,6 +700,36 @@ Direction (for the architect). Confirm the two text changes, or say another form
 
 Status: open
 
+### D-017 — decision 139 (c)'s short number forms collide with the prompt's own `.4g` statistics
+
+Severity: low · Component: `tests/gates/test_g3_3_prompts.py`, with decision
+2026-10-16-m17 139 (c) and decision 117 (the prompt renders every float with
+`.4g`) · Found: 2026-10-17, mission 17 U5.
+
+Symptom. Decision 139 (c) asks G3.3 to look for every open, high, low and close of
+the day's W and T bars, and every figure of an earlier trial row, "written as
+`repr` and rounded to two and to four decimals, as a whole token". The fixture
+instrument SYNA trades near 50 (start price 70), so its bars rounded to two decimals
+cover nearly every four-digit number between about 45 and 55, and the W profile's
+statistics in basis points, rendered `.4g`, fall in that range. On the replay's first
+prompt (2019-07-15, call cbe1f010c3ef5) the tokens `48.25` (an hourly deviation in
+bp) and `53.54` (a mean cost per unit traded in bp) are each also a SYNA price of
+that W rounded to two decimals. Read literally, the test fails on a correct
+implementation, by coincidence.
+
+What U5 did. The simplest reading that keeps every form that can only be a bar's or
+a score's: a form is not looked for when it is a whole number (`0.0`, `-1.0`: the
+contract's text holds `[-1.0, 1.0]`) or when it is exactly what `.4g` writes for its
+value (`format(float(f), '.4g') == f`). Every `repr` and every form with more digits
+than `.4g` writes is still looked for, so the prices of SYNB, SYNC and SYND (near
+2000 to 15000) are checked at two and four decimals, and SYNA's at four decimals and
+as `repr`. The test's docstring states the reading.
+
+Direction (for the architect). Confirm the reading, or say another (for example, a
+fixture instrument whose prices cannot meet a bp statistic).
+
+Status: open
+
 ## hands findings (continued)
 
 ### HF-010 — stale git worktrees of earlier aux sessions are left on the machine
@@ -790,3 +820,5 @@ D-013 times (appended 2026-10-17, mission 17 U2): after `discotrade sandbox buil
 D-013 times (appended 2026-10-17, mission 17 U3): after `discotrade sandbox build` (discotrade-sandbox:3b7d75c39621, present, nothing built), U3's three `./scripts/check` runs, each its own foreground call with a 20-minute timeout, all green (`2358 passed, 182 deselected`, 0 skipped, so the `container` tests ran), took 925 s, 928 s and 963 s wall (pytest 922.14 s, 924.52 s, 959.99 s); all three are above HF-006's 15 minutes. U2's were 867 s, 918 s and 923 s. U3's new module `tests/test_cli_provider.py` (17 tests: four-day replays on test_synth from init-state with the scripted provider and the child-process backend, four four-day replays (seven `replay` calls) and two `run-day` days in all, decision 140) took 49 s to 51 s alone; the rest of the rise between runs was not measured per test. No test was dropped or shortened. Status: open (decision 121 (c); decision 140)
 D-013 times (appended 2026-10-17, mission 17 U4): after `discotrade sandbox build` (discotrade-sandbox:3b7d75c39621, present, nothing built), U4's three `./scripts/check` runs, each its own foreground call with a 20-minute timeout, all green (`2364 passed, 182 deselected`, 0 skipped, so the `container` tests ran), took 1281 s, 1024 s and 1079 s wall (pytest 1277.04 s, 1020.29 s, 1074.97 s); all three are above HF-006's 15 minutes, and the first passed the 20-minute timeout (see the HF-006 status line). U3's were 925 s, 928 s and 963 s. U4's new module `tests/test_worker_corpus.py` (6 tests, reading files only) took under 1 s alone; during the runs the machine was shared (another project's pytest and several agent sessions; load average about 2.2 on 4 cores), and the rise was not measured per test. No test was dropped or shortened. Status: open (decision 121 (c); decision 140)
 HF-006 status (appended 2026-10-17, mission 17 U4): the first of U4's three `./scripts/check` runs, a foreground call with the 1200000 ms timeout (the most the runner allows), took 1281 s; the harness moved it to the background at 1200 s, and the sub-agent waited for it to end (green) before the next run. The 20-minute timeout HF-006's direction gives no longer covers a check run on a shared machine. Status: open
+D-013 times (appended 2026-10-17, mission 17 U5): after the U5 test files were written (uncommitted, on HEAD 45dc893), `./scripts/check` ran four times, each its own foreground call with a 20-minute timeout: the first went red (5 failed: `tests/test_gate_script.py`'s two "without gate tests" cases still named M3, and `tests/test_offline.py`'s listing found the word "subprocess" in the four new gate files) in 1092 s; after the fix, three runs all green (`2364 passed, 200 deselected`, 0 skipped, so the `container` tests ran on discotrade-sandbox:3b7d75c39621) took 1116 s, 1054 s and 1180 s wall (pytest 1112.62 s, 1051.03 s, 1176.70 s); all are above HF-006's 15 minutes and the last is 20 s under the 20-minute cap. U4's were 1281 s, 1024 s and 1079 s. U5 adds no test the check runs (the M3 gate tests are deselected); the machine was shared (load average 2.7 to 3.2 on 4 cores at the start). No test was dropped or shortened. Status: open (decision 121 (c); decision 140)
+D-014 times (appended 2026-10-17, mission 17 U5): on HEAD 45dc893 with the U5 gate files uncommitted, after `discotrade sandbox build` (discotrade-sandbox:3b7d75c39621, present, nothing built) and `./scripts/check` green three times, each item its own foreground call with a 20-minute timeout: `./scripts/gate M1 G1.3` took 542 s wall (`G1.3 PASS 10 passed in 541.09s (0:09:01)`), against 546 s at mission 14 U6; G1.1 450 s, G1.2 204 s, G1.4 1 s. No M1 item took above 10 minutes in this run. Gate M3 took 555 s (G3.1 218 s, G3.2 175 s, G3.3 161 s by pytest), M2 142 s, M0 247 s, all PASS. Status: open (for the owner, O-3's target)
