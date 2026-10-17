@@ -21,10 +21,9 @@ stage3_money the one entry, five display entries; three 153 (d) wrong changes re
 2.563 -> 2.545 s per replay day).
 U6 d1f4b81 (meta: at tip ef9359f check 3/3 1066, 1079, 1131 s; G1.1 PASS 411 s, G1.2 PASS 280 s, G1.3 PASS 1049 s
 (finding in D-014 times line), G1.4 PASS 1 s; M3 PASS 547 s, M2 PASS 130 s, M0 PASS 245 s; outputs in meta/drafts/u6-*).
+U7 8837eed (meta: FINAL-REPORT-19).
 
-Unit in progress: U7 the final report (decisions 146-154; O-23 to O-25; DESIGN §18.2). Done means:
-meta/FINAL-REPORT-19.md drafted under meta/drafts/ and committed with `## Gate` (U6 outputs verbatim, from
-meta/drafts/u6-*.txt), `## Owner rulings applied`, `## Register`, `## Speed`, NOT PROVEN, review-items table.
+Mission 19 finished: meta/FINAL-REPORT-19.md 8837eed. No unit in progress.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-23 to O-25 win, then decisions 146-154, then
 1-145 where not replaced. Add, never replace (O-25): every function a met gate reads keeps its result for today's

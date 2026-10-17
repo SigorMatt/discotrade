@@ -26,4 +26,4 @@ Left items:
 - [x] U4 Alert state, payloads, `rank_persistence` and `revival` rules, health alerts, the day loop's step 6 (decisions 152, 149 (c); DESIGN §15.1-§15.3, §16.1 step 6, §16.2). `alerts:` commit. G1.2 and G1.3 run at the commit. — 3ee67d3 (four wrong changes red; check 3/3 1069, 1058, 1055 s; G1.2 PASS 260 s, G1.3 PASS 962 s; 2.165 -> 2.519 s per replay day)
 - [x] U5 The dashboard (O-6, O-14, O-16, O-18; decision 153; DESIGN §15.5, §3; SPEC §13, §14). `dashboard:` commit. — a21beb7 (three wrong changes red; check 3/3 1060, 1060, 1061 s; 2.563 -> 2.545 s per replay day)
 - [x] U6 The regression gates at the pushed tip (O-2, O-25; decisions 146 (a), 154 (c), (d); DESIGN §18.2). `meta:` commit (D-013 and D-014 times lines). — d1f4b81 (tip ef9359f; all PASS; G1.3 1049 s noted in D-014)
-- [ ] U7 The final report (decisions 146-154; O-23 to O-25; DESIGN §18.2). `meta/FINAL-REPORT-19.md`.
+- [x] U7 The final report (decisions 146-154; O-23 to O-25; DESIGN §18.2). `meta/FINAL-REPORT-19.md`. — 8837eed
