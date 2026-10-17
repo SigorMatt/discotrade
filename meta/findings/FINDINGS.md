@@ -829,3 +829,39 @@ HF-011 status (appended 2026-10-17, mission 18 U0): REVIEW-17 (note 11): the com
 HF-006 status (appended 2026-10-17, mission 18 U0): REVIEW-17 (note 12) saw one of mission 17 U4's `./scripts/check` runs pass the 20-minute tool cap, and its reviewers' own check runs take 865 s to 1048 s. Status: open (meta/decisions/decisions-2026-10-17-m18.md item 144 (f))
 HF-012 status (appended 2026-10-17, mission 18 U0): REVIEW-17 (note 13) ran its five reviewers in sequence, about 1 h 50 min in all. Status: open (meta/decisions/decisions-2026-10-17-m18.md item 144 (f))
 D-013 times (appended 2026-10-17, mission 18 U3): at the pushed tip e9076d5, with no uncommitted file but the git-ignored drafts, three `./scripts/check` runs, each its own foreground call with a 20-minute timeout, all green (`2364 passed, 204 deselected`, 0 skipped, so the `container` tests ran) took 917 s, 921 s and 926 s wall (pytest 913.81 s, 918.32 s, 923.20 s); all three are above HF-006's 15 minutes and none passed the 20-minute timeout (no run moved to the background). Mission 17 U6's were 1021 s, 1043 s and 1024 s. Then `discotrade sandbox build` (discotrade-sandbox:3b7d75c39621, present, nothing built) and `./scripts/gate M3` as one foreground call with a 20-minute timeout at e9076d5: 514 s wall, G3.1 PASS (3 passed in 194.96 s), G3.2 PASS (9 passed in 158.01 s), G3.3 PASS (10 passed in 159.12 s), `gate M3: PASS`; no M3 item took above 15 minutes. Load average about 0.5 to 1.2 on 4 cores. No test was dropped or shortened. Status: open (decision 121 (c); decision 140)
+HF-006 status (appended 2026-10-17, mission 19 U0): REVIEW-18 (note 7) ran gate M3 in 1560 s under outside load, past the 20-minute tool cap; the harness moved the call to the background and the reviewer had to poll its output file for its end. Status: open (meta/decisions/decisions-2026-10-17-m19.md item 154 (b))
+HF-012 status (appended 2026-10-17, mission 19 U0): REVIEW-18 (note 8) ran its two reviewers at the same time, which roughly halved the wall time (about 28 min for both) and slowed every check run. Status: open (meta/decisions/decisions-2026-10-17-m19.md item 154 (b))
+HF-010 status (appended 2026-10-17, mission 19 U0): REVIEW-18 (note 9) still found `/tmp/rv13-8b9f9be` and `/tmp/u5/parent` registered as worktrees. Status: open (meta/decisions/decisions-2026-10-17-m19.md item 154 (b))
+
+### HF-013 — sub-agent reports run past the protocol's 12-line limit
+
+Severity: low · Component: the review protocol and the builder's sub-agent brief (hands'
+templates) · Found: 2026-10-17, REVIEW-18 (`hands:` note 10), recorded by mission 19 U0
+(decision 154 (b)).
+
+Symptom. The protocol asks each sub-agent to report in at most 12 lines. REVIEW-18's
+sub-agents returned longer reports, which the review records as returned.
+
+Direction (for the hands Project). Either enforce the limit where reports are collected or
+state what a report must hold and drop the line count.
+
+What this project does meanwhile: nothing in product code.
+
+Status: open
+
+### HF-014 — the architect role's guard refuses ordinary read-only commands
+
+Severity: medium · Component: the architect role's command guard (hands) · Found:
+2026-10-17, architect consultations 22 and 23, recorded by mission 19 U0 (decision 154 (b)).
+
+Symptom. At consultations 22 and 23 the guard refused every command holding `#`, `{` or a
+backslash anywhere, so a Markdown heading or a regex count could not be searched for. It
+also refused the options `ls -R`, `git ls-tree --name-only`, `git status --short` and
+`git log --date`. Reading the branch took workarounds.
+
+Direction (for the hands Project). Let the guard admit read-only commands by what they do,
+not by the characters they hold.
+
+What this project does meanwhile: nothing in product code.
+
+Status: open

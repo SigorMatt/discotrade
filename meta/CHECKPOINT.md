@@ -1,38 +1,26 @@
 # CHECKPOINT
 
-Mission: 18 (`meta/BUILDER-18-PROMPT.md`), roadmap step S3.2b, continued. Closes milestone M3. Base 63c6d57.
-Container runtime: docker. Image at mission 17's tip: discotrade-sandbox:3b7d75c39621.
+Mission: 19 (`meta/BUILDER-19-PROMPT.md`), roadmap step S4.1. Closes no milestone. Base 031f5e4.
+Container runtime: docker. Image at mission 18's tip: discotrade-sandbox:3b7d75c39621.
 
-Done: U0 e6c33ae (plan; D-017 answered; HF-010, HF-011, HF-006, HF-012 lines).
-U1 da7634b (gate: test_g3_3_prompts.py 3 new tests: (a) 11,367 tokens of 20 first prompts accounted, 7 retries
-rebuilt; (b) 10,080 values, no meeting at rel 1e-9; (c) days 2019-07-15, 07-26, 08-09 under prices x7/3, volumes
-x5/2; m3_harness.scaled_store; G3.3 PASS 180.36 s (REVIEW-17 158.80 s); five 142 (e) wrong changes red; check 3/3
-1022, 1030, 1034 s; image discotrade-sandbox:3b7d75c39621).
+Done: none yet.
 
-U2 ac3e67e (gate: test_g3_2_pool.py::test_the_manifest_gives_each_served_files_day_attempt_and_outcome over m3/ and
-m3_pool/, mapped by the cursor and checked against the file's bytes (m3_pool has byte-identical files); docstring
-and manifest third line name it; no manifest row corrected; G3.2 PASS 177.65 s (REVIEW-17 183.28 s); three 143 (d)
-wrong changes red by the new test alone; check 3/3 1001, 923, 931 s).
+Unit in progress: U0 Plan. Intent: write meta/plan.md, this file, a journal line and decision 154 (b)'s five
+FINDINGS lines (HF-006, HF-012, HF-010 status; HF-013, HF-014 new). Done means: the four files committed and pushed
+in one `plan:` commit.
 
-U3 db527f3 (meta: D-013 times line; at e9076d5 check 3/3 917, 921, 926 s; sandbox build discotrade-sandbox:3b7d75c39621;
-`./scripts/gate M3` PASS 514 s wall: G3.1 194.96 s, G3.2 158.01 s, G3.3 159.12 s; outputs meta/drafts/m18-*.txt).
-
-U4 95d7585 (meta/FINAL-REPORT-18.md; check 3/3 at d8a129a 919, 922, 931 s).
-
-Unit in progress: none. Mission 18 finished; meta/FINAL-REPORT-18.md exists.
-
-Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-17-m18 (141-145) bind; decisions 1-140
-still bind (139 (c)'s raw-bar/score clause replaced by 142); owner files win. No file under src/, config/ or
-tests/fixtures/rejected/, no record under tests/fixtures/config/, no entry of tests/fixtures/config_frozen.json
-changes. Under tests/gates/ only test_g3_3_prompts.py, test_g3_2_pool.py and m3_harness.py change (O-19); among
-other tests only tests/test_worker_corpus.py (docstring) and tests/fixtures/worker_corpus/manifest.toml (third
-line, a row only if measured differently). A real leak or an unexplained meeting of values: stop, finding, the
-builder replies VERDICT: question (141 (a), 142 (b)). Gate config under tmp with thresholds_gate.toml copied
-unchanged (72); dates and seeds in the test file; m3_harness.py holds no seed, date or assertion. Tests write
-state/job dirs only under tmp, read time only via --as-of or the replay's clock, run `discotrade` in-process; a
-test computes expected figures itself; ScriptedProvider over tests/fixtures/worker_corpus/; no network, secret,
-real model or claude binary; no test builds the image. Wrong changes made one at a time, seen red, reverted,
-named in the body; "seen to fail" only of a test seen to fail; a claim names the test that holds it (REVIEW-17
-note 14). Each sub-agent runs `discotrade sandbox build` first, then ./scripts/check three times, each its own
-foreground call with a 20-minute timeout (HF-006); a run past the cap is waited for and recorded (145). One
-commit per unit, files listed, never `git add -A`, push. Sub-agents in the foreground only.
+Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-23 to O-25 win, then decisions 146-154, then
+1-145 where not replaced. Add, never replace (O-25): every function a met gate reads keeps its result for today's
+inputs. No file under tests/fixtures/rejected/, no record under tests/fixtures/config/, no entry of
+tests/fixtures/config_frozen.json, no value of a frozen config file changes; config/gates.toml (U5) is the one new
+config file. Under tests/gates/ only decision 148 (d)'s one line in test_g1_3_lifecycle.py (U1). A met-gate test
+failing because of what a unit adds: the unit stops, files a finding, builder replies VERDICT: question (146 (b)).
+Every new/changed return reader registered in tests/fixtures/return_readers.toml in the same commit (O-18). Tests
+write state/job dirs only under tmp, read time only via --as-of or the replay's clock, run `discotrade` in-process,
+compute expected figures themselves, read config/thresholds.toml through the loader (production values); no
+network, secret, real model or claude binary; no test builds the image. Wrong changes made one at a time, seen red,
+reverted, named in the body. Each sub-agent runs `discotrade sandbox build` first, then ./scripts/check three
+times, each its own foreground call with a 20-minute timeout (HF-006); a run past the cap is waited for and
+recorded (145). Day-loop units (U2, U4, U5) give seconds per replay day of the G1.3 scenario's first 30 calendar
+days at parent and commit (154 (c)). One commit per unit, files listed, never `git add -A`, push. Sub-agents in the
+foreground only.

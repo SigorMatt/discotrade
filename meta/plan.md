@@ -1,22 +1,29 @@
-# PLAN — mission 18 (roadmap step S3.2b, continued)
+# PLAN — mission 19 (roadmap step S4.1)
 
-Base commit: 63c6d57 (`plan: mission 18 kit (S3.2b closer, G3.3 bar and score reading, gate M3)`).
-Brief: `meta/BUILDER-18-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-17-m18.md` (items 141-145 new); `meta/decisions/decisions-2026-10-16-m17.md` (132-140; 138 the corpus, 139 the M3 gate tests, 139 (c)'s raw-bar/score clause replaced by 142); `meta/decisions/decisions-2026-10-16-m15.md` (118-126; 122 (b)); `meta/decisions/decisions-2026-10-15-m14.md` (109-117; 116, 117, 119 (b)); owner `meta/decisions/decisions-2026-10-15-owner.md` (O-19); owner `meta/decisions/decisions-2026-10-13-owner.md`; `meta/decisions/decisions-2026-10-12.md` (1-75 still bind; 72).
-Roadmap step: S3.2b, continued.
+Base commit: 031f5e4 (`plan: mission 19 kit (S4.1, alerts and dashboard under O-23 to O-25)`).
+Brief: `meta/BUILDER-19-PROMPT.md`. Decisions: owner `meta/decisions/2026-10-17-owner.md` (O-23 to O-25); `meta/decisions/decisions-2026-10-17-m19.md` (items 146-154 new); owner `meta/decisions/decisions-2026-10-13-owner.md` (O-4 to O-8, O-13, O-14, O-16, O-18); owner `meta/decisions/decisions-2026-10-15-owner.md` (O-19); `meta/decisions/decisions-2026-10-17-m18.md` (141-145; 145); `meta/decisions/decisions-2026-10-14-m11.md` (83-90; 89); `meta/decisions/decisions-2026-10-12.md` (1-75 still bind; 59, 60, 62, 69-72).
+Roadmap step: S4.1.
 
-This mission closes milestone M3.
+This mission closes no milestone. It moves no gate of M4.
 
-Gate runs (decision 141 (b)): at the pushed tip after U2, `discotrade sandbox build`, then `./scripts/gate M3`, each its own foreground call with a 20-minute timeout, output verbatim with wall time and sha. Gates M2, M1 and M0 are not run again because no file under `src/` changes (decision 141 (a), (b)).
+Regression gates (decision 146 (a), 154 (d); O-25), at the pushed tip after U5, with nothing uncommitted but the git-ignored drafts, each its own foreground call with a 20-minute timeout, taken by U6: `discotrade sandbox build`; gate M1 item by item (`./scripts/gate M1 G1.1`, `G1.2`, `G1.3`, `G1.4`); then `./scripts/gate M3`, `./scripts/gate M2`, `./scripts/gate M0`. Each must pass unchanged. The only change under `tests/gates/` is decision 148 (d)'s one line in `tests/gates/test_g1_3_lifecycle.py` (U1).
 
 Carried items:
-- REVIEW-17 blocker 1 with finding D-017: G3.3's "no raw bar" and "no score" as decision 142 reads them. — taken by U1
-- REVIEW-17 blocker 2 with note 3's first half: the manifest's served day, attempt and outcome proven by a gate test; FINAL-REPORT-18 `## Corrections` (decision 143). — taken by U2 and U4
-- REVIEW-17 note 1: gate M3 at the pushed tip, nothing uncommitted (decision 141 (b)). — taken by U3
-- REVIEW-17 notes 10 to 13: HF-010, HF-011, HF-006 and HF-012 lines; D-017 status line (decision 144 (f)). — taken by U0
-- Left to step S4.2: REVIEW-17 note 3's second half and note 4 (decision 144 (a)), note 5 (decision 144 (b)).
+- O-23: the table keeps `S`, `E_N`, `excess` and gains `adjusted_S`, `adjusted_E_N`, `adjusted_excess`; G1.3's one line. — taken by U1
+- O-24: `control_moments` gains `column` and the register's pending entries settled (U1); the rank rows gain `timing` and `gross` (U2); the alert functions as registered call sites (U3, U4). — taken by U1, U2, U3, U4
+- O-25: add, never replace; every met gate run again at the end. — taken by every unit, and U6
+- REVIEW-11 note 8: `paper.portfolio` and `paper._series` stay `producer`; the one `stage3_money` entry is the dashboard's (decision 153 (c)). — taken by U5
+- REVIEW-18 notes 7 to 10: HF-006, HF-012, HF-010 lines, HF-013 and HF-014 (decision 154 (b)). — taken by U0
 
-- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (D-017 status; HF-010, HF-011, HF-006, HF-012 lines; decision 144 (f)). — e6c33ae
-- [x] U1 G3.3: no raw bar and no score, as decision 142 reads them (decision 142; 116, 117, 119 (b), 139 (c); D-017; REVIEW-17 blocker 1; DESIGN §13.1-§13.4, §18.2, §18.3 G3.3). `gate:` commit. — da7634b (3 tests, parts (a)-(c); G3.3 PASS 180.36 s; five wrong changes red; check 3/3 1022, 1030, 1034 s)
-- [x] U2 The corpus manifest's served day, attempt and outcome (decision 143 (a), (b), (d); 138 (e); REVIEW-17 blocker 2; DESIGN §18.3 G3.2). `gate:` commit. — ac3e67e (test_the_manifest_gives_each_served_files_day_attempt_and_outcome; no manifest row corrected; G3.2 PASS 177.65 s; three wrong changes red; check 3/3 1001, 923, 931 s)
-- [x] U3 Gate M3 at the pushed tip (decision 141 (b); DESIGN §18.2, §18.3 M3; REVIEW-17 note 1). `meta:` commit (D-013 times line). — db527f3 (gate M3 PASS at e9076d5, 514 s: G3.1 194.96, G3.2 158.01, G3.3 159.12 s; check 3/3 917, 921, 926 s)
-- [x] U4 The final report (decisions 141 to 145; DESIGN §18.2). — 95d7585 (meta/FINAL-REPORT-18.md; check 3/3 at d8a129a 919, 922, 931 s)
+Left items:
+- the `no_finding` call by the day loop, the digest and the issues — step S4.2 (decision 152 (e), (f));
+- G4.5 — step S4.3 (decision 153 (d)).
+
+- [ ] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (HF-006, HF-012, HF-010 lines; HF-013, HF-014; decision 154 (b)).
+- [ ] U1 `control_moments`'s column, the register, and the table's adjusted deflated figures (O-23, O-24; decisions 147, 148; DESIGN §10.4, §11.2). `table:` commit. G1.3 and G1.4 run at the commit.
+- [ ] U2 The timing statistic in the rank rows and the one-sided t-test (O-5, O-6, O-24; decisions 149, 150; DESIGN §11.1, §15.1, §16.1 step 6). `stats:` commit. G1.1 run at the commit.
+- [ ] U3 `persistent_approach` and `group_edge` on the exposure-adjusted series (O-7, O-16, O-24; decision 151; DESIGN §15.1, §11.2-§11.4). `alerts:` commit.
+- [ ] U4 Alert state, payloads, `rank_persistence` and `revival` rules, health alerts, the day loop's step 6 (decisions 152, 149 (c); DESIGN §15.1-§15.3, §16.1 step 6, §16.2). `alerts:` commit. G1.2 and G1.3 run at the commit.
+- [ ] U5 The dashboard (O-6, O-14, O-16, O-18; decision 153; DESIGN §15.5, §3; SPEC §13, §14). `dashboard:` commit.
+- [ ] U6 The regression gates at the pushed tip (O-2, O-25; decisions 146 (a), 154 (c), (d); DESIGN §18.2). `meta:` commit (D-013 and D-014 times lines).
+- [ ] U7 The final report (decisions 146-154; O-23 to O-25; DESIGN §18.2). `meta/FINAL-REPORT-19.md`.
