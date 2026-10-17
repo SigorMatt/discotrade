@@ -14,11 +14,11 @@ m3_pool/, mapped by the cursor and checked against the file's bytes (m3_pool has
 and manifest third line name it; no manifest row corrected; G3.2 PASS 177.65 s (REVIEW-17 183.28 s); three 143 (d)
 wrong changes red by the new test alone; check 3/3 1001, 923, 931 s).
 
-Unit in progress: U3 — at the pushed tip (this checkpoint's commit), ./scripts/check three times, `discotrade
-sandbox build`, then `./scripts/gate M3`, each its own foreground call with a 20-minute timeout, nothing
-uncommitted but git-ignored drafts; output verbatim, wall time and `git rev-parse HEAD` to meta/drafts/. Done
-means: G3.1-G3.3 PASS and `gate M3: PASS`; a `meta:` commit carrying only one D-013 times line appended to
-meta/findings/FINDINGS.md.
+U3 db527f3 (meta: D-013 times line; at e9076d5 check 3/3 917, 921, 926 s; sandbox build discotrade-sandbox:3b7d75c39621;
+`./scripts/gate M3` PASS 514 s wall: G3.1 194.96 s, G3.2 158.01 s, G3.3 159.12 s; outputs meta/drafts/m18-*.txt).
+
+Unit in progress: U4 — meta/FINAL-REPORT-18.md, drafted under meta/drafts/, moved in by its commit, with `## Gate M3`,
+`## G3.3 reading`, `## Corrections`, NOT PROVEN and `## Review items`; check 3/3 at the tip before the commit.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-17-m18 (141-145) bind; decisions 1-140
 still bind (139 (c)'s raw-bar/score clause replaced by 142); owner files win. No file under src/, config/ or

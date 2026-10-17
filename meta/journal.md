@@ -163,3 +163,4 @@
 - 2026-10-17 mission 18 U0: plan (base 63c6d57, S3.2b continued, closes M3); D-017 answered; HF-010, HF-011, HF-006, HF-012 lines; U1 started.
 - 2026-10-17 mission 18 U1 done da7634b: G3.3 parts (a)-(c), 3 tests; G3.3 PASS 180.36 s; five wrong changes red; check 3/3 (1022, 1030, 1034 s); U2 started.
 - 2026-10-17 mission 18 U2 done ac3e67e: manifest day/attempt/outcome gate test; G3.2 PASS 177.65 s; three wrong changes red; check 3/3 (1001, 923, 931 s); U3 started.
+- 2026-10-17 mission 18 U3 done db527f3: gate M3 PASS at e9076d5 (514 s; G3.1 195, G3.2 158, G3.3 159 s); check 3/3 (917, 921, 926 s); U4 started.
