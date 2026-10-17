@@ -1,7 +1,7 @@
 """Alert rules and alert state (DESIGN 15.1 to 15.3, 16.1 step 6). Built in
-step S4.1; this module holds, so far, the rank rows of the day loop and the
-finding rules ``persistent_approach`` and ``group_edge``, which the day loop
-does not call yet.
+step S4.1: the rank rows of the day loop, the four finding rules, the health
+alerts, their detectors, and the alert state with its payloads, which the day
+loop's step 6 writes (decision 2026-10-17-m19 152).
 
 The rank rows on the timing statistic (DESIGN 11.1, 15.1; owner decisions
 O-4, O-5, O-6, O-24; decisions 2026-10-12 59, 2026-10-17-m19 149 (a)):
@@ -87,22 +87,81 @@ keys read with their values.
 - ``slot_series``: each random control slot with a paper row on every day of
   ``W``, in slot order, mapped to its ``paper.adjusted(..., "net_1x")`` over
   ``W``, each with its own average positions over ``W`` (O-7).
+
+The other two rules, the health alerts and the state (DESIGN 15.1 to 15.3,
+16.1 step 6; decision 2026-10-17-m19 152; I-5, I-6, I-10, I-12). Each rule
+returns entries of the same form as the two above; ``THRESHOLD_KEYS`` names,
+by kind, every threshold each rule and detector reads, and each reads them
+from ``setup.thresholds`` only.
+
+- ``rank_persistence``: one entry, subject the track. The ``timing`` values of
+  the last ``alerts.rank_blocks`` rows of ``rank_persistence.jsonl``
+  (``overlay``'s first) whose ``timing`` is not null (a row without the key is
+  missing, decision 149 (b)); not evaluated with fewer, or with a sample
+  deviation ``s`` (ddof 1) of 0 (decision 152 (c)). Else ``t = mean / (s /
+  sqrt(n))``, ``p = stats.t_sf(t, n - 1)``, active when ``p <
+  alerts.rank_level``. ``value`` is the mean; ``threshold`` is the critical
+  mean ``t_crit * s / sqrt(n)``, ``t_crit`` the one-sided ``rank_level`` value
+  found by bisection on ``stats.t_sf`` (the design is silent on the threshold
+  of a mean tested by ``p``; this is the mean the test compares it with, and
+  the dashboard's significance band). The payload: ``mean``, ``sd``, ``n``,
+  ``t``, ``p``, ``critical_mean``, ``blocks`` (the block numbers) and
+  ``thresholds``.
+- ``revival``: one entry per lifecycle row dated ``D`` from ``dormant`` to
+  ``live``, subject the approach id; ``value`` its dormant trading days,
+  counted as lifecycle step 3 counts them for
+  ``lifecycle.revival_min_dormant_days`` (``stats.trading_dates`` of the
+  track's calendars, by name, after the date it went dormant up to ``D``);
+  active when at least ``alerts.revival_min_days`` (the ``threshold``). The
+  payload: ``dormant_days``, ``dormant_since``, ``reason``, the clean and
+  exposed counts, ``thresholds`` and the approach's description, source, cell,
+  model id and model version.
+- ``health``: one entry per (kind, subject) of an alert-level event of the
+  health log dated on or before ``D``; active when one is dated ``D``, its
+  payload that event's detail; ``value`` and ``threshold`` null.
+- The detectors return health events, which the day loop appends to the health
+  log before the rules run (decision 152 (e)): ``cost_stale`` (each ``checked``
+  date of the instruments' cost records, their spread tables and the pool's
+  ``pool = true`` models more than ``alerts.cost_stale_days`` calendar days
+  before ``D``; subject the file and key, e.g. ``spreads/SYNA.toml checked``),
+  ``few_valid_candidates`` (on a day whose run reached step 5; the first such
+  day is the calls ledger's first date, every step 5 writing a call row) and
+  ``no_finding`` (given the day live running began and the dates finding alerts
+  fired; the day loop does not call it, decision 152 (e)). Each event's detail
+  holds the thresholds it read.
+- ``transition(previous, D, entries)``: the state of ``D``, ``{"date", "alerts"}``,
+  ``alerts`` keyed ``<kind>|<subject>`` with ``active``, ``since`` (the date it
+  last turned true, or null), ``value`` and ``threshold``; and the entries that
+  fire: active on ``D`` and not active, or absent, in ``previous`` (DESIGN
+  15.3).
+- ``write(into, state_dir, track, D, state, fired)``: ``alerts/<track>/state.json``
+  and, per fired entry, its payload at
+  ``alerts/<track>/payloads/<D>/<kind>/<quote(subject, safe="")>.json``, each as
+  ``ledger.line`` writes an object with a newline, atomically, under ``into``;
+  a payload already held is never rewritten.
+- ``step``: decision 152 (f)'s parts 3 and 4 on a new day, into the staging
+  directory, against the stored state of the day before.
 """
 
 from __future__ import annotations
 
+import calendar
+import json
 import math
 from collections.abc import Iterable, Mapping, Sequence
 from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import numpy as np
 import pandas as pd
 
 from discotrade import controls, journal, ledger, lifecycle, paper, state, stats
-from discotrade.config import Calendar
+from discotrade.bars.store import write_atomic
+from discotrade.config import Calendar, ModelsConfig
 from discotrade.metrics import positive, sharpe
+from discotrade.state import HealthEvent
 
 #: The column of the timing frame (decision 2026-10-17-m19 149 (a)).
 TIMING = "timing"
@@ -177,11 +236,20 @@ def rank_rows(state_dir: Path, setup: journal.Setup, records: pd.DataFrame,
 # --- persistent_approach and group_edge (decision 2026-10-17-m19 151) ----------------------
 
 PERSISTENT, GROUP = "persistent_approach", "group_edge"
-#: Every threshold key each finding rule here reads (decision 2026-10-17-m19 152 (b)).
+RANK, REVIVAL = "rank_persistence", "revival"
+FEW_VALID, COST_STALE, NO_FINDING = "few_valid_candidates", "cost_stale", "no_finding"
+#: Every threshold key each rule and detector here reads, by kind (decision
+#: 2026-10-17-m19 152 (b)); ``rank_persistence`` also names the population minimum
+#: of the rank rows it reads (``rank_rows``).
 THRESHOLD_KEYS: Mapping[str, tuple[str, ...]] = {
     PERSISTENT: ("alerts.persistent_min_days", "alerts.persistent_base_percentile",
                  "alerts.false_alerts_per_year"),
     GROUP: ("alerts.group_days", "alerts.group_level", "alerts.group_bootstrap"),
+    RANK: ("alerts.rank_blocks", "alerts.rank_level", "alerts.rank_min_population"),
+    REVIVAL: ("alerts.revival_min_days",),
+    FEW_VALID: ("alerts.min_valid_candidates", "alerts.valid_candidates_window_days"),
+    COST_STALE: ("alerts.cost_stale_days",),
+    NO_FINDING: ("alerts.no_finding_months",),
 }
 #: The column of the slot frame ``stats.control_moments`` reads.
 SLOT_COLUMN = "adjusted_net"
@@ -375,3 +443,313 @@ def group_edge(state_dir: Path, setup: journal.Setup, day: date, records: pd.Dat
                              and figure > threshold),
                  value=_real(figure), threshold=_real(threshold), payload=payload)
     return entry
+
+
+# --- the alert state, the firing, the payloads, the other rules, health (decision 152) ----
+
+#: The finding rules, in the order the day loop evaluates them (DESIGN 15.1).
+FINDING_KINDS = (PERSISTENT, GROUP, RANK, REVIVAL)
+ALERTS_DIR, STATE_FILE, PAYLOADS = "alerts", "state.json", "payloads"
+#: The keys of an entry of the state (decision 152 (a)).
+ENTRY_KEYS = ("active", "since", "value", "threshold")
+
+
+def _entry(kind: str, subject: str) -> dict[str, Any]:
+    return {"kind": kind, "subject": subject, "active": False, "value": None,
+            "threshold": None, "payload": None}
+
+
+def _described(a: state.Approach) -> dict[str, Any]:
+    return {"description": a.meta["description"], "source": a.source, "cell": a.meta["cell"],
+            "model_id": a.meta["model_id"], "model_version": a.meta["model_version"]}
+
+
+def _t_critical(level: float, df: int) -> float:
+    """The ``t`` whose one-sided upper tail ``stats.t_sf(t, df)`` is ``level``, by
+    bisection (``t_sf`` falls as ``t`` rises)."""
+    lo, hi = -1.0, 1.0
+    while stats.t_sf(lo, df) < level:
+        lo *= 2.0
+    while stats.t_sf(hi, df) > level:
+        hi *= 2.0
+    for _ in range(200):
+        mid = (lo + hi) / 2.0
+        if mid in (lo, hi):
+            break
+        lo, hi = (mid, hi) if stats.t_sf(mid, df) > level else (lo, mid)
+    return (lo + hi) / 2.0
+
+
+def rank_persistence(state_dir: Path, setup: journal.Setup, day: date, *,
+                     overlay: Path | None = None) -> dict[str, Any]:
+    """DESIGN 15.1's ``rank_persistence`` on ``day`` (decision 152 (c)): the
+    ``timing`` of the last ``alerts.rank_blocks`` rows whose ``timing`` is not
+    null, by a one-sided one-sample t-test at ``alerts.rank_level``."""
+    track = setup.track.name
+    force = in_force(setup, RANK)
+    blocks = int(force["alerts.rank_blocks"])
+    level = float(force["alerts.rank_level"])
+    entry = _entry(RANK, track)
+    rows = [r for r in stats.read_rank_rows(state_dir, track, into=overlay)
+            if r.get(TIMING) is not None]
+    if blocks < 2 or len(rows) < blocks:
+        return entry
+    last = rows[-blocks:]
+    values = [float(r[TIMING]) for r in last]
+    n = len(values)
+    mean = math.fsum(values) / n
+    sd = float(np.std(np.asarray(values, dtype=np.float64), ddof=1))
+    if not (math.isfinite(mean) and math.isfinite(sd) and sd > 0):
+        return entry
+    se = sd / math.sqrt(n)
+    t = mean / se
+    p = stats.t_sf(t, n - 1)
+    critical = _t_critical(level, n - 1) * se
+    entry.update(active=bool(p < level), value=_real(mean), threshold=_real(critical),
+                 payload={"mean": _real(mean), "sd": _real(sd), "n": n, "t": _real(t),
+                          "p": _real(p), "critical_mean": _real(critical),
+                          "blocks": [int(r["block"]) for r in last], "thresholds": force})
+    return entry
+
+
+def revival(state_dir: Path, setup: journal.Setup, day: date, records: pd.DataFrame, *,
+            overlay: Path | None = None) -> list[dict[str, Any]]:
+    """DESIGN 15.1's ``revival`` on ``day`` (decision 152 (d)): one entry per
+    lifecycle row dated ``day`` from ``dormant`` to ``live``, its dormant trading
+    days counted as lifecycle step 3 counts them (``stats.trading_dates`` of the
+    track's calendars after the date it went dormant, up to ``day``)."""
+    track = setup.track.name
+    force = in_force(setup, REVIVAL)
+    least = int(force["alerts.revival_min_days"])
+    life = ledger.read(state_dir, track, ledger.LIFECYCLE, into=overlay)
+    approaches = _approaches(state_dir, overlay)
+    by_id = {a.id: a for a in approaches}
+    before = lifecycle.states(life, approaches, day)
+    calendars = [setup.calendars[name] for name in sorted(setup.calendars)]
+    records = records[records["date"] <= day]
+    out = []
+    for row in life:
+        if (row["date"] != day.isoformat() or row["from"] != lifecycle.DORMANT
+                or row["to"] != lifecycle.LIVE):
+            continue
+        aid = str(row["id"])
+        since = before[aid].since
+        count = len(stats.trading_dates(calendars, setup.track.bar_seconds,
+                                        since + timedelta(days=1), day))
+        clean, exposed = stats.clean_counts(records, aid)
+        payload = {"dormant_days": count, "dormant_since": since.isoformat(),
+                   "reason": row["reason"], "clean_days": clean, "exposed_days": exposed,
+                   "thresholds": force, **_described(by_id[aid])}
+        out.append({"kind": REVIVAL, "subject": aid, "active": count >= least, "value": count,
+                    "threshold": least, "payload": payload})
+    return sorted(out, key=lambda e: e["subject"])
+
+
+def health(state_dir: Path, track: str, day: date) -> list[dict[str, Any]]:
+    """One entry per (kind, subject) of an alert-level event of the health log
+    dated on or before ``day``, active when one is dated ``day``, its payload
+    that event's detail (the last such, in log order); decision 152 (e)."""
+    path = state.health_path(state_dir, track)
+    raised: dict[tuple[str, str], Any] = {}
+    lines = path.read_text(encoding="utf-8").splitlines() if path.exists() else []
+    for text in lines:
+        event = json.loads(text)
+        when = date.fromisoformat(event["date"])
+        if event["level"] != "alert" or when > day:
+            continue
+        key = (str(event["kind"]), str(event["subject"]))
+        if when == day:
+            raised[key] = (True, event["detail"])
+        else:
+            raised.setdefault(key, (False, None))
+    return [{"kind": kind, "subject": subject, "active": active, "value": None,
+             "threshold": None, "payload": detail}
+            for (kind, subject), (active, detail) in sorted(raised.items())]
+
+
+def few_valid_candidates(state_dir: Path, setup: journal.Setup, day: date, *,
+                         overlay: Path | None = None) -> list[HealthEvent]:
+    """Decision 152 (e)'s detector, for a day whose run reached step 5 with a
+    provider: the first such day is the first date of the calls ledger (every
+    step 5 writes a call row); once ``alerts.valid_candidates_window_days``
+    calendar days have passed since it, an alert when the trials ledger holds
+    fewer than ``alerts.min_valid_candidates`` rows dated in the window of that
+    many calendar days ending ``day``."""
+    track = setup.track.name
+    force = in_force(setup, FEW_VALID)
+    least = int(force["alerts.min_valid_candidates"])
+    window = int(force["alerts.valid_candidates_window_days"])
+    calls = ledger.read(state_dir, track, ledger.CALLS, into=overlay)
+    if not calls:
+        return []
+    first = min(date.fromisoformat(r["date"]) for r in calls)
+    if (day - first).days < window:
+        return []
+    start = day - timedelta(days=window - 1)
+    trials = ledger.read(state_dir, track, ledger.TRIALS, into=overlay)
+    count = sum(1 for r in trials if start <= date.fromisoformat(r["date"]) <= day)
+    if count >= least:
+        return []
+    return [HealthEvent(day, "alert", FEW_VALID, track, {
+        "trials": count, "first": start.isoformat(), "last": day.isoformat(),
+        "since": first.isoformat(), "thresholds": force})]
+
+
+def cost_stale(setup: journal.Setup, day: date, models: ModelsConfig | None = None
+               ) -> list[HealthEvent]:
+    """Decision 152 (e)'s detector: an alert for each ``checked`` date of the
+    track's instruments' cost records (fees and spreads in ticks), of their
+    measured spread tables and of the pool's models (``pool = true``) that lies
+    more than ``alerts.cost_stale_days`` calendar days before ``day``; subject the
+    file and key."""
+    force = in_force(setup, COST_STALE)
+    limit = int(force["alerts.cost_stale_days"])
+    checked: list[tuple[str, date]] = []
+    for inst in sorted(setup.instruments, key=lambda i: i.symbol):
+        if inst.cost.provenance is not None:
+            checked.append((f"instruments/{inst.symbol}.toml cost.checked",
+                            inst.cost.provenance.checked))
+        table = setup.spread_tables.get(inst.symbol)
+        if table is not None:
+            checked.append((f"spreads/{inst.symbol}.toml checked", table.provenance.checked))
+    if models is not None:
+        checked += [(f"models.toml model.{m.id}.checked", m.provenance.checked)
+                    for m in models.models if m.pool]
+    return [HealthEvent(day, "alert", COST_STALE, subject,
+                        {"checked": when.isoformat(), "days": (day - when).days,
+                         "thresholds": force})
+            for subject, when in checked if (day - when).days > limit]
+
+
+def months_before(day: date, months: int) -> date:
+    """``day`` moved back ``months`` calendar months, its day of month clamped."""
+    index = day.year * 12 + day.month - 1 - months
+    year, month = divmod(index, 12)
+    return date(year, month + 1, min(day.day, calendar.monthrange(year, month + 1)[1]))
+
+
+def no_finding(setup: journal.Setup, day: date, since: date, fired: Iterable[date]
+               ) -> list[HealthEvent]:
+    """DESIGN 15.2's ``no_finding``: an alert (subject the track) when live
+    running began on or before the day ``alerts.no_finding_months`` months before
+    ``day`` and no finding alert fired (``fired``, their dates) after that day,
+    up to ``day``. Built, not called by the day loop (decision 152 (e))."""
+    force = in_force(setup, NO_FINDING)
+    start = months_before(day, int(force["alerts.no_finding_months"]))
+    if since > start:
+        return []
+    held = sorted(d for d in fired if d <= day)
+    if held and held[-1] > start:
+        return []
+    return [HealthEvent(day, "alert", NO_FINDING, setup.track.name, {
+        "since": since.isoformat(), "first": start.isoformat(),
+        "last_finding": held[-1].isoformat() if held else None, "thresholds": force})]
+
+
+def detectors(state_dir: Path, setup: journal.Setup, day: date, *, reached_step_5: bool,
+              models: ModelsConfig | None = None, overlay: Path | None = None
+              ) -> list[HealthEvent]:
+    """The events of decision 152 (e)'s detectors on ``day``: ``cost_stale``, and
+    ``few_valid_candidates`` when the day's run reached step 5 with a provider."""
+    events = cost_stale(setup, day, models)
+    if reached_step_5:
+        events += few_valid_candidates(state_dir, setup, day, overlay=overlay)
+    return events
+
+
+def rules(state_dir: Path, setup: journal.Setup, day: date, records: pd.DataFrame, *,
+          overlay: Path | None = None,
+          exposure: tuple[pd.DataFrame, pd.DataFrame] | None = None) -> list[dict[str, Any]]:
+    """Every entry of ``day``: the finding rules', then the health kinds'."""
+    return [*persistent_approach(state_dir, setup, day, records, overlay=overlay,
+                                 exposure=exposure),
+            group_edge(state_dir, setup, day, records, overlay=overlay, exposure=exposure),
+            rank_persistence(state_dir, setup, day, overlay=overlay),
+            *revival(state_dir, setup, day, records, overlay=overlay),
+            *health(state_dir, setup.track.name, day)]
+
+
+def key_of(kind: str, subject: str) -> str:
+    return f"{kind}|{subject}"
+
+
+def state_path(root: Path, track: str) -> Path:
+    """``alerts/<track>/state.json`` under ``root``."""
+    return Path(root) / ALERTS_DIR / track / STATE_FILE
+
+
+def payload_path(root: Path, track: str, day: date, kind: str, subject: str) -> Path:
+    """``alerts/<track>/payloads/<D>/<kind>/<quoted subject>.json`` under ``root``."""
+    return (Path(root) / ALERTS_DIR / track / PAYLOADS / day.isoformat() / kind
+            / f"{quote(subject, safe='')}.json")
+
+
+def read_state(root: Path, track: str) -> dict[str, Any] | None:
+    path = state_path(root, track)
+    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
+
+
+def transition(previous: Mapping[str, Any] | None, day: date,
+               entries: Iterable[Mapping[str, Any]]
+               ) -> tuple[dict[str, Any], list[Mapping[str, Any]]]:
+    """The state of ``day`` and the entries that fire on it (DESIGN 15.3;
+    decision 152 (a), (b)): an entry fires when it is active and was not
+    active, or did not exist, in ``previous``; ``since`` is the date it last
+    turned true, or null."""
+    held = {} if previous is None else previous["alerts"]
+    out: dict[str, dict[str, Any]] = {}
+    fired = []
+    for e in entries:
+        key = key_of(e["kind"], e["subject"])
+        if key in out:
+            raise ValueError(f"two entries for {key} on {day.isoformat()}")
+        before = held.get(key)
+        was = before is not None and bool(before["active"])
+        if e["active"] and not was:
+            since: str | None = day.isoformat()
+            fired.append(e)
+        else:
+            since = None if before is None else before["since"]
+        out[key] = {"active": bool(e["active"]), "since": since, "value": e["value"],
+                    "threshold": e["threshold"]}
+    return {"date": day.isoformat(), "alerts": dict(sorted(out.items()))}, fired
+
+
+def write(into: Path, state_dir: Path, track: str, day: date, new: Mapping[str, Any],
+          fired: Iterable[Mapping[str, Any]]) -> list[str]:
+    """Write the state and each fired entry's payload under ``into`` (the staging
+    directory), each as ``ledger.line`` writes an object with a newline,
+    atomically; return their paths relative to ``into``. A payload already in
+    ``state_dir`` or ``into`` is never rewritten: the same bytes are left, other
+    bytes are refused (``StateError``)."""
+    written = []
+    for e in fired:
+        data = (ledger.line(e["payload"]) + "\n").encode("utf-8")
+        target = payload_path(into, track, day, e["kind"], e["subject"])
+        held = [p for p in (payload_path(state_dir, track, day, e["kind"], e["subject"]),
+                            target) if p.exists()]
+        if held:
+            if any(p.read_bytes() != data for p in held):
+                raise state.StateError(f"{held[0]} holds another payload; a payload is "
+                                       f"never rewritten")
+            continue
+        write_atomic(target, lambda p, data=data: p.write_bytes(data))
+        written.append(target.relative_to(into).as_posix())
+    text = (ledger.line(new) + "\n").encode("utf-8")
+    path = state_path(into, track)
+    write_atomic(path, lambda p: p.write_bytes(text))
+    written.append(path.relative_to(into).as_posix())
+    return written
+
+
+def step(state_dir: Path, setup: journal.Setup, day: date, records: pd.DataFrame, *,
+         into: Path, exposure: tuple[pd.DataFrame, pd.DataFrame] | None = None
+         ) -> tuple[dict[str, Any], list[Mapping[str, Any]]]:
+    """Step 6's rules, state and payloads on the new day ``day`` (decision 152
+    (f) 3 and 4): every rule over the paper records ``records`` (``into`` the
+    staging directory, read first), the state against the stored state of the
+    day before, both written to ``into``."""
+    entries = rules(state_dir, setup, day, records, overlay=into, exposure=exposure)
+    new, fired = transition(read_state(state_dir, setup.track.name), day, entries)
+    write(into, state_dir, setup.track.name, day, new, fired)
+    return new, fired

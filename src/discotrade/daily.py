@@ -1,6 +1,6 @@
-"""The daily run, steps 1 to 5 and the rank persistence of step 6 (DESIGN 16.1,
-16.2, 5.4, 5.6, 9.2, 9.3, 10.4, 10.5, 11.1, 15.2; decisions 2026-10-12 2, 3, 19,
-50 to 53, 55, 59, 62, 69, 70, 71; I-5, I-6, I-12, I-14).
+"""The daily run, steps 1 to 5, step 6 and the table (DESIGN 16.1, 16.2, 5.4,
+5.6, 9.2, 9.3, 10.4, 10.5, 11.1, 15.1 to 15.3; decisions 2026-10-12 2, 3, 19,
+50 to 53, 55, 59, 62, 69, 70, 71, 2026-10-17-m19 152; I-5, I-6, I-12, I-14).
 
 ``run_day(state_dir, config_dir, track, clock, day=None)`` processes one
 trading day ``D`` of the track in a state directory ``init-state`` made
@@ -69,6 +69,13 @@ releasing it on success and on failure:
   to ``stats/<track>/rank_persistence.jsonl`` in the staging directory
   (``stats.append_rank_rows``); a re-run computes none. Rows written before
   mission 19 are not rewritten and have neither key (I-5). Then, when the day is
+  new, the rest of step 6 (decision 2026-10-17-m19 152 (f)): the detectors'
+  events (``alerts.detectors``: ``cost_stale`` over ``<config>/models.toml``
+  when the configuration has one, and ``few_valid_candidates`` when the day
+  reached step 5) appended to the health log at once, then every rule and the
+  alert state with the fired alerts' payloads (``alerts.step``) under
+  ``alerts/<track>/`` in the staging directory; a re-run writes none of them.
+  ``no_finding`` is not called (152 (e)). Then, when the day is
   new, the table (DESIGN 10.4; decision 71; ``table.build`` and ``table.write``):
   ``table/<track>/table.json`` and ``table.md`` written to the staging
   directory; a re-run writes neither. Only when all of
@@ -179,6 +186,7 @@ from discotrade.clock import Clock
 from discotrade.config import (
     Calendar,
     DateRange,
+    ModelsConfig,
     TrackConfig,
     load_models,
     load_run,
@@ -362,6 +370,12 @@ def _rank_persistence(state_dir: Path, setup: journal.Setup, day: date, first: d
     return stats.append_rank_rows(state_dir, track.name, out, into=staging)
 
 
+def _models(config_dir: Path) -> ModelsConfig | None:
+    """``<config>/models.toml``, or None when the configuration has none."""
+    path = Path(config_dir) / "models.toml"
+    return load_models(path) if path.exists() else None
+
+
 def run_day(state_dir: Path, config_dir: Path, track: str, clock: Clock,
             day: date | None = None, candidate: lifecycle.Candidate | None = None,
             sandbox: Sandbox | str | None = None, provider: Any = None,
@@ -531,6 +545,10 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
         if result.status == journal.WRITTEN:
             _rank_persistence(state_dir, setup, d, min(journaled | {d}), records, staging,
                               (unit, positions))
+            appended += state.append_health(state_dir, track, alerts.detectors(
+                state_dir, setup, d, reached_step_5=generated.brief is not None,
+                models=_models(config_dir), overlay=staging))
+            alerts.step(state_dir, setup, d, records, into=staging, exposure=(unit, positions))
             table.write(staging, track, table.build(state_dir, setup, d, records,
                                                     into=staging))
         moved = _move(staging, state_dir)

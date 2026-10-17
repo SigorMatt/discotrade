@@ -29,6 +29,7 @@ The finding rules ``persistent_approach`` and ``group_edge`` (decision
 their own; its section comment says how.
 """
 
+import json
 import math
 import shutil
 import statistics
@@ -41,6 +42,7 @@ import pytest
 from discotrade import alerts, journal, ledger, paper, stats
 from discotrade import state as state_mod
 from discotrade.cli import REPO_ROOT
+from discotrade.config import load_models
 
 FIXTURE_CONFIG = REPO_ROOT / "tests" / "fixtures" / "config"
 TRACK = "test_synth"
@@ -775,3 +777,382 @@ def test_k_is_the_mean_member_count_rounded_half_up(setup, group):
         assert got["payload"]["k"] == k, name
         assert close(got["threshold"], own["thr"], 1e-12), name
         assert got["active"] is True, name
+
+
+# ===================================================================================
+# The alert state, the firing, the payloads, the ``rank_persistence`` and ``revival``
+# rules, the health alerts and the detectors (DESIGN 15.1 to 15.3; decision
+# 2026-10-17-m19 152).
+#
+# Each state is written under the test's tmp directory by the product's writers
+# (``stats.append_rank_rows``, ``ledger.append``, ``state.write_approach``,
+# ``state.append_health``, ``paper.write``), with every value and seed written here,
+# on the fixture track ``test_synth`` (trading days Monday to Friday, the one closure
+# 2019-07-04 avoided) and the production ``config/thresholds.toml`` read through the
+# config loader. Every expected figure is the test's own: the mean, the sample
+# deviation and t with ``math`` and ``statistics``, the one-sided 5% critical value
+# at 11 degrees of freedom written as the literal 1.795884819, trading days counted
+# as weekdays. The tests prove these functions on these inputs only.
+# ===================================================================================
+
+T_CRIT_11 = 1.795884819               # the one-sided 5% critical value of t at 11 df
+R_SEED = 152_001
+HEALTH_KINDS = ("data_gaps", "run_failed", "day_caught_up", "journal_mismatch",
+                "model_removed", "few_valid_candidates", "token_budget", "cost_stale",
+                "revised_data", "no_finding")       # DESIGN 15.2's alert kinds
+
+
+def test_the_new_rules_read_the_production_thresholds(setup):
+    t = setup.thresholds
+    assert (t["alerts.rank_blocks"], t["alerts.rank_level"], t["alerts.revival_min_days"],
+            t["alerts.cost_stale_days"], t["alerts.min_valid_candidates"],
+            t["alerts.valid_candidates_window_days"], t["alerts.no_finding_months"]) == (
+        12, 0.05, 60, 90, 5, 14, 12)
+    keys = alerts.THRESHOLD_KEYS
+    assert set(keys[alerts.RANK]) >= {"alerts.rank_blocks", "alerts.rank_level"}
+    assert keys[alerts.REVIVAL] == ("alerts.revival_min_days",)
+    assert set(keys[alerts.FEW_VALID]) == {"alerts.min_valid_candidates",
+                                           "alerts.valid_candidates_window_days"}
+    assert keys[alerts.COST_STALE] == ("alerts.cost_stale_days",)
+    assert keys[alerts.NO_FINDING] == ("alerts.no_finding_months",)
+
+
+# ------------------------------------------------------------ rank_persistence
+
+
+def rank_row(block, timing, statistic, gross):
+    first = date(2019, 6, 3) + timedelta(days=7 * block)
+    row = {"block": block, "first": first.isoformat(),
+           "last": (first + timedelta(days=6)).isoformat(),
+           "previous_first": (first - timedelta(days=7)).isoformat(),
+           "previous_last": (first - timedelta(days=1)).isoformat(),
+           "subjects": ["a1", "a2", "a3", "a4", "a5"], "size": 5, "statistic": statistic}
+    if timing is not False:                 # False: a row written before mission 19
+        row["timing"], row["gross"] = timing, gross
+    return row
+
+
+def timing_values(shift):
+    """Twelve drawn values, demeaned, then moved so that t = T_CRIT_11 + shift."""
+    rng = np.random.default_rng(R_SEED)
+    e = [float(x) for x in rng.normal(0.0, 0.3, 12)]
+    m = math.fsum(e) / 12
+    e = [x - m for x in e]
+    s = statistics.stdev(e)
+    return [x + (T_CRIT_11 + shift) * s / math.sqrt(12) for x in e]
+
+
+def write_rank_state(root, values, extra_null=False):
+    """Block 1 a row without ``timing`` (before mission 19); then one row per value,
+    ``statistic`` the value's negative and ``gross`` a third figure; with
+    ``extra_null`` a row whose ``timing`` is null after them."""
+    rows = [rank_row(1, False, 0.9, None)]
+    for j, v in enumerate(values):
+        rows.append(rank_row(2 + j, v, -v, 0.5 - v))
+    if extra_null:
+        rows.append(rank_row(2 + len(values), None, None, None))
+    stats.append_rank_rows(root, TRACK, rows)
+    return rows
+
+
+def own_t(values):
+    n = len(values)
+    mean = math.fsum(values) / n
+    s = statistics.stdev(values)
+    return mean, s, mean / (s / math.sqrt(n))
+
+
+@pytest.mark.parametrize("shift, side", [(0.05, True), (-0.05, False)])
+def test_rank_persistence_twelve_blocks_on_both_sides_of_the_critical_value(
+        tmp_path, setup, shift, side):
+    values = timing_values(shift)
+    write_rank_state(tmp_path, values)
+    mean, s, t = own_t(values)
+    assert abs(t - (T_CRIT_11 + shift)) < 1e-9
+    entry = alerts.rank_persistence(tmp_path, setup, date(2019, 9, 2))
+    assert (entry["kind"], entry["subject"]) == (alerts.RANK, TRACK)
+    assert entry["active"] is side
+    assert close(entry["value"], mean, 1e-12)
+    assert close(entry["threshold"], T_CRIT_11 * s / math.sqrt(12), 1e-7)
+    pay = entry["payload"]
+    assert close(pay["t"], t, 1e-12) and close(pay["sd"], s, 1e-12) and pay["n"] == 12
+    assert (pay["p"] < 0.05) is side and abs(pay["p"] - 0.05) < 0.01
+    assert pay["blocks"] == list(range(2, 14))
+    assert pay["thresholds"]["alerts.rank_blocks"] == 12
+    assert pay["thresholds"]["alerts.rank_level"] == 0.05
+
+
+def test_rank_persistence_reads_timing_not_the_net_statistic(tmp_path, setup):
+    values = timing_values(0.05)
+    write_rank_state(tmp_path, values)
+    # On ``statistic`` (each value's negative) t would be negative: not met.
+    assert own_t([-v for v in values])[2] < 0
+    assert alerts.rank_persistence(tmp_path, setup, date(2019, 9, 2))["active"] is True
+
+
+def test_rank_persistence_takes_the_last_twelve_non_missing_blocks(tmp_path, setup):
+    values = [-5.0] + timing_values(0.05)             # an older, far lower block first
+    write_rank_state(tmp_path, values, extra_null=True)
+    entry = alerts.rank_persistence(tmp_path, setup, date(2019, 9, 2))
+    assert entry["payload"]["blocks"] == list(range(3, 15))
+    assert close(entry["value"], own_t(values[1:])[0], 1e-12)
+    assert entry["active"] is True
+
+
+def test_rank_persistence_is_not_evaluated_with_eleven_blocks(tmp_path, setup):
+    write_rank_state(tmp_path, timing_values(3.0)[:11], extra_null=True)
+    entry = alerts.rank_persistence(tmp_path, setup, date(2019, 9, 2))
+    assert entry == {"kind": alerts.RANK, "subject": TRACK, "active": False, "value": None,
+                     "threshold": None, "payload": None}
+
+
+# ------------------------------------------------------------------- revival
+
+
+def weekdays_between(after, through):
+    """Weekdays in (after, through]: the trading days of synth_week away from 07-04."""
+    d, n = after + timedelta(days=1), 0
+    while d <= through:
+        n += d.weekday() < 5
+        d += timedelta(days=1)
+    return n
+
+
+def back_weekdays(day, n):
+    """The weekday ``x`` before ``day`` with ``n`` weekdays in (x, day]."""
+    x = day
+    while weekdays_between(x, day) < n:
+        x -= timedelta(days=1)
+    while x.weekday() >= 5:
+        x -= timedelta(days=1)
+    return x
+
+
+REVIVAL_DAY = date(2019, 12, 20)          # a Friday; 60 weekdays back stay after 07-04
+
+
+def write_revival_state(root, setup):
+    ids = {}
+    for name in ("sixty", "fiftynine", "yesterday"):
+        ids[name] = state_mod.write_approach(
+            root, source=f"# approach {name}\n", params={}, cell="trend/short",
+            model_id="test-model", model_version="test-model-v0", cutoff=date(2019, 1, 1),
+            description=f"the approach {name}", profile_version="w-test",
+            admitted=date(2019, 7, 15), instruments=setup.instruments,
+            spread_tables=setup.spread_tables)
+    went = {"sixty": back_weekdays(REVIVAL_DAY, 60), "fiftynine": back_weekdays(REVIVAL_DAY, 59),
+            "yesterday": back_weekdays(REVIVAL_DAY, 70)}
+    back = {"sixty": REVIVAL_DAY, "fiftynine": REVIVAL_DAY,
+            "yesterday": REVIVAL_DAY - timedelta(days=1)}
+    rows = []
+    for name, aid in ids.items():
+        rows.append({"date": went[name].isoformat(), "id": aid, "from": "live", "to": "dormant",
+                     "reason": "dormant", "adjusted": -0.5, "plain": -0.4})
+        rows.append({"date": back[name].isoformat(), "id": aid, "from": "dormant", "to": "live",
+                     "reason": "returned", "adjusted": 0.5, "plain": 0.4})
+    ledger.append(root, TRACK, ledger.LIFECYCLE, sorted(rows, key=lambda r: r["date"]))
+    records = pd.DataFrame([{"date": date(2019, 7, 15) + timedelta(days=j), "subject": aid,
+                             "kind": paper.APPROACH, "gross": 0.0, "net_1x": 0.0, "net_2x": 0.0,
+                             "trades": 0, "clean": j % 3 != 0}
+                            for aid in ids.values() for j in range(9)])
+    return ids, went, records
+
+
+def test_revival_59_and_60_dormant_trading_days(tmp_path, setup):
+    ids, went, records = write_revival_state(tmp_path, setup)
+    assert weekdays_between(went["sixty"], REVIVAL_DAY) == 60
+    assert weekdays_between(went["fiftynine"], REVIVAL_DAY) == 59
+    got = {e["subject"]: e for e in alerts.revival(tmp_path, setup, REVIVAL_DAY, records)}
+    # only the rows dated D from dormant to live are evaluated
+    assert set(got) == {ids["sixty"], ids["fiftynine"]}
+    sixty, short = got[ids["sixty"]], got[ids["fiftynine"]]
+    assert (sixty["kind"], sixty["active"], sixty["value"], sixty["threshold"]) == (
+        alerts.REVIVAL, True, 60, 60)
+    assert (short["active"], short["value"], short["threshold"]) == (False, 59, 60)
+    pay = sixty["payload"]
+    assert (pay["dormant_days"], pay["dormant_since"]) == (60, went["sixty"].isoformat())
+    assert (pay["clean_days"], pay["exposed_days"]) == (6, 3)
+    assert pay["thresholds"] == {"alerts.revival_min_days": 60}
+    assert (pay["description"], pay["source"], pay["cell"], pay["model_id"],
+            pay["model_version"]) == ("the approach sixty", "# approach sixty\n", "trend/short",
+                                      "test-model", "test-model-v0")
+
+
+# ------------------------------------------------------------- the transitions
+
+
+def entry(kind, subject, active, value=None, threshold=None, payload=None):
+    return {"kind": kind, "subject": subject, "active": active, "value": value,
+            "threshold": threshold, "payload": payload}
+
+
+def test_an_alert_fires_once_while_true_and_again_after_it_was_false():
+    days = [date(2019, 9, 2) + timedelta(days=j) for j in range(5)]
+    actives = [True, True, False, True, True]
+    previous, fired_on, sinces = None, [], []
+    for d, on in zip(days, actives, strict=True):
+        new, fired = alerts.transition(previous, d, [entry(alerts.REVIVAL, "a1", on, 60, 60,
+                                                           {"x": 1})])
+        assert new["date"] == d.isoformat()
+        if fired:
+            fired_on.append(d)
+        sinces.append(new["alerts"]["revival|a1"]["since"])
+        previous = new
+    assert fired_on == [days[0], days[3]]
+    assert sinces == [days[0].isoformat()] * 3 + [days[3].isoformat()] * 2
+    assert previous["alerts"]["revival|a1"] == {"active": True, "since": days[3].isoformat(),
+                                                "value": 60, "threshold": 60}
+
+
+def test_an_entry_absent_the_day_before_fires_and_an_inactive_one_has_no_since():
+    d = date(2019, 9, 3)
+    previous = {"date": "2019-09-02", "alerts": {
+        "revival|old": {"active": True, "since": "2019-09-02", "value": 61, "threshold": 60}}}
+    new, fired = alerts.transition(previous, d, [entry(alerts.REVIVAL, "new", True, 70, 60),
+                                                 entry(alerts.RANK, TRACK, False)])
+    assert [(e["kind"], e["subject"]) for e in fired] == [(alerts.REVIVAL, "new")]
+    assert new == {"date": "2019-09-03", "alerts": {
+        "rank_persistence|test_synth": {"active": False, "since": None, "value": None,
+                                        "threshold": None},
+        "revival|new": {"active": True, "since": "2019-09-03", "value": 70, "threshold": 60}}}
+
+
+def test_the_state_and_payloads_are_written_where_and_as_the_decision_says(tmp_path):
+    d = date(2019, 9, 3)
+    subject = "instruments/SYNA.toml cost.checked"
+    new, fired = alerts.transition(None, d, [
+        entry(alerts.COST_STALE, subject, True, payload={"checked": "2019-01-01", "days": 245}),
+        entry(alerts.RANK, TRACK, True, 0.25, 0.125, {"mean": 0.25, "p": 0.01}),
+        entry(alerts.REVIVAL, "a1", False, 59, 60, {"dormant_days": 59})])
+    staging, stored = tmp_path / "staging", tmp_path / "state"
+    stored.mkdir()
+    written = alerts.write(staging, stored, TRACK, d, new, fired)
+    base = staging / "alerts" / TRACK
+    assert (base / "state.json").read_text(encoding="utf-8") == ledger.line(new) + "\n"
+    quoted = "instruments%2FSYNA.toml%20cost.checked"
+    assert (base / "payloads" / "2019-09-03" / "cost_stale" / f"{quoted}.json").read_text(
+        encoding="utf-8") == ledger.line({"checked": "2019-01-01", "days": 245}) + "\n"
+    assert (base / "payloads" / "2019-09-03" / "rank_persistence" / f"{TRACK}.json").read_text(
+        encoding="utf-8") == ledger.line({"mean": 0.25, "p": 0.01}) + "\n"
+    assert not (base / "payloads" / "2019-09-03" / "revival").exists()
+    assert sorted(written) == sorted([
+        f"alerts/{TRACK}/state.json",
+        f"alerts/{TRACK}/payloads/2019-09-03/cost_stale/{quoted}.json",
+        f"alerts/{TRACK}/payloads/2019-09-03/rank_persistence/{TRACK}.json"])
+    assert ledger.line(new) == json_line(new)
+
+
+def json_line(obj):
+    return json.dumps(obj, sort_keys=True, separators=(",", ":"))
+
+
+def test_a_payload_is_never_rewritten(tmp_path):
+    d = date(2019, 9, 3)
+    new, fired = alerts.transition(None, d, [entry(alerts.RANK, TRACK, True, 1.0, 0.5,
+                                                   {"mean": 1.0})])
+    stored = tmp_path / "state"
+    alerts.write(stored, stored, TRACK, d, new, fired)
+    other = [dict(fired[0], payload={"mean": 2.0})]
+    with pytest.raises(state_mod.StateError):
+        alerts.write(tmp_path / "staging", stored, TRACK, d, new, other)
+
+
+# --------------------------------------------------------------- health alerts
+
+
+@pytest.mark.parametrize("kind", HEALTH_KINDS)
+def test_each_health_kind_fires_from_its_event(tmp_path, kind):
+    d = date(2019, 9, 3)
+    state_mod.append_health(tmp_path, TRACK, [
+        state_mod.HealthEvent(d - timedelta(days=1), "alert", kind, "old", {"n": 1}),
+        state_mod.HealthEvent(d, "alert", kind, "subj", {"n": 2}),
+        state_mod.HealthEvent(d, "notice", kind, "quiet", {"n": 3}),
+        state_mod.HealthEvent(d + timedelta(days=1), "alert", kind, "later", {"n": 4})])
+    got = alerts.health(tmp_path, TRACK, d)
+    assert got == [entry(kind, "old", False), entry(kind, "subj", True, payload={"n": 2})]
+    previous = {"date": "2019-09-02", "alerts": {
+        f"{kind}|old": {"active": True, "since": "2019-09-02", "value": None,
+                        "threshold": None}}}
+    new, fired = alerts.transition(previous, d, got)
+    assert [(e["kind"], e["subject"], e["payload"]) for e in fired] == [(kind, "subj", {"n": 2})]
+    assert new["alerts"][f"{kind}|old"] == {"active": False, "since": "2019-09-02",
+                                            "value": None, "threshold": None}
+
+
+# ------------------------------------------------------------------ detectors
+
+
+def call_row(day, k):
+    return {"date": day.isoformat(), "call": f"c{k}", "attempt": 1, "cell": "trend/short",
+            "model": "m", "outcome": "trial", "response": None, "tokens_in": 1, "tokens_out": 1}
+
+
+FIRST_CALL = date(2019, 9, 2)
+
+
+@pytest.mark.parametrize("offset, trials, raised", [
+    (13, 0, False),       # 13 days since the first step-5 day: not yet
+    (14, 4, True),        # 14 days: 4 trials in the 14 calendar days ending D
+    (14, 5, False),       # 5 trials: enough
+])
+def test_few_valid_candidates_at_its_thresholds(tmp_path, setup, offset, trials, raised):
+    d = FIRST_CALL + timedelta(days=offset)
+    ledger.append(tmp_path, TRACK, ledger.CALLS, [call_row(FIRST_CALL, 0), call_row(d, 1)])
+    start = d - timedelta(days=13)
+    # one trial the day before the window, never counted; the others in it
+    rows = [trial_row(99, start - timedelta(days=1))]
+    rows += [trial_row(k, start + timedelta(days=k % 14)) for k in range(trials)]
+    ledger.append(tmp_path, TRACK, ledger.TRIALS, rows)
+    got = alerts.few_valid_candidates(tmp_path, setup, d)
+    if not raised:
+        assert got == []
+        return
+    [event] = got
+    assert (event.date, event.level, event.kind, event.subject) == (
+        d, "alert", alerts.FEW_VALID, TRACK)
+    assert event.detail["trials"] == trials
+    assert event.detail["thresholds"] == {"alerts.min_valid_candidates": 5,
+                                          "alerts.valid_candidates_window_days": 14}
+
+
+def test_few_valid_candidates_needs_a_step_5_day(tmp_path, setup):
+    # a controls-only state has no call row: never raised
+    ledger.append(tmp_path, TRACK, ledger.TRIALS, [trial_row(1, date(2019, 6, 3))])
+    assert alerts.few_valid_candidates(tmp_path, setup, date(2020, 6, 3)) == []
+
+
+def test_cost_stale_counts_calendar_days_before_d(setup):
+    models = load_models(FIXTURE_CONFIG / "models.toml")
+    pool = sorted(m.id for m in models.models if m.pool)
+    assert {m.provenance.checked for m in models.models if m.pool} == {date(2026, 10, 11)}
+    assert setup.spread_tables["SYNA"].provenance.checked == date(2026, 10, 12)
+    assert all(i.cost.provenance is None for i in setup.instruments)
+    # 2027-01-09 is 90 days after 2026-10-11: nothing is stale
+    assert alerts.cost_stale(setup, date(2027, 1, 9), models) == []
+    on_10 = alerts.cost_stale(setup, date(2027, 1, 10), models)       # 91 and 90 days
+    assert sorted(e.subject for e in on_10) == sorted(f"models.toml model.{m}.checked"
+                                                      for m in pool)
+    on_11 = alerts.cost_stale(setup, date(2027, 1, 11), models)       # 92 and 91 days
+    assert sorted(e.subject for e in on_11) == sorted(
+        [f"models.toml model.{m}.checked" for m in pool] + ["spreads/SYNA.toml checked"])
+    spread = next(e for e in on_11 if e.subject.startswith("spreads/"))
+    assert (spread.date, spread.level, spread.kind) == (date(2027, 1, 11), "alert",
+                                                        alerts.COST_STALE)
+    assert spread.detail == {"checked": "2026-10-12", "days": 91,
+                             "thresholds": {"alerts.cost_stale_days": 90}}
+    # without the model records only the spread table is read
+    assert [e.subject for e in alerts.cost_stale(setup, date(2027, 1, 11))] == [
+        "spreads/SYNA.toml checked"]
+
+
+def test_no_finding_at_twelve_months(setup):
+    d = date(2020, 9, 15)
+    since = date(2019, 9, 15)                       # twelve months before D
+    [event] = alerts.no_finding(setup, d, since, [date(2019, 9, 15)])
+    assert (event.date, event.level, event.kind, event.subject) == (
+        d, "alert", alerts.NO_FINDING, TRACK)
+    assert event.detail["thresholds"] == {"alerts.no_finding_months": 12}
+    # live running one day shorter than twelve months: not raised
+    assert alerts.no_finding(setup, d, since + timedelta(days=1), []) == []
+    # a finding alert inside the twelve months: not raised
+    assert alerts.no_finding(setup, d, since, [date(2019, 9, 16)]) == []

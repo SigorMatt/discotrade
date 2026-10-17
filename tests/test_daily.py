@@ -27,7 +27,15 @@ from discotrade.bars.store import BarStore
 from discotrade.cli import REPO_ROOT, main
 from discotrade.config import load_calendar, load_track_config
 from discotrade.sources import source_for
-from discotrade.state import LOCK, STAGING, content_hash, read_approaches, write_approach
+from discotrade.state import (
+    LOCK,
+    STAGING,
+    HealthEvent,
+    append_health,
+    content_hash,
+    read_approaches,
+    write_approach,
+)
 from discotrade.strategy import load_strategy_file
 
 FIXTURE_CONFIG = REPO_ROOT / "tests" / "fixtures" / "config"
@@ -373,6 +381,66 @@ def test_a_revised_data_point_fails_the_day_with_revised_data(state, config, set
     assert len(events) == 1 and events[0]["level"] == "alert"
     assert events[0]["date"] == NEXT.isoformat()
     assert journal.read_day(state, TRACK, NEXT) is None and commits(state) == head
+
+
+# ------------------------------------------------------------------ step 6: the alert state
+#
+# Decision 2026-10-17-m19 152 (a), (b), (f): on a new day only, the alert state and
+# the payloads of the alerts that fired are written in the staging directory and
+# moved and committed with the day; a re-run of a finished day writes neither.
+
+
+def alert_state(state) -> dict:
+    return json.loads((state / "alerts" / TRACK / "state.json").read_text(encoding="utf-8"))
+
+
+def test_each_new_day_writes_the_alert_state_of_its_rules(ran):
+    sha = git(ran, "log", "--format=%H").split()[0]
+    changed = git(ran, "show", "--name-only", "--format=", sha).split()
+    assert f"alerts/{TRACK}/state.json" in changed
+    held = alert_state(ran)
+    assert held["date"] == DAYS[-1].isoformat()
+    kinds = {key.split("|", 1)[0] for key in held["alerts"]}
+    assert {"persistent_approach", "group_edge", "rank_persistence"} <= kinds
+    assert held["alerts"][f"group_edge|{TRACK}"] == {"active": False, "since": None,
+                                                     "value": None, "threshold": None}
+    approaches = {a.id for a in read_approaches(ran)}
+    assert {k.split("|", 1)[1] for k in held["alerts"]
+            if k.startswith("persistent_approach|")} == approaches
+    assert (ran / "alerts" / TRACK / "state.json").read_bytes() == \
+        (ledger.line(held) + "\n").encode("utf-8")
+
+
+def test_a_health_alert_of_d_fires_on_d_with_its_payload_and_not_the_day_after(state, config):
+    event = HealthEvent(NEXT, "alert", "model_removed", "vendor/model-x", {"rate": 0.6})
+    append_health(state, TRACK, [event])
+    assert run(state, config, "--day", NEXT.isoformat()) == 0
+    key = "model_removed|vendor/model-x"
+    assert alert_state(state)["alerts"][key] == {"active": True, "since": NEXT.isoformat(),
+                                                 "value": None, "threshold": None}
+    rel = f"alerts/{TRACK}/payloads/{NEXT.isoformat()}/model_removed/vendor%2Fmodel-x.json"
+    assert (state / rel).read_text(encoding="utf-8") == ledger.line({"rate": 0.6}) + "\n"
+    assert rel in git(state, "show", "--name-only", "--format=", "HEAD").split()
+    later = NEXT + timedelta(days=1)
+    assert run(state, config, "--day", later.isoformat()) == 0
+    held = alert_state(state)
+    assert held["date"] == later.isoformat()
+    assert held["alerts"][key] == {"active": False, "since": NEXT.isoformat(), "value": None,
+                                   "threshold": None}
+    assert not (state / "alerts" / TRACK / "payloads" / later.isoformat()).exists()
+    assert (state / rel).read_text(encoding="utf-8") == ledger.line({"rate": 0.6}) + "\n"
+
+
+def test_a_rerun_of_a_finished_day_writes_no_alert_state_and_no_payload(state, config):
+    append_health(state, TRACK, [HealthEvent(NEXT, "alert", "model_removed", "m", {})])
+    assert run(state, config, "--day", NEXT.isoformat()) == 0
+    path = state / "alerts" / TRACK / "state.json"
+    before, stat, head = files(state), path.stat(), commits(state)
+    assert run(state, config, "--day", NEXT.isoformat()) == 0
+    after = path.stat()
+    assert (after.st_ino, after.st_mtime_ns) == (stat.st_ino, stat.st_mtime_ns)
+    assert files(state) == before and commits(state) == head
+    assert git(state, "status", "--porcelain") == ""
 
 
 # ------------------------------------------------------------------ time (decision 55)
