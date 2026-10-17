@@ -15,11 +15,15 @@ U4 446b0a8 (tests/fixtures/worker_corpus/: 16 strategies, m3/ 27 responses, m3_p
 tests/test_worker_corpus.py 6 tests <1 s; G3.1 span 2019-07-15..2019-08-09 (ordinals 29-48) after init-state
 2019-06-03, measured 15 trials (MiniMax 5, nemotron 6, openai 4), max |corr| 0.609; m3_pool 2019-07-15..07-31: budget
 07-15, model_removed 07-29; check 3/3 1281, 1024, 1079 s on a shared machine, D-013 times and HF-006 status lines).
+U5 8d54f9f (gate: tests/gates/m3_harness.py, test_g3_1/2/3, 18 tests; tests/test_gate_script.py M3->M4 for the
+no-gate-tests cases; D-017 filed (two-decimal forms), D-013 and D-014 times lines; seven wrong changes red (the
+unsanitized description only via G3.3's direct test); check 3/3 1116, 1054, 1180 s; gates at 45dc893 + the uncommitted
+gate files: M3 PASS 555 s (218/175/161), M2 PASS 142 s, G1.1 450, G1.2 204, G1.3 542, G1.4 1 s PASS, M0 PASS 247 s;
+outputs meta/drafts/m17-*.txt; image discotrade-sandbox:3b7d75c39621).
 
-Unit in progress: U5 The gate tests of M3 and the gate runs (decisions 132 (b), 139). Intent: tests/gates/test_g3_1,
-test_g3_2, test_g3_3 and m3_harness.py; the seven wrong changes of 139 (d) seen red; check 3/3 at the tip; sandbox
-build; gate M3, M2, M1 G1.1-G1.4, M0, each its own call, outputs kept in meta/drafts/m17-*.txt. Done means: one
-`gate:` commit (gate files + D-014 times line) pushed, all gates PASS at the tip.
+Unit in progress: U6 The final report (decisions 132 to 140). Intent: decision 133 (b)'s two wrong changes run on the
+two doctor cases; meta/FINAL-REPORT-17.md drafted under meta/drafts/ and moved in. Done means: the report with every
+section the brief names, committed and pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-16-m17 (132-140) bind; decisions 1-131 still
 bind; owner files (O-11, O-13, O-16..O-20, O-22) win. No file under config/ or tests/fixtures/rejected/, no existing
