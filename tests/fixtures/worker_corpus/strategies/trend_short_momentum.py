@@ -1,0 +1,19 @@
+"""Trend, short horizon: long (+1) for the next bar when the close is more
+than `band` (a fraction) above the close `lookback` bars before, short (-1)
+when it is more than `band` below, flat (0) otherwise.
+A validation fixture of the worker corpus (DESIGN 18.3 G3.1)."""
+
+PARAMS = {"lookback": 3, "band": 0.002}
+
+
+def position(bars, params):
+    k = int(params["lookback"])
+    close = bars["close"].to_numpy()
+    if len(close) < k + 1:
+        return 0.0
+    move = close[-1] / close[-1 - k] - 1.0
+    if move > params["band"]:
+        return 1.0
+    if move < -params["band"]:
+        return -1.0
+    return 0.0

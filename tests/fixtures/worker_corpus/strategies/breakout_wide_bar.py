@@ -1,0 +1,24 @@
+"""Breakout, short horizon: when the last bar's body (close less open) is
+wider than `mult` average true ranges of the last `length` bars, take its
+direction for the next bar (+1 up, -1 down); flat (0) otherwise.
+A validation fixture of the worker corpus (DESIGN 18.3 G3.1)."""
+
+import indicators
+
+PARAMS = {"length": 24, "mult": 0.8}
+
+
+def position(bars, params):
+    k = int(params["length"])
+    if len(bars) < k + 1:
+        return 0.0
+    tail = bars.iloc[-(k + 1):]
+    width = indicators.atr(tail["high"], tail["low"], tail["close"], k).iloc[-1]
+    if not width == width or width <= 0:
+        return 0.0
+    body = float(tail["close"].iloc[-1] - tail["open"].iloc[-1])
+    if body > params["mult"] * width:
+        return 1.0
+    if body < -params["mult"] * width:
+        return -1.0
+    return 0.0
