@@ -170,3 +170,4 @@
 2026-10-17T13:16:51.651Z  consult 0mvcesphx-jp2b (architect done) on aux.done of aux job 0mvceshpn-iirs: VERDICT: next kit mission-19-kit
 - 2026-10-17 mission 19 U0 started at 031f5e4: plan, checkpoint, decision 154 (b)'s five FINDINGS lines (HF-013, HF-014 new).
 - 2026-10-17 mission 19 U0 done e0d19df: plan; FINDINGS HF-006, HF-012, HF-010 lines, HF-013, HF-014; U1 started.
+- 2026-10-17 mission 19 U1 done 27a83b9: table adjusted figures, register settled; check 3/3 (1121, 1128, 1125 s); G1.3 PASS 855 s, G1.4 PASS 1 s; U2 started.

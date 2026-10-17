@@ -4,11 +4,14 @@ Mission: 19 (`meta/BUILDER-19-PROMPT.md`), roadmap step S4.1. Closes no mileston
 Container runtime: docker. Image at mission 18's tip: discotrade-sandbox:3b7d75c39621.
 
 Done: U0 e0d19df (plan; HF-006, HF-012, HF-010 lines; HF-013, HF-014 new).
+U1 27a83b9 (table: adjusted_S/E_N/excess, control_moments column, register PENDING empty, 147 (d) exposure
+parameter added; G1.3 one line; three 148 (e) wrong changes red; check 3/3 1121, 1128, 1125 s; G1.3 PASS 855 s
+(above 10 min: D-014 times line due at U6), G1.4 PASS 1 s; image discotrade-sandbox:3b7d75c39621).
 
-Unit in progress: U1 `control_moments`'s column, the register, the table's adjusted deflated figures (O-23,
-O-24; decisions 147, 148). Done means: `table:` commit pushed; check 3/3 green; decision 147 (a) default/named
-column test, 148 (e) figure tests; 148 (e)'s three wrong changes seen red; register PENDING empty; G1.3 one line;
-`./scripts/gate M1 G1.3` and `G1.4` PASS at the commit, outputs and times in the body.
+Unit in progress: U2 the timing statistic in the rank rows and the one-sided t-test (O-5, O-6, O-24; decisions
+149, 150). Done means: `stats:` commit pushed; check 3/3; 149 (d) and 150 tests; 149 (d)'s three wrong changes and
+150's two-sided probability seen red; `./scripts/gate M1 G1.1` PASS at the commit; seconds per replay day at
+parent and commit. Speed watch: G1.3 at 855 s after U1, 20-minute cap is FAIL (O-2).
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-23 to O-25 win, then decisions 146-154, then
 1-145 where not replaced. Add, never replace (O-25): every function a met gate reads keeps its result for today's
