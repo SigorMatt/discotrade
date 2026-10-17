@@ -27,22 +27,34 @@ Not a test file: it holds no seed, no date and no assertion of an item.
   open times, per instrument in the track's order.
 - ``words(text)``, ``numbers(text)``: the whole words and the whole numeric
   tokens of a text.
+- ``scaled_store(state, root, track, bar_seconds, price, volume)``: a state
+  directory under ``root`` holding a copy of ``state``'s bar store of ``track``
+  with every open, high, low and close multiplied by ``price`` and every volume
+  by ``volume``, written through ``BarStore.append`` (so its index and content
+  hashes are its own), its gap records copied, and its roll records copied with
+  each ``gap`` (in price units) multiplied by ``price``: the same market in other
+  units. The factors are the caller's.
 """
 
 import contextlib
+import dataclasses
 import json
 import re
+import shutil
 import tomllib
 from collections.abc import Iterator
 from datetime import date
 from pathlib import Path
 
 import numpy as np
+import pandas as pd
 from m1_harness import gate_config, init_state, replay
 
 from discotrade.backtest import read_window
+from discotrade.bars.store import BarStore
 from discotrade.cli import REPO_ROOT
 from discotrade.config import DateRange
+from discotrade.rolls import ROLLS_DIR, read_rolls
 from discotrade.sandbox.base import build_job
 from discotrade.sandbox.process import ProcessSandbox
 
@@ -133,3 +145,34 @@ def words(text: str) -> set[str]:
 
 def numbers(text: str) -> set[str]:
     return set(_NUMBER.findall(text))
+
+
+def scaled_store(state: Path, root: Path, track: str, bar_seconds: int, price: float,
+                 volume: float) -> Path:
+    """A state directory under ``root`` holding ``state``'s bars of ``track`` with
+    prices times ``price`` and volumes times ``volume``, and its rolls' gaps times
+    ``price``."""
+    state, out = Path(state), Path(root) / "state"
+    source = BarStore(state, track, bar_seconds)
+    target = BarStore(out, track, bar_seconds)
+    for symbol, entry in sorted(source.index().items()):
+        last = pd.Timestamp(entry["last_ts"])
+        bars = source.read_range(symbol, pd.Timestamp(entry["first_ts"]),
+                                 last + pd.Timedelta(seconds=bar_seconds))
+        bars = bars.copy()
+        for col in ("open", "high", "low", "close"):
+            bars[col] = bars[col].to_numpy(dtype=np.float64) * price
+        bars["volume"] = bars["volume"].to_numpy(dtype=np.float64) * volume
+        target.append(symbol, bars, last + pd.Timedelta(seconds=bar_seconds))
+    gaps = source.root / "gaps.jsonl"
+    if gaps.exists():
+        shutil.copyfile(gaps, target.root / "gaps.jsonl")
+    rolls = state / ROLLS_DIR / track
+    if rolls.is_dir():
+        (out / ROLLS_DIR / track).mkdir(parents=True, exist_ok=True)
+        for path in sorted(rolls.glob("*.jsonl")):
+            lines = [dataclasses.replace(r, gap=r.gap * price).to_json()
+                     for r in read_rolls(path)]
+            (out / ROLLS_DIR / track / path.name).write_text(
+                "".join(x + "\n" for x in lines), encoding="utf-8")
+    return out

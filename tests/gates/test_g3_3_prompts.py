@@ -1,8 +1,8 @@
 """Gate item G3.3: no prompt contains an instrument symbol, a venue, a contract
 name, a calendar date, a raw bar or a score; the labelling differs between
 prompts; the scaling function leaves returns unchanged and scales a price-unit
-field; the registry block is sanitised (DESIGN 18.3 G3.3, 18.2, 13.2, 13.3,
-13.4; decisions 139 (c), 138 (c), 119 (b), 116, 117 and 72 of meta/decisions/;
+field; the registry block is sanitised (DESIGN 18.3 G3.3, 18.2, 13.1 to 13.4;
+decisions 142, 139 (c), 138 (c), 119 (b), 116, 117 and 72 of meta/decisions/;
 I-8, I-9, I-11, I-12).
 
 G3.1's replay is made again here (``tests/fixtures/worker_corpus/m3/``, the
@@ -11,8 +11,7 @@ gate configuration under the test's temporary directory, the child-process backe
 the scripted coordinator, ``--provider scripted:<corpus>``, in-process through
 ``discotrade.cli.main``, into a state made by ``init-state`` at ``INIT_AS_OF``).
 Every stored prompt (every message of every stored response: the prompt, and on a
-retry the first reply and the retry message) of that replay is checked, as
-decision 139 (c) reads it:
+retry the first reply and the retry message) of that replay is checked:
 
 - no instrument symbol, venue or contract root of the configuration (the gate
   copy's and the production ``config/``'s instrument records), and no contract
@@ -20,25 +19,54 @@ decision 139 (c) reads it:
 - no date: nothing of the form ``YYYY-MM-DD``, and none of the calendar dates
   from the first day's W to ``LAST`` in any of the forms of ``DATE_FORMS``, as a
   whole token;
-- no raw bar: no open, high, low or close of any bar of the day's W or T (read
-  from the bar store with ``backtest.read_window``), written as ``repr``, rounded
-  to two and to four decimals (``repr`` of ``round`` and fixed-point), as a whole
-  numeric token;
-- no score: no figure of a trial row dated before the day (every non-integral
-  number under ``metrics_w``, ``metrics_t``, ``adjusted_w``, ``adjusted_t`` and
-  the grid's results), written the same ways.
+- the text search for raw bars and scores (decision 142 (d), kept from 139 (c)):
+  no open, high, low or close of any bar of the day's W or T (read from the bar
+  store with ``backtest.read_window``) and no figure of a trial row dated before
+  the day (every non-integral number under ``metrics_w``, ``metrics_t``,
+  ``adjusted_w``, ``adjusted_t`` and the grid's results), written as ``repr`` or
+  rounded to two and to four decimals (``repr`` of ``round`` and fixed-point), as
+  a whole numeric token, less the forms :func:`looked_for` drops (a whole number,
+  and a form that is exactly what ``.4g`` writes for its value): every ``repr``
+  and every form longer than ``.4g``.
 
-Two forms are not looked for (:func:`looked_for`; a reading of decision 139 (c),
-finding D-017): a whole number (``0.0``, ``-1.0``: the
-contract's own text holds ``[-1.0, 1.0]``; integer counts such as ``trades`` and
-``days`` are left out likewise), and a form that is exactly what the prompt's
-own number rendering (``.4g``, decision 117) writes for that value, such as
-``48.25``. With SYNA trading near 50 its bars rounded to two decimals cover every
-four-digit number between about 45 and 55, and the profile's statistics in
-basis points fall in that range: the first prompt of the replay holds ``48.25``
-(an hourly deviation) and ``53.54`` (a cost line), each also a SYNA price of its
-W rounded to two decimals. Every ``repr`` and every form with more digits than
-``.4g`` writes is looked for.
+"No raw bar" and "no score" are read as decision 142 of
+meta/decisions/decisions-2026-10-17-m18.md reads them, which replaces 139 (c)'s
+clause and answers finding D-017: a prompt holds a raw bar or a score when one of
+its numbers is one, or is computed so as to carry one; the harness builds a
+prompt only from named sources; so three parts are asserted besides the text
+search, whose skipped ``.4g`` forms they cover:
+
+- (a) accounting (:func:`test_every_number_of_every_prompt_has_a_source`): every
+  numeric token (``m3_harness.numbers``) of every message is accounted for by a
+  source of the part it stands in, the first prompt split at the five headings
+  (``HEADINGS``, written here). Part 1: the cell line's integers from the track
+  configuration (the horizon's bounds, ``bar_seconds``) and the scripted
+  coordinator's brief (``BRIEF``, filled here for the cell). Part 2: the
+  introduction (``PROFILE_INTRO``) and the anonymized profile document
+  (``anonymize.anonymize(profile.profile(...), call id)``): its keys' tokens, its
+  integral leaves and ``format(leaf, ".4g")`` of each finite real leaf. Part 3:
+  the registry block's fixed lines and, per entry, the id, cell and state read
+  from the state's approaches and the stored description (sanitized here), each
+  of whose tokens is also in the corpus reply the approach was admitted from.
+  Parts 4 and 5: the text left once the cost lines are taken out, identical in
+  every first prompt, and per label in label order a cost line whose four
+  figures are ``.4g`` of the label's instrument's cost means over W
+  (``prompt.unit_costs``). On attempt 2: the first message equals attempt 1's,
+  the assistant's message equals the served corpus file byte for byte, and the
+  retry message equals ``RETRY_TEXT`` and the error text recomputed as G3.2 does.
+- (b) values (:func:`test_no_harness_figure_meets_a_bar_or_an_earlier_trial_figure`):
+  every finite real leaf of the anonymized profile document and every cost mean
+  behind a cost line meets, by ``math.isclose`` at a relative ``RTOL`` (1e-9), no
+  open, high, low or close of any bar of the day's W and T of any instrument, as
+  stored and times that instrument's factor for the call
+  (``anonymize.labelling``), and no non-integral figure of a trial row dated
+  before the day.
+- (c) units (:func:`test_the_profile_is_free_of_price_and_volume_units`): on the
+  three days ``UNIT_DAYS`` (the first, one between, the last), for one cell of
+  every family, the profile from a copy of the bar store with prices times
+  ``PRICE_SCALE`` (7/3), volumes times ``VOLUME_SCALE`` (5/2) and roll gaps
+  times ``PRICE_SCALE`` (``m3_harness.scaled_store``) equals the profile from the
+  store: every finite leaf to a relative ``RTOL``, every null in the same place.
 
 The instrument-to-label maps differ between at least two first-attempt prompts:
 the prompt does not show the map, so each is taken from
@@ -66,20 +94,33 @@ Time comes only from ``--as-of`` of ``init-state`` and the replay's clock.
 """
 
 import json
+import math
 import re
 import tomllib
 from datetime import date, timedelta
 
+import numpy as np
 import pytest
 from m1_harness import init_state
-from m3_harness import M3, calls, numbers, stored, trials, worker_replay
+from m3_harness import (
+    M3,
+    backend,
+    calls,
+    corpus_files,
+    numbers,
+    scaled_store,
+    stored,
+    trials,
+    worker_replay,
+)
 
 from discotrade import journal
 from discotrade import state as state_mod
 from discotrade.backtest import read_window
 from discotrade.cli import REPO_ROOT
 from discotrade.config import DateRange, load_track_config
-from discotrade.workers import anonymize, profile, prompt
+from discotrade.validation import sequence
+from discotrade.workers import anonymize, parse, profile, prompt
 
 pytestmark = [pytest.mark.gate, pytest.mark.gate_m3]
 
@@ -97,6 +138,31 @@ OPEN, CLOSE = "<registry-data>", "</registry-data>"
 DESCRIPTION_KEY = "validation.description_max_chars"
 #: The price-unit field the scaling test adds to a profile block, and its value.
 PRICE_FIELD = ("level", "mean_close")
+#: Decision 142: the relative tolerance of (b) and (c); (c)'s days and units.
+RTOL = 1e-9
+UNIT_DAYS = (FIRST, date(2019, 7, 26), LAST)
+PRICE_SCALE, VOLUME_SCALE = 7 / 3, 5 / 2
+#: The texts the prompt's sources are read against (DESIGN 13.4, decision 117;
+#: the scripted coordinator's brief, DESIGN 14.2, decision 125 (c); the retry,
+#: decision 126 (e)), written here.
+HEADINGS = ("1. Brief", "2. W profile", "3. Registry", "4. Contract", "5. Output format")
+BRIEF = ("Write an approach of the family {family} for the horizon {horizon} that differs "
+         "from every line of the registry.")
+PROFILE_INTRO = ("The W profile of this cell, as JSON: statistics of the returns of each "
+                 "instrument over the devising window W, the instruments labelled A, B, ...; "
+                 "keys ending in _bp are in basis points; null is a statistic with too few "
+                 "observations; lists by hour run 0 to 23, by weekday 0 (Monday) to 6, "
+                 "autocorrelation by lag from 1.")
+ABSENT = ("Propose an approach that is absent from this registry: not one of the "
+          "approaches listed above, nor a variant of one of them.")
+NONE_LINE = "(none)"
+COST_START = re.compile(r"- ([A-Z]): mean cost per unit traded ")
+COST_LINE = re.compile(r"- ([A-Z]): mean cost per unit traded (\S+) bp: fee (\S+) bp, "
+                       r"half spread (\S+) bp, slippage (\S+) bp")
+COST_UNDEFINED = "mean cost per unit traded not defined (no bar in W)"
+RETRY_TEXT = ("Your reply was refused by the validation, for the reason below. Reply once "
+              "more in the output format the first message gives: one fenced Python block, "
+              "then a one-sentence description. This is the last attempt.")
 
 
 @pytest.fixture(scope="module")
@@ -395,3 +461,343 @@ def write_raw(path, setup, source, meta, description, admitted):
         cutoff=date.fromisoformat(meta["cutoff"]), description=description,
         profile_version=meta["profile_version"], admitted=admitted,
         instruments=setup.instruments, spread_tables=setup.spread_tables)
+
+
+# ------------------------------------------------- decision 142 (a), (b), (c)
+
+
+def part_bodies(content: str) -> list[str]:
+    """The five parts' bodies of a first prompt, split at the headings
+    ``workers.prompt`` writes (written here), the message rebuilt from them."""
+    assert content.endswith("\n")
+    rest, bodies = content[:-1], []
+    for k, name in enumerate(HEADINGS):
+        head = f"## {name}\n"
+        assert rest.startswith(head), (k, rest[:80])
+        rest = rest[len(head):]
+        if k + 1 < len(HEADINGS):
+            body, sep, rest = rest.partition(f"\n\n## {HEADINGS[k + 1]}\n")
+            assert sep, k
+            rest = f"## {HEADINGS[k + 1]}\n" + rest
+        else:
+            body = rest
+        bodies.append(body)
+    assert "\n\n".join(f"## {n}\n{b}" for n, b in zip(HEADINGS, bodies, strict=True)) + \
+        "\n" == content
+    return bodies
+
+
+def leaves(document, path=()):
+    """Every (path, leaf) of a JSON-like document, keys included as leaves of
+    their own (the key's text, a ``str``)."""
+    if isinstance(document, dict):
+        for k, v in document.items():
+            yield path + (k,), str(k)
+            yield from leaves(v, path + (k,))
+    elif isinstance(document, list | tuple):
+        for i, v in enumerate(document):
+            yield from leaves(v, path + (i,))
+    else:
+        yield path, document
+
+
+def finite_real(x) -> bool:
+    return isinstance(x, float) and not isinstance(x, bool) and math.isfinite(x)
+
+
+def profile_sources(document) -> set[str]:
+    """Decision 142 (a), part 2: the tokens of the keys and string leaves, of
+    the integral leaves, and ``format(leaf, ".4g")`` of each finite real leaf."""
+    out: set[str] = set()
+    for _, leaf in leaves(document):
+        if isinstance(leaf, bool) or leaf is None:
+            continue
+        if isinstance(leaf, str):
+            out |= numbers(leaf)
+        elif isinstance(leaf, int):
+            out.add(str(leaf))
+        elif finite_real(leaf):
+            out.add(format(leaf, ".4g"))
+    return out
+
+
+@pytest.fixture(scope="module")
+def corpus_served(replayed):
+    """Per call id, the corpus file the cursor served (the k-th response of a
+    model is its k-th file, in call row order, as G3.2 maps them)."""
+    state, _ = replayed
+    served: dict[str, int] = {}
+    out = {}
+    for r in calls(state, TRACK):
+        if r["response"] is None:
+            continue
+        k = served.get(r["model"], 0)
+        served[r["model"]] = k + 1
+        out[r["call"]] = corpus_files(M3, r["model"])[k]
+    return out
+
+
+@pytest.fixture(scope="module")
+def sources(replayed, setup, docs):
+    """Per first-attempt call id: the anonymized profile document
+    (``anonymize.anonymize(profile.profile(...), call id)``), the per-unit cost
+    means of each symbol (``prompt.unit_costs``) and the call's labelling."""
+    state, _ = replayed
+    out = {}
+    for doc in docs:
+        if doc["attempt"] != 1:
+            continue
+        day = date.fromisoformat(doc["date"])
+        cell = tuple(doc["cell"].split("/"))
+        document = anonymize.anonymize(
+            profile.profile(state, setup.track, setup.instruments, setup.calendars, day,
+                            cell), doc["call"])
+        out[doc["call"]] = (document, prompt.unit_costs(state, setup, day),
+                            anonymize.labelling(doc["call"], setup.track.instruments))
+    return out
+
+
+def cost_line_sources(line: str, label: str, units) -> set[str]:
+    """Decision 142 (a), parts 4 and 5: a cost line is the label's, its four
+    figures ``.4g`` of the cost means (unit, fee, half spread, slippage) of that
+    label's instrument over W; the tokens it may hold."""
+    if units is None:
+        assert line == f"- {label}: {COST_UNDEFINED}", line
+        return set()
+    match = COST_LINE.fullmatch(line)
+    assert match and match.group(1) == label, (label, line)
+    fee, half, slip, unit = units
+    want = [format(x, ".4g") for x in (unit, fee, half, slip)]
+    assert list(match.groups()[1:]) == want, (line, want)
+    return set(want)
+
+
+def registry_sources(state, entries: list[str], cap: int) -> set[str]:
+    """Decision 142 (a), part 3: each entry's id, cell and state read from the
+    state's approaches, and the tokens of its stored description, each of which
+    is also in the corpus reply the approach was admitted from."""
+    if entries == [NONE_LINE]:
+        return set()
+    rows = calls(state, TRACK)
+    out: set[str] = set()
+    for entry in entries:
+        aid, cell, status, text = entry.split(" | ", 3)
+        meta = json.loads((state / "approaches" / aid / "meta.json").read_text(
+            encoding="utf-8"))
+        assert meta["id"] == aid and meta["cell"] == cell, entry
+        assert status in ("live", "dormant"), entry
+        description = sanitized(meta["description"], cap)
+        assert text == description, (entry, description)
+        admitting = [r for r in rows if r["date"] == meta["admitted"] and
+                     r["outcome"] == "trial"]
+        assert len(admitting) == 1, meta["admitted"]
+        reply = stored(state, admitting[0])["text"]
+        assert numbers(description) <= numbers(reply), (aid, description)
+        out |= numbers(aid) | numbers(cell) | numbers(status) | numbers(description)
+    return out
+
+
+def retry_text(state, config, setup, box, before, day) -> str:
+    """The retry message, recomputed as G3.2 does: ``RETRY_TEXT``, a blank line
+    and the error text of the test's own parse or validation of attempt 1's
+    stored text (with ``(corr_max = <value>)`` for a duplicate)."""
+    parsed = parse.parse(before["text"], setup.thresholds)
+    if isinstance(parsed, parse.Failure):
+        return f"{RETRY_TEXT}\n\n{parsed.text}"
+    out = sequence.validate(sequence.Context(state, config, setup, day, box), parsed.source)
+    assert not out.ok
+    text = str(out.text)
+    if out.stage == "correlation":
+        text = f"{text} (corr_max = {setup.thresholds['validation.corr_max']})"
+    return f"{RETRY_TEXT}\n\n{text}"
+
+
+def test_every_number_of_every_prompt_has_a_source(replayed, setup, docs, sources,
+                                                    corpus_served, tmp_path):
+    """Decision 142 (a): every numeric token of every message accounted for by
+    a source of its part."""
+    state, config = replayed
+    cap = int(setup.thresholds[DESCRIPTION_KEY])
+    firsts = {d["date"]: d for d in docs if d["attempt"] == 1}
+    fixed: set[str] = set()
+    tokens_checked = 0
+    with backend(tmp_path / "jobs") as box:
+        for doc in docs:
+            day = date.fromisoformat(doc["date"])
+            if doc["attempt"] == 2:
+                before = firsts[doc["date"]]
+                assert [m["role"] for m in doc["messages"]] == ["user", "assistant", "user"]
+                assert doc["messages"][0] == before["messages"][0]
+                assert doc["messages"][1]["content"].encode("utf-8") == \
+                    corpus_served[before["call"]].read_bytes()
+                assert doc["messages"][2]["content"] == \
+                    retry_text(state, config, setup, box, before, day), doc["call"]
+                continue
+            assert [m["role"] for m in doc["messages"]] == ["user"]
+            content = doc["messages"][0]["content"]
+            brief, prof, reg, terms, output = part_bodies(content)
+            family, horizon = doc["cell"].split("/")
+            # Part 1: the cell line's integers from the track, the scripted brief.
+            low, high = dict(setup.track.horizons)[horizon]
+            filled = BRIEF.format(family=family, horizon=horizon)
+            allowed = {str(low), str(high), str(setup.track.bar_seconds)} | numbers(filled)
+            assert numbers(brief) <= allowed, (doc["call"], numbers(brief) - allowed)
+            # Part 2: the introduction, then the anonymized profile document.
+            document, units, lab = sources[doc["call"]]
+            intro, rendered = prof.split("\n")
+            assert intro == PROFILE_INTRO
+            allowed = profile_sources(document)
+            assert numbers(rendered) <= allowed, (doc["call"], numbers(rendered) - allowed)
+            # Part 3: the registry block from the state's approaches.
+            lines = reg.split("\n")
+            assert lines[:2] == [INTRO, OPEN] and lines[-2:] == [CLOSE, ABSENT], doc["call"]
+            allowed = registry_sources(state, lines[2:-2], cap)
+            assert numbers(reg) <= allowed, (doc["call"], numbers(reg) - allowed)
+            # Parts 4 and 5: a fixed text once the cost lines are taken out.
+            kept, costs = [], []
+            for line in terms.split("\n"):
+                (costs if COST_START.match(line) else kept).append(line)
+            labels = [label for label, _ in lab.labels]
+            assert [COST_START.match(x).group(1) for x in costs] == labels, doc["call"]
+            allowed = set()
+            for line, (label, symbol) in zip(costs, lab.labels, strict=True):
+                allowed |= cost_line_sources(line, label, units[symbol])
+                assert numbers(line) <= allowed, (doc["call"], line)
+            fixed.add("\n".join(kept) + "\n\n" + output)
+            tokens_checked += len(numbers(content))
+    assert len(firsts) >= 20 and len(fixed) == 1, len(fixed)
+    print(f"G3.3 (a): {tokens_checked} numeric tokens of {len(firsts)} first prompts "
+          f"accounted for; {len(docs) - len(firsts)} retries rebuilt")
+
+
+def bar_values(state, setup, day, lab) -> tuple[np.ndarray, list[str]]:
+    """Every open, high, low and close of the day's W and T of every instrument,
+    as stored and times the call's factor for that instrument, sorted, with
+    what each one is."""
+    values, names = [], []
+    for inst, bars in zip(setup.instruments, day_bars(state, setup, day), strict=True):
+        factor = lab.factor(lab.label(inst.symbol))
+        for col in ("open", "high", "low", "close"):
+            x = bars[col].to_numpy(dtype=float)
+            for k, scale in ((1.0, "stored"), (factor, "times its factor")):
+                values.append(x * k)
+                names += [f"{inst.symbol} {col} {scale}"] * len(x)
+    flat = np.concatenate(values)
+    order = np.argsort(flat, kind="stable")
+    return flat[order], [names[i] for i in order]
+
+
+def trial_values(rows, before: str) -> tuple[np.ndarray, list[str]]:
+    """Every non-integral figure of every trial row dated before ``before``
+    (the walk :func:`figures` does), sorted, with where each one is."""
+    found: list[tuple[float, str]] = []
+
+    def walk(value, where):
+        if isinstance(value, bool) or value is None:
+            return
+        if isinstance(value, float):
+            if math.isfinite(value) and value != int(value):
+                found.append((value, where))
+        elif isinstance(value, dict):
+            for k, v in value.items():
+                walk(v, f"{where}.{k}")
+        elif isinstance(value, list):
+            for i, v in enumerate(value):
+                walk(v, f"{where}[{i}]")
+
+    for row in rows:
+        if row["date"] < before:
+            for key in FIGURES:
+                walk(row[key], f"{row['id']} {key}")
+            for i, result in enumerate((row["grid"] or {}).get("results", [])):
+                walk(result.get("plain"), f"{row['id']} grid {i} plain")
+                walk(result.get("adjusted"), f"{row['id']} grid {i} adjusted")
+    found.sort(key=lambda f: f[0])
+    return np.array([f[0] for f in found], dtype=float), [f[1] for f in found]
+
+
+def meetings(value: float, targets: np.ndarray, names: list[str]) -> list[tuple[float, str]]:
+    """The targets ``value`` meets, ``math.isclose`` at a relative ``RTOL``: the
+    candidates within twice the tolerance found by bisection, each then checked."""
+    reach = 2 * RTOL * abs(value)
+    lo = int(np.searchsorted(targets, value - reach, side="left"))
+    hi = int(np.searchsorted(targets, value + reach, side="right"))
+    return [(float(targets[i]), names[i]) for i in range(lo, hi)
+            if math.isclose(value, float(targets[i]), rel_tol=RTOL)]
+
+
+def test_no_harness_figure_meets_a_bar_or_an_earlier_trial_figure(replayed, setup, docs,
+                                                                   sources):
+    """Decision 142 (b): every finite real leaf of the anonymized profile
+    document and every cost-line figure meets no open, high, low or close of
+    the day's W and T (as stored and times the call's factor) and no
+    non-integral figure of an earlier trial row, at a relative 1e-9."""
+    state, _ = replayed
+    rows = trials(state, TRACK)
+    compared = with_trials = 0
+    for doc in docs:
+        if doc["attempt"] != 1:
+            continue
+        day = date.fromisoformat(doc["date"])
+        document, units, lab = sources[doc["call"]]
+        values = [(leaf, "profile " + ".".join(map(str, path)))
+                  for path, leaf in leaves(document) if finite_real(leaf)]
+        for symbol, u in units.items():
+            if u is not None:
+                values += [(x, f"cost line {lab.label(symbol)} {k}")
+                           for x, k in zip(u, ("fee", "half spread", "slippage", "unit"),
+                                           strict=True)]
+        prices, price_names = bar_values(state, setup, day, lab)
+        scores, score_names = trial_values(rows, doc["date"])
+        with_trials += bool(len(scores))
+        for value, where in values:
+            met = meetings(value, prices, price_names) + meetings(value, scores, score_names)
+            assert not met, (doc["call"], where, value, met[:3])
+        compared += len(values)
+    assert with_trials >= 10
+    print(f"G3.3 (b): {compared} harness figures compared with the day's bars and the "
+          f"earlier trial figures; none met")
+
+
+def same_document(a, b, where=()):
+    """``b`` equals ``a``: the same keys and list lengths, every null in the same
+    place, every finite leaf to a relative ``RTOL``."""
+    if isinstance(a, dict):
+        assert isinstance(b, dict) and sorted(a) == sorted(b), where
+        for k in a:
+            same_document(a[k], b[k], where + (k,))
+    elif isinstance(a, list):
+        assert isinstance(b, list) and len(a) == len(b), where
+        for i, (x, y) in enumerate(zip(a, b, strict=True)):
+            same_document(x, y, where + (i,))
+    elif a is None or b is None:
+        assert a is None and b is None, (where, a, b)
+    elif isinstance(a, str | bool):
+        assert a == b, (where, a, b)
+    else:
+        assert math.isfinite(a) and math.isfinite(b), (where, a, b)
+        assert math.isclose(a, b, rel_tol=RTOL), (where, a, b)
+
+
+def test_the_profile_is_free_of_price_and_volume_units(replayed, setup, tmp_path):
+    """Decision 142 (c): for ``UNIT_DAYS``, the profile from a copy of the
+    store with prices times ``PRICE_SCALE`` and volumes times ``VOLUME_SCALE``
+    equals the profile from the store, for one cell of every family."""
+    state, _ = replayed
+    days = {r["date"] for r in calls(state, TRACK)}
+    assert {d.isoformat() for d in UNIT_DAYS} <= days and UNIT_DAYS[0] == FIRST and \
+        UNIT_DAYS[-1] == LAST
+    scaled = scaled_store(state, tmp_path / "scaled", TRACK, setup.track.bar_seconds,
+                          PRICE_SCALE, VOLUME_SCALE)
+    cells = {}
+    for cell in setup.track.cells:
+        cells.setdefault(cell[0], cell)
+    for day in UNIT_DAYS:
+        for cell in cells.values():
+            mine = profile.profile(state, setup.track, setup.instruments, setup.calendars,
+                                   day, cell)
+            theirs = profile.profile(scaled, setup.track, setup.instruments,
+                                     setup.calendars, day, cell)
+            same_document(mine, theirs)
+    print(f"G3.3 (c): the profile of {len(cells)} families on {len(UNIT_DAYS)} days "
+          f"unchanged under prices x7/3 and volumes x5/2")
