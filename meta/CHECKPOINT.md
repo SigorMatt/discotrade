@@ -20,10 +20,10 @@ no-gate-tests cases; D-017 filed (two-decimal forms), D-013 and D-014 times line
 unsanitized description only via G3.3's direct test); check 3/3 1116, 1054, 1180 s; gates at 45dc893 + the uncommitted
 gate files: M3 PASS 555 s (218/175/161), M2 PASS 142 s, G1.1 450, G1.2 204, G1.3 542, G1.4 1 s PASS, M0 PASS 247 s;
 outputs meta/drafts/m17-*.txt; image discotrade-sandbox:3b7d75c39621).
+U6 d1abd9e (meta/FINAL-REPORT-17.md; check 3/3 at 7f18206 1021, 1043, 1024 s, D-013 times line; 133 (b): neither
+doctor case red under either wrong change, a later blank-key refusal gives the same line and exit).
 
-Unit in progress: U6 The final report (decisions 132 to 140). Intent: decision 133 (b)'s two wrong changes run on the
-two doctor cases; meta/FINAL-REPORT-17.md drafted under meta/drafts/ and moved in. Done means: the report with every
-section the brief names, committed and pushed.
+Unit in progress: none. Mission 17 finished; meta/FINAL-REPORT-17.md exists.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-16-m17 (132-140) bind; decisions 1-131 still
 bind; owner files (O-11, O-13, O-16..O-20, O-22) win. No file under config/ or tests/fixtures/rejected/, no existing

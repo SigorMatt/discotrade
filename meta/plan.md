@@ -26,4 +26,4 @@ Carried items:
 - [x] U3 The options of `run-day` and `replay`, and the scripted cursor (decision 137; 122 (b), (c); DESIGN §13.5, §14.2, §16.4). — 545e7ec (options; cursor from stored responses; 17 tests; check 3/3 925, 928, 963 s; D-013 times line)
 - [x] U4 The worker corpus (decision 138; 122 (b); DESIGN §13.4, §17.1, §18.3 G3.1; HF-009). — 446b0a8 (corpus, manifest, 6 tests; G3.1 span 2019-07-15..08-09; check 3/3 1281, 1024, 1079 s; D-013 times, HF-006 status)
 - [x] U5 The gate tests of M3 and the gate runs (decisions 132 (b), 139; 9, 40, 72; O-2, O-19; DESIGN §18.2, §18.3 M3). `gate:` commit. — 8d54f9f (18 gate tests; M3 PASS 555 s, M2, M1 G1.1-G1.4, M0 PASS; D-017 filed; check 3/3 1054-1180 s)
-- [ ] U6 The final report (decisions 132 to 140; DESIGN §18.2).
+- [x] U6 The final report (decisions 132 to 140; DESIGN §18.2). — d1abd9e (meta/FINAL-REPORT-17.md; check 3/3 1021, 1043, 1024 s)

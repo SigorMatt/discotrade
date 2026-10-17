@@ -158,3 +158,4 @@
 - 2026-10-17 mission 17 U3 done 545e7ec: --provider/--coordinator, scripted cursor from stored responses, 17 tests; check 3/3 (925, 928, 963 s; D-013 times line); U4 started.
 - 2026-10-17 mission 17 U4 done 446b0a8: worker corpus (16 strategies, 27+21 responses, manifest), 6 tests; measured 15 trials over 2019-07-15..08-09; check 3/3 (1281, 1024, 1079 s, shared machine); U5 started.
 - 2026-10-17 mission 17 U5 done 8d54f9f: M3 gate tests; gate M3 PASS 555 s, M2 PASS 142 s, G1.1-G1.4 PASS (G1.3 542 s), M0 PASS 247 s; D-017 filed; check 3/3 (1116, 1054, 1180 s); U6 started.
+- 2026-10-17 mission 17 U6 done d1abd9e: final report; check 3/3 at 7f18206 (1021, 1043, 1024 s); mission 17 finished.
