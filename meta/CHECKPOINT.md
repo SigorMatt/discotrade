@@ -17,8 +17,9 @@ wrong changes red by the new test alone; check 3/3 1001, 923, 931 s).
 U3 db527f3 (meta: D-013 times line; at e9076d5 check 3/3 917, 921, 926 s; sandbox build discotrade-sandbox:3b7d75c39621;
 `./scripts/gate M3` PASS 514 s wall: G3.1 194.96 s, G3.2 158.01 s, G3.3 159.12 s; outputs meta/drafts/m18-*.txt).
 
-Unit in progress: U4 — meta/FINAL-REPORT-18.md, drafted under meta/drafts/, moved in by its commit, with `## Gate M3`,
-`## G3.3 reading`, `## Corrections`, NOT PROVEN and `## Review items`; check 3/3 at the tip before the commit.
+U4 95d7585 (meta/FINAL-REPORT-18.md; check 3/3 at d8a129a 919, 922, 931 s).
+
+Unit in progress: none. Mission 18 finished; meta/FINAL-REPORT-18.md exists.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-17-m18 (141-145) bind; decisions 1-140
 still bind (139 (c)'s raw-bar/score clause replaced by 142); owner files win. No file under src/, config/ or
