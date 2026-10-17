@@ -12,11 +12,15 @@ exposure records once; four wrong changes red; check 3/3 1153, 1072, 1185 s; G1.
 per replay day).
 U3 efc35de (alerts: persistent_approach, group_edge, bootstrap, slot_series all `adjusted`; paper.clean_members,
 portfolio unchanged; five 151 (c) wrong changes red; check 3/3 1019, 1000, 997 s; finished from the tree under §R).
+U4 3ee67d3 (alerts: state, firing, payloads, rank_persistence on timing, revival, ten health kinds,
+few_valid_candidates, cost_stale, no_finding (not called); step 6 in daily; four 152 (g) wrong changes red; check 3/3
+1069, 1058, 1055 s; G1.2 PASS 260 s, G1.3 PASS 962 s (above 10 min: D-014); 2.165 -> 2.519 s per replay day;
+no new register entry, no existing test edited).
 
-Unit in progress: U4 alert state, payloads, `rank_persistence` and `revival` rules, health alerts, the day loop's
-step 6 (decisions 152, 149 (c)). Done means: `alerts:` commit pushed; check 3/3; 152 (g) tests; its four wrong
-changes seen red; `./scripts/gate M1 G1.2` and `G1.3` PASS at the commit; seconds per replay day at parent and
-commit. Step 6 on a new day only, into staging; no_finding not called by the day loop (152 (e)).
+Unit in progress: U5 the dashboard (O-6, O-14, O-16, O-18; decision 153; DESIGN §15.5, §3; SPEC §13, §14).
+Done means: `dashboard:` commit pushed; check 3/3; 153 (d) tests; its three wrong changes seen red; one
+`stage3_money` register entry; config/gates.toml new with both owner flags false; page written on a new day only
+into staging; seconds per replay day at parent and commit.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-23 to O-25 win, then decisions 146-154, then
 1-145 where not replaced. Add, never replace (O-25): every function a met gate reads keeps its result for today's
