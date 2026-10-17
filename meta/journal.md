@@ -161,3 +161,4 @@
 - 2026-10-17 mission 17 U6 done d1abd9e: final report; check 3/3 at 7f18206 (1021, 1043, 1024 s); mission 17 finished.
 2026-10-17T06:15:00.430Z  consult 0mvbzx34w-t75x (architect done) on aux.done of aux job 0mvbvhyhv-6due: VERDICT: next kit mission-18-kit
 - 2026-10-17 mission 18 U0: plan (base 63c6d57, S3.2b continued, closes M3); D-017 answered; HF-010, HF-011, HF-006, HF-012 lines; U1 started.
+- 2026-10-17 mission 18 U1 done da7634b: G3.3 parts (a)-(c), 3 tests; G3.3 PASS 180.36 s; five wrong changes red; check 3/3 (1022, 1030, 1034 s); U2 started.

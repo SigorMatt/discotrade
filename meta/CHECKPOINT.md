@@ -3,15 +3,18 @@
 Mission: 18 (`meta/BUILDER-18-PROMPT.md`), roadmap step S3.2b, continued. Closes milestone M3. Base 63c6d57.
 Container runtime: docker. Image at mission 17's tip: discotrade-sandbox:3b7d75c39621.
 
-Done: U0 (plan; D-017 answered; HF-010, HF-011, HF-006, HF-012 lines).
+Done: U0 e6c33ae (plan; D-017 answered; HF-010, HF-011, HF-006, HF-012 lines).
+U1 da7634b (gate: test_g3_3_prompts.py 3 new tests: (a) 11,367 tokens of 20 first prompts accounted, 7 retries
+rebuilt; (b) 10,080 values, no meeting at rel 1e-9; (c) days 2019-07-15, 07-26, 08-09 under prices x7/3, volumes
+x5/2; m3_harness.scaled_store; G3.3 PASS 180.36 s (REVIEW-17 158.80 s); five 142 (e) wrong changes red; check 3/3
+1022, 1030, 1034 s; image discotrade-sandbox:3b7d75c39621).
 
-Unit in progress: U1 — G3.3 asserts "no raw bar" and "no score" as decision 142 reads them: (a) every numeric
-token of every stored message accounted for by a source of its part; (b) every harness-computed value (finite
-real profile leaves, cost-line figures) meets no OHLC of W/T (as stored and times the factor) and no non-integral
-earlier trial figure at rel 1e-9; (c) the profile under prices x7/3, volumes x5/2 equal to the profile, three days.
-Done means: `gate:` commit touching only tests/gates/test_g3_3_prompts.py (and m3_harness.py for a helper without
-seed, date or assertion), pushed; `./scripts/gate M3 G3.3` PASS with its wall time beside 158.80 s; the five wrong
-changes of 142 (e) each seen red and named; check 3/3 green.
+Unit in progress: U2 — a gate test in tests/gates/test_g3_2_pool.py (markers gate, gate_m3) over the existing
+m3/ and m3_pool/ replays: every manifest file with a `served` day gives exactly one call row with that day,
+attempt and outcome (file = the one whose bytes the row's stored text equals); every call row with a response maps
+to such a manifest row; a file with no `served` day was not served. tests/test_worker_corpus.py docstring and the
+manifest's third line name that test and claim nothing more. Done means: `gate:` commit, pushed; `./scripts/gate
+M3 G3.2` PASS with wall time beside 183.28 s; the three 143 (d) wrong changes each seen red; check 3/3 green.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; decisions-2026-10-17-m18 (141-145) bind; decisions 1-140
 still bind (139 (c)'s raw-bar/score clause replaced by 142); owner files win. No file under src/, config/ or
