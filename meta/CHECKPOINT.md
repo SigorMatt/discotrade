@@ -16,11 +16,14 @@ U4 3ee67d3 (alerts: state, firing, payloads, rank_persistence on timing, revival
 few_valid_candidates, cost_stale, no_finding (not called); step 6 in daily; four 152 (g) wrong changes red; check 3/3
 1069, 1058, 1055 s; G1.2 PASS 260 s, G1.3 PASS 962 s (above 10 min: D-014); 2.165 -> 2.519 s per replay day;
 no new register entry, no existing test edited).
+U5 a21beb7 (dashboard: dashboard.py, step 7, `discotrade dashboard --out`, config/gates.toml both false;
+stage3_money the one entry, five display entries; three 153 (d) wrong changes red; check 3/3 1060, 1060, 1061 s;
+2.563 -> 2.545 s per replay day).
 
-Unit in progress: U5 the dashboard (O-6, O-14, O-16, O-18; decision 153; DESIGN §15.5, §3; SPEC §13, §14).
-Done means: `dashboard:` commit pushed; check 3/3; 153 (d) tests; its three wrong changes seen red; one
-`stage3_money` register entry; config/gates.toml new with both owner flags false; page written on a new day only
-into staging; seconds per replay day at parent and commit.
+Unit in progress: U6 the regression gates at the pushed tip (O-2, O-25; decisions 146 (a), 154 (c), (d)). Done
+means: check 3/3 at the tip; sandbox build; gate M1 G1.1..G1.4, M3, M2, M0 each PASS in its own call at the same
+tip with nothing uncommitted; outputs and wall times kept in meta/drafts/; `meta:` commit with only the D-013 and
+D-014 times lines in FINDINGS.md.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-23 to O-25 win, then decisions 146-154, then
 1-145 where not replaced. Add, never replace (O-25): every function a met gate reads keeps its result for today's

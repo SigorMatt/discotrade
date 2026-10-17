@@ -175,3 +175,4 @@
 - 2026-10-17 mission 19 U3 resumed under §R: working tree dirty (alerts.py, paper.py, return_readers.toml, test_alerts.py, test_portfolio.py); finishing it from the tree.
 - 2026-10-17 mission 19 U3 done efc35de: persistent_approach and group_edge on the adjusted series; check 3/3 (1019, 1000, 997 s); U4 started.
 - 2026-10-17 mission 19 U4 done 3ee67d3: alert state, payloads, rules, health alerts, step 6; check 3/3 (1069, 1058, 1055 s); G1.2 PASS 260 s, G1.3 PASS 962 s; U5 started.
+- 2026-10-18 mission 19 U5 done a21beb7: dashboard, step 7, config/gates.toml; check 3/3 (1060, 1060, 1061 s); U6 started.
