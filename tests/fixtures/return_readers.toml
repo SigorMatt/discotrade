@@ -61,6 +61,42 @@ class = "producer"
 note = "scores a generated candidate on T through the grid's own code into metrics_t and adjusted_t for lifecycle.admit; decides nothing (decision 135 (d))"
 
 [[reader]]
+module = "discotrade.dashboard"
+function = "stage3_money"
+class = "stage3_money"
+note = "the gates panel's money condition: portfolio_clean's plain net_2x summed over its days and their count against stage_gate.min_clean_days (O-16, O-18, decision 153 (b), (c))"
+
+[[reader]]
+module = "discotrade.dashboard"
+function = "exposure_part"
+class = "display"
+note = "O-14: portfolio's plain net_1x sum over the last group_days, its members' paper.adjusted sum and average positions, plain minus adjusted shown; nothing selects on it (decision 153 (b) 3)"
+
+[[reader]]
+module = "discotrade.dashboard"
+function = "portfolio_chart"
+class = "display"
+note = "the portfolio chart: portfolio's cumulative plain net_1x, net_2x against the random slots' cumulative net_1x 5% and 95% band; nothing selects on it (decision 153 (b) 3)"
+
+[[reader]]
+module = "discotrade.dashboard"
+function = "_portfolio_panel"
+class = "display"
+note = "renders portfolio_chart's net_1x, net_2x and exposure_part's figures as HTML and SVG; nothing selects on them (decision 153 (b) 3)"
+
+[[reader]]
+module = "discotrade.dashboard"
+function = "rank_chart"
+class = "display"
+note = "the rank panel's rows: timing, its running mean and band, the net 1x statistic and gross beside, labelled used by no rule (O-6, decision 153 (b) 4)"
+
+[[reader]]
+module = "discotrade.dashboard"
+function = "_rank_panel"
+class = "display"
+note = "renders rank_chart's timing, statistic and gross as HTML and SVG; nothing selects on them (O-6, decision 153 (b) 4)"
+
+[[reader]]
 module = "discotrade.journal"
 function = "_columns"
 class = "producer"

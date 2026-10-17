@@ -262,8 +262,16 @@ def test_no_entry_carries_pending():
     assert pending(read_register(REGISTER)) == PENDING
 
 
-def test_no_entry_is_stage3_money_yet():
-    assert [e for e in read_register(REGISTER) if e["class"] == "stage3_money"] == []
+def test_the_one_stage3_money_entry_is_the_dashboards():
+    # Decision 2026-10-17-m19 153 (c): exactly one stage3_money entry, the
+    # dashboard's reader of the money condition; paper.portfolio and paper._series
+    # stay producer (REVIEW-11 note 8).
+    entries = read_register(REGISTER)
+    money = [(e["module"], e["function"]) for e in entries if e["class"] == "stage3_money"]
+    assert money == [("discotrade.dashboard", "stage3_money")]
+    classes = {(e["module"], e["function"]): e["class"] for e in entries}
+    assert classes[("discotrade.paper", "portfolio")] == "producer"
+    assert classes[("discotrade.paper", "_series")] == "producer"
 
 
 def test_the_audit_passes():

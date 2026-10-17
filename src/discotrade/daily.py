@@ -1,6 +1,7 @@
-"""The daily run, steps 1 to 5, step 6 and the table (DESIGN 16.1, 16.2, 5.4,
-5.6, 9.2, 9.3, 10.4, 10.5, 11.1, 15.1 to 15.3; decisions 2026-10-12 2, 3, 19,
-50 to 53, 55, 59, 62, 69, 70, 71, 2026-10-17-m19 152; I-5, I-6, I-12, I-14).
+"""The daily run, steps 1 to 5, step 6, the table and the dashboard (DESIGN 16.1,
+16.2, 5.4, 5.6, 9.2, 9.3, 10.4, 10.5, 11.1, 15.1 to 15.3, 15.5; decisions
+2026-10-12 2, 3, 19, 50 to 53, 55, 59, 62, 69, 70, 71, 2026-10-17-m19 152, 153;
+I-5, I-6, I-12, I-14).
 
 ``run_day(state_dir, config_dir, track, clock, day=None)`` processes one
 trading day ``D`` of the track in a state directory ``init-state`` made
@@ -78,7 +79,10 @@ releasing it on success and on failure:
   ``no_finding`` is not called (152 (e)). Then, when the day is
   new, the table (DESIGN 10.4; decision 71; ``table.build`` and ``table.write``):
   ``table/<track>/table.json`` and ``table.md`` written to the staging
-  directory; a re-run writes neither. Only when all of
+  directory; a re-run writes neither. Then, when the day is new, the dashboard
+  (step 7; DESIGN 15.5; decision 2026-10-17-m19 153 (a)): ``dashboard.render`` of
+  ``D`` over the staged files, written as ``dashboard/<track>/index.html`` to the
+  staging directory (``dashboard.write``); a re-run writes none. Only when all of
   this has succeeded are the staged files moved into place (``os.replace``,
   in path order) and the state committed as ``run <track> <D>``
   (``state.commit``; no commit when nothing was moved). A re-run whose rows
@@ -178,7 +182,18 @@ from typing import Any
 
 import pandas as pd
 
-from discotrade import alerts, journal, ledger, lifecycle, paper, sources, state, stats, table
+from discotrade import (
+    alerts,
+    dashboard,
+    journal,
+    ledger,
+    lifecycle,
+    paper,
+    sources,
+    state,
+    stats,
+    table,
+)
 from discotrade import coordinator as coord
 from discotrade.bars.gaps import check_gaps, day_end, latest_closed_day
 from discotrade.bars.store import BarStore, BarStoreError, day_run, finite_rows
@@ -551,6 +566,9 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
             alerts.step(state_dir, setup, d, records, into=staging, exposure=(unit, positions))
             table.write(staging, track, table.build(state_dir, setup, d, records,
                                                     into=staging))
+            dashboard.write(staging, track, dashboard.render(
+                state_dir, setup, d, overlay=staging, records=records,
+                exposure=(unit, positions)))
         moved = _move(staging, state_dir)
     except BarStoreError as exc:
         if _REVISED in str(exc):

@@ -1055,6 +1055,61 @@ def _add_sandbox(subparsers: argparse._SubParsersAction, common: argparse.Argume
 SUBCOMMANDS.append(_add_sandbox)
 
 
+def _dashboard(ctx: Context, args: argparse.Namespace) -> int:
+    from discotrade import dashboard, journal
+    from discotrade.config import ConfigError
+    from discotrade.state import StateError, require_state_directory
+
+    if ctx.state is None:
+        print(f"discotrade dashboard: give --state <dir> or set {STATE_ENV}", file=sys.stderr)
+        return 2
+    out = Path(args.out).expanduser().resolve() if args.out is not None else None
+    if out is not None and _inside(out, ctx.state):
+        print(f"discotrade dashboard: --out {out} is inside the state directory {ctx.state}; "
+              f"the dashboard never writes into it", file=sys.stderr)
+        return 2
+    try:
+        require_state_directory(ctx.state)
+        setup = journal.Setup.load(ctx.config, ctx.track)
+        day = dashboard.last_day(ctx.state, ctx.track)
+        if day is None:
+            print(f"dashboard: FAIL: {ctx.track} has no journaled day in {ctx.state}",
+                  file=sys.stderr)
+            return 1
+        page = dashboard.render(ctx.state, setup, day)
+    except (StateError, journal.JournalError, ConfigError, OSError, ValueError) as exc:
+        print(f"dashboard: FAIL: {exc}", file=sys.stderr)
+        return 1
+    if out is None:
+        sys.stdout.write(page)
+        return 0
+    try:
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(page.encode("utf-8"))
+    except OSError as exc:
+        print(f"dashboard: FAIL: {exc}", file=sys.stderr)
+        return 1
+    return 0
+
+
+def _add_dashboard(subparsers: argparse._SubParsersAction,
+                   common: argparse.ArgumentParser) -> None:
+    board = subparsers.add_parser(
+        "dashboard", parents=[common],
+        help="render the status dashboard of the state's last journaled day as one "
+        "self-contained HTML page, to --out or to standard output; reads the state and "
+        "the configuration and writes nothing into the state directory (DESIGN 15.5; "
+        "decision 2026-10-17-m19 153 (a))",
+    )
+    board.add_argument("--out", metavar="PATH", default=None,
+                       help="the file to write the page to (default: standard output); "
+                       "refused inside the state directory")
+    board.set_defaults(handler=_dashboard)
+
+
+SUBCOMMANDS.append(_add_dashboard)
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)

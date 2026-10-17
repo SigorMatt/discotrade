@@ -1025,6 +1025,37 @@ def load_models(path: Path) -> ModelsConfig:
     return ModelsConfig(base_url=base_url, provenance=provenance, models=tuple(models))
 
 
+# --- the owner's stage-gate flags (DESIGN 3, 15.5; SPEC 14; decision 2026-10-17-m19 153) --
+
+#: The owner's two manual stage-3 conditions, read by the dashboard only. Not
+#: frozen and holding no number: no result moves with it (decision 153 (b)).
+GATES_FILE = "gates.toml"
+GATES_TABLE = "stage3"
+GATE_FLAGS = ("stage2_fills_match", "tax_confirmed")
+
+
+@dataclass(frozen=True)
+class OwnerGates:
+    """``[stage3]`` of ``gates.toml``: SPEC 14's two conditions only the owner can
+    meet (stage-2 fills match the cost model; tax treatment confirmed)."""
+
+    stage2_fills_match: bool = False
+    tax_confirmed: bool = False
+
+
+def load_gates(config_dir: Path) -> OwnerGates:
+    """``<config_dir>/gates.toml``'s two flags, both required booleans. A
+    configuration without the file has neither condition met (both false; the
+    design is silent on a missing file, and not met is the simplest safe
+    reading)."""
+    path = Path(config_dir) / GATES_FILE
+    if not path.is_file():
+        return OwnerGates()
+    top = _Table(path, read_toml(path), "", (GATES_TABLE,))
+    t = _Table(path, top.raw(GATES_TABLE), f"{GATES_TABLE}.", GATE_FLAGS)
+    return OwnerGates(**{flag: t.boolean(flag) for flag in GATE_FLAGS})
+
+
 # --- frozen config and config/HISTORY.toml (DESIGN 4.3) ------------------------
 
 

@@ -345,3 +345,23 @@ def test_init_state_is_listed_in_help(capsys):
     with pytest.raises(SystemExit):
         main(["--help"])
     assert "init-state" in capsys.readouterr().out
+
+
+# --- dashboard (DESIGN 3, 15.5; decision 2026-10-17-m19 153 (a)) ---------------------------
+
+def test_dashboard_is_listed_in_help_and_takes_out(capsys):
+    with pytest.raises(SystemExit):
+        main(["--help"])
+    assert "dashboard" in capsys.readouterr().out
+    with pytest.raises(SystemExit) as exc:
+        main(["dashboard", "--help"])
+    assert exc.value.code == 0
+    out = capsys.readouterr().out
+    for option in ("--out", "--state", "--track", "--config", "--as-of"):
+        assert option in out
+
+
+def test_dashboard_without_a_state_is_a_usage_error(monkeypatch, capsys):
+    monkeypatch.delenv("DISCOTRADE_STATE", raising=False)
+    assert main(["dashboard"]) == 2
+    assert "--state" in capsys.readouterr().err
