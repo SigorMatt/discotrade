@@ -19,11 +19,12 @@ no new register entry, no existing test edited).
 U5 a21beb7 (dashboard: dashboard.py, step 7, `discotrade dashboard --out`, config/gates.toml both false;
 stage3_money the one entry, five display entries; three 153 (d) wrong changes red; check 3/3 1060, 1060, 1061 s;
 2.563 -> 2.545 s per replay day).
+U6 d1f4b81 (meta: at tip ef9359f check 3/3 1066, 1079, 1131 s; G1.1 PASS 411 s, G1.2 PASS 280 s, G1.3 PASS 1049 s
+(finding in D-014 times line), G1.4 PASS 1 s; M3 PASS 547 s, M2 PASS 130 s, M0 PASS 245 s; outputs in meta/drafts/u6-*).
 
-Unit in progress: U6 the regression gates at the pushed tip (O-2, O-25; decisions 146 (a), 154 (c), (d)). Done
-means: check 3/3 at the tip; sandbox build; gate M1 G1.1..G1.4, M3, M2, M0 each PASS in its own call at the same
-tip with nothing uncommitted; outputs and wall times kept in meta/drafts/; `meta:` commit with only the D-013 and
-D-014 times lines in FINDINGS.md.
+Unit in progress: U7 the final report (decisions 146-154; O-23 to O-25; DESIGN §18.2). Done means:
+meta/FINAL-REPORT-19.md drafted under meta/drafts/ and committed with `## Gate` (U6 outputs verbatim, from
+meta/drafts/u6-*.txt), `## Owner rulings applied`, `## Register`, `## Speed`, NOT PROVEN, review-items table.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-23 to O-25 win, then decisions 146-154, then
 1-145 where not replaced. Add, never replace (O-25): every function a met gate reads keeps its result for today's
