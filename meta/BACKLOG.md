@@ -81,6 +81,40 @@ than the disk shows) is taken by mission 17 (step S3.2b, the final report's
 `## Corrections`; decisions-2026-10-16-m17 item 133), its notes 10 to 12
 and finding D-016 by mission 17 U0 (item 134 (e), (f)), and REVIEW-15's
 notes 2 and 4, left to step S3.2b, by mission 17 U2 (item 136 (g), (h)).
+REVIEW-17 blockers 1 and 2 (finding D-017; the corpus manifest's served
+day, attempt and outcome) are taken by mission 18 (step S3.2b, units U1 and
+U2; decisions-2026-10-17-m18 items 142 and 143), its note 1 by mission 18
+U3 (item 141 (b)) and its notes 10 to 13 by mission 18 U0 (item 144 (f)).
+REVIEW-18 has no blocker and no should-fix and records `Gate M3: PASS`; its
+notes 7 to 10 are recorded as hands findings by mission 19 U0
+(decisions-2026-10-17-m19 item 154 (b)). The owner's rulings O-23 to O-25
+(`meta/decisions/2026-10-17-owner.md`) are built by mission 19 (step S4.1;
+items 146 to 153).
+
+- REVIEW-18 notes, not carried as work (decision 154 (a)): note 1 (the
+  cell line's integers allowed anywhere in the brief part), note 2 (the
+  cost-line allowed set built up across lines) and note 3 (U2 maps call
+  rows to files by the cursor, then checks the bytes) stand as the review
+  accepts them; note 4's check times go to finding D-013, open.
+- REVIEW-17 notes, not carried as work unless named (decision 144): notes
+  6 and 7 stand as REVIEW-17 accepts them; note 8 (the doubled "Status" in
+  the D-016 line) stands, the ledger being append-only.
+- Left by REVIEW-17 to step S4.2 (decision 144 (a), (b)): a call-limit
+  breach on T under the container backend raises `DailyError`, untested
+  (note 3's second half); a failed day's health events of steps 3 to 5
+  appended again on its re-run (note 4); `replay.scripted_start`'s uncaught
+  `KeyError` on a stored response without `model`, and `WORKERS_TRANSPORT`
+  as a module-level test hook (note 5).
+- Left by step S4.1 to step S4.2 (decision 152 (e), (f)): the day loop's
+  call of the `no_finding` detector, which needs the full daily run's
+  records to tell months of live running from a replay; the digest and the
+  issues for the alerts mission 19 fires.
+- Left by step S4.1 to step S4.3: G4.5, the dashboard's gate test, over
+  the replay's state (decision 153 (d) builds its unit tests only).
+- REVIEW-11 note 8 (`paper.portfolio` and `paper._series` registered
+  `producer` where O-18's table says display and `stage3_money`) is settled
+  by decision 153 (c): they stay `producer`, and the one `stage3_money`
+  entry is the dashboard's reader, built by mission 19 U5.
 
 - REVIEW-16 notes, not carried as work unless named (decision 134): note 3
   (`ClaudeWorkerProvider` filtering the environment) stands, decision 128
@@ -131,7 +165,9 @@ notes 2 and 4, left to step S3.2b, by mission 17 U2 (item 136 (g), (h)).
   stored responses, item 137 (c)); `replay --provider openai` is built
   there and tested for its refusal only, so the twenty days with the real
   pool stay the owner's live check L3. G1.3's scenario is not touched
-  (O-19); REVIEW-11's note on it stays with step S4.1 or S4.3.
+  (O-19); REVIEW-11's note on it stays with step S4.1 or S4.3. Step S4.1
+  does not take it either: the scenario belongs to G1.3, which changes only
+  by the owner (O-19, O-25); it is listed for the owner below.
 
 - REVIEW-13 notes, not carried as work unless named: note 8
   (`changes_bars_in_place.py` is rejected only for being flat; nothing
@@ -323,6 +359,12 @@ notes 2 and 4, left to step S3.2b, by mission 17 U2 (item 136 (g), (h)).
   by a decision naming the test and the assertion (O-19).
 - Finding D-014: G1.3 ran 607 s and 618 s in REVIEW-13, above O-3's 10
   minutes, against the builder's 576 s; O-20 keeps the gate as it is.
+- REVIEW-11's note on G1.3's scenario: every scripted admission line has
+  an adjusted admission score equal to its plain one, so G1.3 tells the two
+  measures apart only through dormancy and return. Giving one admission
+  line a non-zero `avg_position` changes a met gate's fixture, which is the
+  owner's under O-19 and O-25. G4.7 (e) tests admission on the adjusted
+  measure in step S4.3 meanwhile.
 - Finding D-015: O-22 item 1's "copied by path" conflicts with decision
   104 (d)'s hash exclusion; the four run-time entries of the rejection
   suite point at their originals under `tests/fixtures/strategies/` until

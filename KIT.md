@@ -1,1 +1,1 @@
-plan: mission 18 kit (S3.2b closer, G3.3 bar and score reading, gate M3)
+plan: mission 19 kit (S4.1, alerts and dashboard under O-23 to O-25)
