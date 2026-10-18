@@ -965,3 +965,32 @@ pin the Claude Code version the hook was read from.
 What this project does meanwhile: nothing in product code; mission 20 stops at U2 with `VERDICT: question`.
 
 Status: open
+
+### D-020 — step 6's figures over an approach's clean paper days cannot be updated day by day and stay equal to a full recompute
+
+Severity: low · Component: `src/discotrade/alerts.py` (`persistent_approach`, `slot_series`, `slot_moments`,
+`group_edge`'s bootstrap) with O-26 items 2 and 5 · Found: 2026-10-18, mission 20 U2.
+
+Symptom. `persistent_approach`'s figures are taken over `W`, every clean paper day of the approach: the
+adjusted Sharpes at 1x and 2x, and `(mu_c, sd_c)` over every random slot's adjusted series over `W`. `W`
+grows by one day each day, and a new day changes each `hbar_i(W)`, so it changes every adjusted value of
+the window, not only the new one. As D-019 says of the table, numpy's pairwise sum, `np.mean`, `np.std` and
+O-4's subtraction cannot be carried from yesterday's results and give the same bits, and O-26 item 5 asks
+for the same value. So U2 does not make these figures incremental. Each day still recomputes them from the
+records. But the paper, unit and position records are now split per subject once per content
+(`alerts._SPLITS`, keyed by the content of the columns read, registered with `state.clear_caches`), not
+filtered again for each slot. O-4's subtraction runs for every slot and day at once, element by element.
+What is left grows with history as plain arithmetic: one subtraction per slot and day of `W`, each slot's
+Sharpe over `W`, and one pass over the records to split them. The records change every day, so the split
+is reused within a day (by each approach and the bootstrap), not across days.
+
+Measured under cProfile, warm, in `./scripts/speed`'s replay at the same machine and load (about 1.2 to
+1.6 on 4 cores), on 2019-07-03 (one approach evaluated) and 2020-05-11 (two). `alerts.step` took
+0.081 s and 0.233 s at U2, against 0.606 s and 1.628 s at the parent 786ffb6. `slot_series` took
+0.030 s per call and 0.049 s per call at U2, against 0.446 s and 0.675 s at the parent.
+
+Direction (for the owner). Accept these figures recomputed from the records each day with the residual
+growth above, or say what tolerance or change to their arithmetic would allow a day-by-day update (the
+same question as D-019).
+
+Status: open

@@ -86,7 +86,15 @@ keys read with their values.
   ``first``, ``last`` and ``days`` of ``W``.
 - ``slot_series``: each random control slot with a paper row on every day of
   ``W``, in slot order, mapped to its ``paper.adjusted(..., "net_1x")`` over
-  ``W``, each with its own average positions over ``W`` (O-7).
+  ``W``, each with its own average positions over ``W`` (O-7). Mission 20 U2
+  (decisions 2026-10-18-m20 157, 158): it computes each series as
+  ``paper.adjusted`` does, from the paper, unit and position records split per
+  subject once per content (``_SPLITS``, registered with
+  ``state.clear_caches``), instead of filtering every subject's history once
+  per slot; ``slot_moments`` takes ``control_moments`` on the series directly.
+  ``persistent_approach`` hands ``paper.adjusted`` the approach's own position
+  rows and ``rank_rows`` filters the exposure records once per window: the
+  rows ``paper.adjusted`` reads, so every figure is the one it was.
 
 The other two rules, the health alerts and the state (DESIGN 15.1 to 15.3,
 16.1 step 6; decision 2026-10-17-m19 152; I-5, I-6, I-10, I-12). Each rule
@@ -146,6 +154,7 @@ from ``setup.thresholds`` only.
 from __future__ import annotations
 
 import calendar
+import hashlib
 import json
 import math
 from collections.abc import Iterable, Mapping, Sequence
@@ -156,6 +165,7 @@ from urllib.parse import quote
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
 
 from discotrade import controls, journal, ledger, lifecycle, paper, state, stats
 from discotrade.bars.store import write_atomic
@@ -197,6 +207,9 @@ def rank_rows(state_dir: Path, setup: journal.Setup, records: pd.DataFrame,
         span = records[(records["date"] >= windows[0][0]) & (records["date"] <= windows[1][1])
                        & records["subject"].isin(list(subjects))]
         timing: list[pd.DataFrame] = []
+        # The exposure rows of each window's dates, filtered once per window rather
+        # than once per candidate: the same rows for every candidate.
+        nears: dict[tuple[date, ...], tuple[pd.DataFrame, pd.DataFrame]] = {}
         for subject in sorted(set(span["subject"])):
             mine = span[span["subject"] == subject]
             kind = str(mine["kind"].iloc[0])
@@ -206,8 +219,11 @@ def rank_rows(state_dir: Path, setup: journal.Setup, records: pd.DataFrame,
                     continue
                 if exposure is None:
                     exposure = _exposure(state_dir, track.name, overlay)
-                near = (exposure[0][exposure[0]["date"].isin(window)],
-                        exposure[1][exposure[1]["date"].isin(window)])
+                near = nears.get(tuple(window))
+                if near is None:
+                    near = (exposure[0][exposure[0]["date"].isin(window)],
+                            exposure[1][exposure[1]["date"].isin(window)])
+                    nears[tuple(window)] = near
                 series = paper.adjusted(state_dir, setup, subject, window, "gross",
                                         records=mine, overlay=overlay, exposure=near)
                 timing.append(pd.DataFrame({"subject": subject, "kind": kind,
@@ -286,20 +302,242 @@ def _approaches(state_dir: Path, overlay: Path | None) -> list[state.Approach]:
     return [held[k] for k in sorted(held)]
 
 
+#: Step 6's split frames (decision 2026-10-18-m20 157 (a), 158): for one (state
+#: directory, track), ``scope``, and per role (``slots``, ``positions``, ``unit``) the
+#: content identity of the frame last split for it and what was split from it.
+_SPLITS: dict[str, Any] = {"scope": None, "held": {}}
+
+
+def _clear_splits() -> None:
+    _SPLITS["scope"] = None
+    _SPLITS["held"] = {}
+
+
+state.register_cache("discotrade.alerts._SPLITS", _clear_splits)
+
+
+def cached_splits() -> dict[str, tuple[int, str]]:
+    """The roles the split cache holds, each with its content identity."""
+    return {role: held[0] for role, held in sorted(_SPLITS["held"].items())}
+
+
+def _day_numbers(values: Sequence[Any]) -> np.ndarray | None:
+    """Each date's number of days since 1970-01-01; None unless every value is
+    a ``datetime.date`` itself (a ``datetime`` never equals a date)."""
+    values = np.asarray(values, dtype=object)
+    if not len(values):
+        return np.zeros(0, dtype=np.int64)
+    if set(map(type, values)) != {date}:
+        return None
+    numbers = pa.array(values, type=pa.date32()).cast(pa.int32())
+    return numbers.to_numpy(zero_copy_only=False).astype(np.int64)
+
+
+def _column(frame: pd.DataFrame, name: str, kind: str) -> tuple[np.ndarray, bytes] | None:
+    """``frame[name]`` as an array (``text``: objects, ``day``: day numbers,
+    ``int`` or ``float``: 64-bit) and the bytes its content identity hashes;
+    None when a value is not of the kind."""
+    if kind == "day":
+        days = _day_numbers(frame[name].to_numpy(dtype=object))
+        return None if days is None else (days, days.tobytes())
+    if kind == "text":
+        values = frame[name].to_numpy(dtype=object)
+        if len(values) and set(map(type, values)) != {str}:
+            return None
+        lengths = np.fromiter(map(len, values), dtype=np.int64, count=len(values))
+        return values, "\x00".join(values).encode("utf-8", "surrogatepass") + lengths.tobytes()
+    array = frame[name].to_numpy(dtype=np.int64 if kind == "int" else np.float64)
+    return array, array.tobytes()
+
+
+def _held(role: str, scope: tuple[str, str], frame: pd.DataFrame,
+          columns: Sequence[tuple[str, str]], split: Any,
+          memo: dict[str, tuple[pd.DataFrame, Any]] | None = None) -> Any:
+    """``split`` of ``frame``'s ``columns`` (name, kind), through the cache: reused
+    while the frame's content identity, its row count and the sha256 of every
+    byte of those columns, is the one held for ``role``; computed again on any
+    other. None when a column holds a value not of its kind. ``memo``, kept by a
+    caller for one call of its own over frames it does not change, gives the
+    same frame object's value again without hashing it again."""
+    if memo is not None and role in memo and memo[role][0] is frame:
+        return memo[role][1]
+    if _SPLITS["scope"] != scope:
+        _clear_splits()
+        _SPLITS["scope"] = scope
+    parts = [_column(frame, name, kind) for name, kind in columns]
+    value = None
+    if all(p is not None for p in parts):
+        digest = hashlib.sha256()
+        for (name, _), part in zip(columns, parts, strict=True):
+            assert part is not None
+            for chunk in (name.encode("utf-8"), part[1]):
+                digest.update(len(chunk).to_bytes(8, "little"))
+                digest.update(chunk)
+        identity = (len(frame), digest.hexdigest())
+        held = _SPLITS["held"].get(role)
+        if held is not None and held[0] == identity:
+            value = held[1]
+        else:
+            value = split(*(p[0] for p in parts if p is not None))
+            _SPLITS["held"][role] = (identity, value)
+    if memo is not None:
+        memo[role] = (frame, value)
+    return value
+
+
+def _groups(*keys: np.ndarray) -> dict[Any, np.ndarray]:
+    """The row numbers of each value (each tuple of values) of ``keys``, ascending."""
+    if not len(keys[0]):
+        return {}
+    frame = pd.DataFrame({str(i): k for i, k in enumerate(keys)})
+    by = list(frame.columns) if len(keys) > 1 else frame.columns[0]
+    return {key: np.sort(where) for key, where in frame.groupby(by, sort=False).indices.items()}
+
+
+def _split_slots(subjects: np.ndarray, kinds: np.ndarray, days: np.ndarray,
+                 values: np.ndarray) -> dict[str, tuple[np.ndarray, np.ndarray]] | None:
+    """Each random control slot's rows: its day numbers ascending and the values in
+    that order (a stable sort, as ``paper.adjusted`` sorts); None when a slot holds
+    two rows of one date."""
+    rows = np.flatnonzero(kinds == stats.CONTROL_RANDOM)
+    out = {}
+    for slot, where in _groups(subjects[rows]).items():
+        mine = rows[where]
+        order = mine[np.argsort(days[mine], kind="stable")]
+        when = days[order]
+        if bool(np.any(when[1:] == when[:-1])):
+            return None
+        out[str(slot)] = (when, values[order])
+    return out
+
+
+def _split_legs(subjects: np.ndarray, symbols: np.ndarray, days: np.ndarray,
+                rows: np.ndarray, held: np.ndarray
+                ) -> dict[tuple[str, str], tuple[np.ndarray, np.ndarray, np.ndarray]]:
+    """Per (subject, instrument), the day numbers, ``rows`` and ``position`` of its
+    position records, in frame order."""
+    return {(str(s), str(i)): (days[where], rows[where], held[where])
+            for (s, i), where in _groups(subjects, symbols).items()}
+
+
+def _split_unit(symbols: np.ndarray, days: np.ndarray, values: np.ndarray
+                ) -> tuple[dict[str, dict[int, float]], set[int]]:
+    """Per instrument, its unit return by day number (a later row of the same
+    instrument and date replaces an earlier one, as a dict built in frame order
+    does), and every day number the records hold."""
+    out: dict[str, dict[int, float]] = {}
+    for symbol, day, value in zip(symbols, days.tolist(), values.tolist(), strict=True):
+        out.setdefault(str(symbol), {})[day] = float(value)
+    return out, set(days.tolist())
+
+
+_NO_LEG = (np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.int64),
+           np.zeros(0, dtype=np.float64))
+
+
+def _within(values: np.ndarray, sorted_unique: np.ndarray) -> np.ndarray:
+    """``numpy.isin(values, sorted_unique)`` for a sorted array of distinct values."""
+    if not len(sorted_unique):
+        return np.zeros(len(values), dtype=bool)
+    at = np.minimum(np.searchsorted(sorted_unique, values), len(sorted_unique) - 1)
+    return sorted_unique[at] == values
+
+
+def _less_exposure_rows(values: np.ndarray, average: np.ndarray, unit: np.ndarray,
+                        n: int) -> np.ndarray:
+    """``paper.less_exposure`` of every row of ``values`` at once: row ``r``, day
+    ``t`` is ``values[r, t]`` less the sum over the symbols, in their order,
+    starting from 0.0, of ``average[r, s] * unit[s, t]`` (``unit`` 0.0 where the
+    records hold none), divided by ``n``. Each element goes through the same
+    IEEE operations in the same order as the scalar loop, so each is the same."""
+    total = np.zeros(values.shape, dtype=np.float64)
+    for s in range(unit.shape[0]):
+        total = total + average[:, s:s + 1] * unit[s:s + 1, :]
+    return values - total / n
+
+
 def slot_series(state_dir: Path, setup: journal.Setup, days: Iterable[date],
                 records: pd.DataFrame, *, overlay: Path | None = None,
-                exposure: tuple[pd.DataFrame, pd.DataFrame] | None = None
+                exposure: tuple[pd.DataFrame, pd.DataFrame] | None = None,
+                memo: dict[str, tuple[pd.DataFrame, Any]] | None = None
                 ) -> dict[str, pd.Series]:
     """Each random control slot with a paper row on every day of ``days``, in slot
     order: its exposure-adjusted net 1x over ``days``, with its own average
-    positions over them (O-7)."""
+    positions over them (O-7).
+
+    Each slot's series is computed as ``paper.adjusted`` computes it, from the
+    paper, unit and position records split once per content (``_held``,
+    ``_SPLITS``) instead of every slot filtering every subject's history again
+    (decision 2026-10-18-m20 157, 158): its values on the days of ``days`` in
+    date order; for each instrument, in symbol order, its ``hbar_i`` the summed
+    ``position`` of its position rows dated in ``days``, in frame order, over
+    their summed ``rows`` (0 with none), as ``paper.hbar``; the unit return of
+    each instrument and day the unit records hold; and O-4's one subtraction,
+    ``paper.less_exposure``'s, taken for every slot and day at once element by
+    element (``_less_exposure_rows``). The same numbers go through the same
+    operations in the same order, so each series is the same. Where a frame holds a value of
+    another type than its records hold (a ``date`` column with a value that is
+    not a ``datetime.date``, a text column with one that is not a ``str``), or a
+    slot holds two rows of one date, each series is ``paper.adjusted``'s own.
+    ``memo`` is ``_held``'s, for a caller that calls this more than once over
+    the same frames."""
     span = sorted(set(days))
     wanted = set(span)
     if not span:
         return {}
+    track = setup.track.name
+    scope = (str(Path(state_dir).resolve()), track)
+    when = _day_numbers(span)
+    split = (None if when is None else
+             _held("slots", scope, records, (("subject", "text"), ("kind", "text"),
+                                             ("date", "day"), ("net_1x", "float")),
+                   _split_slots, memo))
+    if split is not None and when is not None:
+        inside_w = {slot: np.isin(have, when) for slot, (have, _) in split.items()}
+        chosen = [(slot, split[slot][1][inside_w[slot]])
+                  for slot in sorted((s for s, inside in inside_w.items() if inside.any()),
+                                     key=controls.slot_of)
+                  if int(inside_w[slot].sum()) == len(span)]
+        if not chosen:
+            return {}
+        if exposure is None:
+            exposure = _exposure(state_dir, track, overlay)
+        units = _held("unit", scope, exposure[0], (("instrument", "text"), ("date", "day"),
+                                                   ("unit", "float")), _split_unit, memo)
+        legs = _held("positions", scope, exposure[1],
+                     (("subject", "text"), ("instrument", "text"), ("date", "day"),
+                      ("rows", "int"), ("position", "float")), _split_legs, memo)
+        if units is not None and legs is not None:
+            numbers = when.tolist()
+            missing = [d for d, n in zip(span, numbers, strict=True) if n not in units[1]]
+            if missing:
+                raise ValueError(f"the exposure records of {track} hold no "
+                                 f"{missing[0].isoformat()}; a caller passing staged paper "
+                                 f"records passes overlay too")
+            symbols = sorted(inst.symbol for inst in setup.instruments)
+            width = len(setup.instruments)
+            unit = np.array([[units[0].get(s, {}).get(n, 0.0) for n in numbers]
+                             for s in symbols], dtype=np.float64).reshape(len(symbols), -1)
+            average = np.zeros((len(chosen), len(symbols)), dtype=np.float64)
+            for i, (slot, _) in enumerate(chosen):
+                for j, s in enumerate(symbols):
+                    days_of, rows, held = legs.get((slot, s), _NO_LEG)
+                    inside = _within(days_of, when)
+                    count, summed = int(rows[inside].sum()), float(held[inside].sum())
+                    average[i, j] = summed / count if count else 0.0
+            values = np.vstack([v for _, v in chosen]).astype(np.float64)
+            adjusted = _less_exposure_rows(values, average, unit, width)
+            out: dict[str, pd.Series] = {}
+            index: Any = list(span)
+            for i, (slot, _) in enumerate(chosen):
+                out[slot] = pd.Series(adjusted[i].copy(), index=index, dtype="float64",
+                                      name="net_1x")
+                # the first series' index, an immutable Index of the same dates, for the rest
+                index = out[slot].index
+            return out
     slots = records[(records["kind"] == stats.CONTROL_RANDOM) & records["date"].isin(wanted)]
     near = None if exposure is None else _near(exposure, wanted)
-    out: dict[str, pd.Series] = {}
+    out = {}
     groups = {str(s): g for s, g in slots.groupby("subject", sort=False)}
     for slot in sorted(groups, key=controls.slot_of):
         mine = groups[slot]
@@ -316,6 +554,23 @@ def _slot_frame(series: Mapping[str, pd.Series]) -> pd.DataFrame:
               for slot, s in series.items()]
     return (pd.concat(frames, ignore_index=True) if frames
             else pd.DataFrame(columns=["subject", "kind", "date", SLOT_COLUMN]))
+
+
+def slot_moments(slots: Mapping[str, pd.Series], days: Iterable[date]) -> tuple[float, float]:
+    """``stats.control_moments`` of ``slots`` (``slot_series``) over ``days`` on
+    ``SLOT_COLUMN``. When every series is indexed by the days of ``days`` once
+    each, in date order, as ``slot_series`` gives them, each slot's Sharpe is taken
+    on its series' values directly, the slots in subject order, which are the
+    values and the order ``control_moments`` takes from the slot frame; otherwise
+    through the slot frame itself (decision 2026-10-18-m20 158)."""
+    days = list(days)
+    span = sorted(set(days))
+    if all(list(s.index) == span for s in slots.values()):
+        # metrics.sharpe reads its argument through numpy.asarray as float64
+        sharpes = [sharpe(slots[k].to_numpy(dtype=np.float64))
+                   for k in sorted(slots)]
+        return stats.moments([x for x in sharpes if not math.isnan(x)])
+    return stats.control_moments(_slot_frame(slots), days, column=SLOT_COLUMN)
 
 
 def persistent_approach(state_dir: Path, setup: journal.Setup, day: date,
@@ -338,6 +593,7 @@ def persistent_approach(state_dir: Path, setup: journal.Setup, day: date,
     by_id = {a.id: a for a in approaches}
     after = lifecycle.states(life, approaches, day + timedelta(days=1))
     out: list[dict[str, Any]] = []
+    memo: dict[str, tuple[pd.DataFrame, Any]] = {}
     for aid in sorted(a for a, s in after.items()
                       if s.state in (lifecycle.LIVE, lifecycle.DORMANT)):
         mine = records[records["subject"] == aid].sort_values("date", kind="stable")
@@ -347,13 +603,16 @@ def persistent_approach(state_dir: Path, setup: journal.Setup, day: date,
         if w:
             if exposure is None:
                 exposure = _exposure(state_dir, track, overlay)
-            near = _near(exposure, w)
+            # The approach's own position rows: the rows paper.adjusted reads of it.
+            own = (exposure[0][exposure[0]["date"].isin(set(w))],
+                   exposure[1][exposure[1]["subject"] == aid])
             s1, s2 = (sharpe(paper.adjusted(state_dir, setup, aid, w, c, records=mine,
-                                            overlay=overlay, exposure=near))
+                                            overlay=overlay, exposure=own))
                       for c in ("net_1x", "net_2x"))
             plain_1x, plain_2x = sharpe(clean_rows["net_1x"]), sharpe(clean_rows["net_2x"])
-            slots = slot_series(state_dir, setup, w, records, overlay=overlay, exposure=near)
-            mu_c, sd_c = stats.control_moments(_slot_frame(slots), w, column=SLOT_COLUMN)
+            slots = slot_series(state_dir, setup, w, records, overlay=overlay,
+                                exposure=exposure, memo=memo)
+            mu_c, sd_c = slot_moments(slots, w)
         threshold = stats.threshold(mu_c, sd_c, n, base, per_year)
         active = (len(w) >= min_days and positive(s2) and math.isfinite(s1)
                   and math.isfinite(threshold) and s1 > threshold)

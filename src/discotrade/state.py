@@ -515,7 +515,10 @@ def clear_caches() -> list[str]:
     - ``discotrade.table._EXPOSURE``: the table's unit and position records,
       per file, keyed by its path, length and sha256 (decision 157 (a));
     - ``discotrade.dashboard._t_critical``: the critical t values of the
-      dashboard's rank panel.
+      dashboard's rank panel;
+    - ``discotrade.alerts._SPLITS``: step 6's paper, unit and position records
+      split per subject, per role keyed by the content of the columns it reads
+      (decision 157 (a)).
     """
     for name in sorted(_CACHES):
         _CACHES[name]()

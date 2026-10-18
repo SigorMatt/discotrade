@@ -16,7 +16,13 @@ note = "the rank row's timing on paper.adjusted gross, each block its own window
 module = "discotrade.alerts"
 function = "slot_series"
 class = "adjusted"
-note = "each random slot's paper.adjusted net_1x over W, its own average positions, for both finding rules' control figures (O-7, O-24, decision 151)"
+note = "each random slot's paper.adjusted net_1x over W, its own average positions, for both finding rules' control figures; computed as paper.adjusted does from records split once per content (O-7, O-24, decisions 151, 158)"
+
+[[reader]]
+module = "discotrade.alerts"
+function = "slot_moments"
+class = "producer"
+note = "computes stats.control_moments' moments of the slots' Sharpes over W, from slot_series' values directly; decides nothing (O-24, decision 158)"
 
 [[reader]]
 module = "discotrade.alerts"
