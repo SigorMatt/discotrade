@@ -9,7 +9,11 @@ U1 431a82e (table: scripts/speed, state.clear_caches, table file cache; 12 tests
 0.0447/0.0716/1.600/7.817 s, load 1.9-2.5; 157 (d) 267 trees equal; 157 (e) diff empty, HEAD tree 5f9c06b7;
 D-019 filed: table still recomputed over the whole paper record; D-013 times line; HF-015 status line).
 
-Next: U2 — step 6 without growth (alerts.rank_rows, detectors, step, four rules, slots' series), registered with
+In progress: U2 (resumed under §R 2026-10-18; uncommitted WIP in src/discotrade/alerts.py, src/discotrade/state.py,
+tests/test_caches.py adding alerts._SPLITS registered with state.clear_caches). STOPPED 2026-10-18: no sub-agent
+can be dispatched (HF-016: no_background.py demands run_in_background: false, which the Agent tool of Claude Code
+2.1.302 does not carry). The WIP is stashed as `wip U2 2026-10-18` (git stash list); restore it with `git stash pop`
+when U2 is resumed. Tree clean. — step 6 without growth (alerts.rank_rows, detectors, step, four rules, slots' series), registered with
 state.clear_caches. Done means: `alerts:` commit pushed; check 3/3; equality test unchanged and passing; wrong
 change (alert cache not cleared by clear_caches) seen red; body gives the four figures at parent and commit,
 profiles, 157 (d)/(e), G1.3 beside U1's 898 s.

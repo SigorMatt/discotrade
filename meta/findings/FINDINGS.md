@@ -939,3 +939,29 @@ growth above, or say what tolerance or change to their arithmetic would allow a 
 
 Status: open
 D-013 times (appended 2026-10-18, mission 20 U1): on 4ed47b4 with U1's files uncommitted, after `discotrade sandbox build` (discotrade-sandbox:3b7d75c39621, present, nothing built), three `./scripts/check` runs, each its own foreground call with a 20-minute timeout, all green (`2470 passed, 204 deselected`, 0 skipped, so the `container` tests ran) took 1168 s, 1196 s and 1317 s wall (pytest 1165.06 s, 1192.89 s, 1312.94 s). The third passed the 20-minute timeout, was moved to the background by the harness and was waited for to its end in the foreground (HF-015's status line of U1) before anything else ran; it is counted green only after it printed `check: green`. All three are above HF-006's 15 minutes. Mission 19's tip took 1066 s to 1131 s; U1 adds 12 tests (2458 to 2470), about 40 s of one run (the warm-against-cold replay and the command's three-day replay). Load average about 1.6 to 3.1 on 4 cores, from other work on the machine. An earlier run in U1, before `tests/test_speed_*.py` stopped naming subprocess, failed `tests/test_offline.py` (3 tests) after 1410 s; it was not counted. No test was dropped or shortened. Status: open (decision 121 (c); decision 140; HF-006)
+
+### HF-016 — the builder cannot dispatch a sub-agent: `no_background` demands a flag the Agent tool does not carry
+
+Severity: high · Component: `.claude/hooks/no_background.py` against the installed Claude Code's Agent tool (hands) ·
+Found: 2026-10-18, mission 20, resuming U2 under §R.
+
+Symptom. Under Claude Code 2.1.302 (`claude --version`), the builder's Agent tool has no `run_in_background`
+parameter in its schema (it accepts description, prompt, subagent_type, model, effort, isolation; no extra
+property). `no_background.py` blocks every Agent call whose input does not carry `run_in_background: false`.
+Two calls were made: one without the flag, and one passing `run_in_background: false` anyway; the field did
+not reach the hook, and both were refused with "no_background blocked this Agent call (run_in_background is
+omitted ...)". The hook's reading of the tool dates from Claude Code 2.1.269; under 2.1.302 an Agent call
+without the flag runs in the foreground and returns its result to the caller, so the hook's premise no longer
+holds and it refuses the only call shape the tool admits.
+
+Effect. BUILDER-20-PROMPT's execution model (one foreground sub-agent per unit; the builder never edits
+product code) cannot be followed: no unit from U2 on can be dispatched. U2's interrupted work was stashed as
+`wip U2 2026-10-18` (§R) and the tree left clean.
+
+Direction (for the hands Project). Make `no_background.py` match the installed Agent tool: admit an Agent call
+the tool runs in the foreground (for a tool with no `run_in_background` property, the omitted flag), or
+pin the Claude Code version the hook was read from.
+
+What this project does meanwhile: nothing in product code; mission 20 stops at U2 with `VERDICT: question`.
+
+Status: open

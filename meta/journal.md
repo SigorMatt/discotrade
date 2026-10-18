@@ -183,3 +183,4 @@
 2026-10-18T10:32:24.386Z  consult 0mvdoc8h7-s02n (architect done) on aux.done of aux job 0mvdoby7d-j90u: VERDICT: next kit mission-20-kit
 - 2026-10-18 mission 20 U0 started and done: plan, checkpoint, FINDINGS lines (D-014 status, D-018, HF-006, HF-012, HF-010, HF-013, HF-015); U1 next.
 - 2026-10-18 mission 20 U1 done 431a82e: G1.3 PASS 898 s (2 s under O-27's stop); ratio 1.577 -> 1.600 (table.build growth cut, D-019 filed); check 3/3 1168, 1196, 1317 s; U2 started.
+- 2026-10-18 mission 20 U2 resumed under §R and stopped: every Agent call refused by no_background.py (HF-016); U2's WIP stashed as `wip U2 2026-10-18`; VERDICT: question.
