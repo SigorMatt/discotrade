@@ -89,7 +89,29 @@ REVIEW-18 has no blocker and no should-fix and records `Gate M3: PASS`; its
 notes 7 to 10 are recorded as hands findings by mission 19 U0
 (decisions-2026-10-17-m19 item 154 (b)). The owner's rulings O-23 to O-25
 (`meta/decisions/2026-10-17-owner.md`) are built by mission 19 (step S4.1;
-items 146 to 153).
+items 146 to 153). REVIEW-19 has no blocker; its should-fix 1 (finding
+D-018, the rank rule's `p` recomputed on the page) and 2 (the health
+panel's failure counts untested) are taken by mission 20 (step S4.2a, unit
+U4; decisions-2026-10-18-m20 items 160 and 161), its should-fix 3 (no
+speed figure at mission 18's tip) by mission 20's report (item 162), its
+note 1 by the owner's O-26 and O-27 (`meta/decisions/2026-10-18-owner.md`),
+built by mission 20 (units U1 to U3; items 155 to 159), and its notes 11
+to 15 are recorded as hands findings by mission 20 U0 (item 167 (b)).
+
+- REVIEW-19 notes, not carried as work unless named (decision 167 (a)):
+  note 3 (U2's body does not say which two-sided form it used), note 5
+  (`alerts.revival` copies lifecycle step 3's `stats.trading_dates` call
+  rather than sharing a helper; the step that next touches `lifecycle.py`
+  may share it), note 7 (inactive health entries kept in `state.json`)
+  and note 8 (`dashboard.BAND` is a display band, not an I-10 threshold)
+  stand as the review accepts them; note 2's check times go to finding
+  D-013, open.
+- Left by REVIEW-19 to step S4.2b (decision 167 (a)): `alerts.group_edge`
+  raises `ValueError` when `portfolio_clean`'s dates and
+  `paper.clean_members` disagree, which fails the day rather than skipping
+  the rule (note 4); the detectors' events appended to the health log
+  before staging is moved, appended again on a failed day's retry (note 6,
+  with REVIEW-17 note 4).
 
 - REVIEW-18 notes, not carried as work (decision 154 (a)): note 1 (the
   cell line's integers allowed anywhere in the brief part), note 2 (the
@@ -99,13 +121,15 @@ items 146 to 153).
 - REVIEW-17 notes, not carried as work unless named (decision 144): notes
   6 and 7 stand as REVIEW-17 accepts them; note 8 (the doubled "Status" in
   the D-016 line) stands, the ledger being append-only.
-- Left by REVIEW-17 to step S4.2 (decision 144 (a), (b)): a call-limit
+- Left by REVIEW-17 to step S4.2, now step S4.2b (decision 144 (a), (b);
+  decisions-2026-10-18-m20 item 155): a call-limit
   breach on T under the container backend raises `DailyError`, untested
   (note 3's second half); a failed day's health events of steps 3 to 5
   appended again on its re-run (note 4); `replay.scripted_start`'s uncaught
   `KeyError` on a stored response without `model`, and `WORKERS_TRANSPORT`
   as a module-level test hook (note 5).
-- Left by step S4.1 to step S4.2 (decision 152 (e), (f)): the day loop's
+- Left by step S4.1 to step S4.2, now step S4.2b (decision 152 (e), (f);
+  decisions-2026-10-18-m20 item 155): the day loop's
   call of the `no_finding` detector, which needs the full daily run's
   records to tell months of live running from a replay; the digest and the
   issues for the alerts mission 19 fires.
@@ -126,7 +150,9 @@ items 146 to 153).
   as missing (note 6).
 - Left by step S3.2b to step S4.2 (decision 137 (a)): the live default of
   `run-day --provider` and `--coordinator`, chosen with the full daily run;
-  `--coordinator` gains the Claude Code form there.
+  `--coordinator` gains the Claude Code form there. The Claude Code form is
+  taken by mission 20 (step S4.2a, unit U5; decisions-2026-10-18-m20 item
+  163); the live defaults go to step S4.2b.
 - For step S4.3: the fixture models of `tests/fixtures/config/models.toml`
   have cutoffs in 2024 and 2026, so every approach observation of a replay
   over 2019 is exposed (DESIGN §11.3), and no finding alert can read a
@@ -146,6 +172,8 @@ items 146 to 153).
 - Left by REVIEW-15 to step S4.2 (decision 131 (d)): a timeout of the
   `claude` child kills it but not a grandchild it starts (note 3's second
   half); S4.2 runs `claude` again for the coordinator and takes both.
+  Taken by mission 20 (step S4.2a, unit U5; decisions-2026-10-18-m20 item
+  166).
 
 - REVIEW-14 notes, not carried as work unless named: note 5 (the profile's
   tests do not tell the adjustment anchor apart; roll gaps are additive),
@@ -213,7 +241,9 @@ items 146 to 153).
   helpers `own_journal`/`own_unit` cache by state path (the step that next
   touches `table.py`); G1.3 went from 450 s to 518 s and the per-day cost
   grows with history unprofiled (step S4.3, whose replays are longest,
-  measures it if an M4 item nears 10 minutes).
+  measures it if an M4 item nears 10 minutes). The per-day growth is taken
+  by mission 20 under O-26 (step S4.2a, units U1 to U3;
+  decisions-2026-10-18-m20 items 156 to 158).
 
 - REVIEW-10 notes, not carried as work unless named: a month file changed
   on disk during a day run after its first verified read is served from
@@ -224,7 +254,7 @@ items 146 to 153).
   step that next touches `state.py` may use `column.array`); the paper
   heal compares dates only, and a death between the `journal/` and
   `ledger/` moves of `_move` still loses that day's lifecycle and rank
-  rows (step S4.2, which builds staging and retry, takes it); the
+  rows (step S4.2b, which builds staging and retry, takes it); the
   Saturday test of decision 79 (a) does not assert SYNX's bars had
   closed, and the mission 8 equivalence test shares `latest_closed_day`
   with the code under test.
@@ -257,7 +287,7 @@ items 146 to 153).
   item 107); `revised_data` is
   detected by matching the bar store's error text, and `daily.py` calls
   the private `store._indexed_last_ts` (a typed error is sturdier; step
-  S4.2, which stages step 1, may take it); `journal recompute` leaves its
+  S4.2b, which stages step 1, may take it); `journal recompute` leaves its
   `journal_mismatch` health line uncommitted until the next `run-day`.
 
 - Finding D-006 (decision 44): each instrument's evaluation gets a
@@ -305,8 +335,8 @@ items 146 to 153).
 - REVIEW-1 note: `config.py` bounds `drop_fraction` at 0.5 without a
   DESIGN source. Harmless for fixtures; no step takes it unless a fixture
   needs more.
-- Left by step S1.1 to step S4.2 (decisions-2026-10-12 items 50, 51,
-  54): staging of step 1's writes (bars, rolls, `gaps.jsonl`), the retry
+- Left by step S1.1 to step S4.2, now step S4.2b (decisions-2026-10-12
+  items 50, 51, 54): staging of step 1's writes (bars, rolls, `gaps.jsonl`), the retry
   from a clean staging directory, `run_failed`, the push to a remote, the
   catch-up of missed days with `day_caught_up`, and the weekly journal
   recomputation as step 6 of §16.1. Left to step S2.2 (item 48): running
@@ -315,7 +345,7 @@ items 146 to 153).
 - REVIEW-2 note (U4): when `update_rolls` fails after `bars fetch` wrote
   the bars, the command exits 1 and the next fetch records the roll,
   measuring its gap from a later source state. The daily run's staging and
-  retry (step S4.2) take it.
+  retry (step S4.2b) take it.
 - REVIEW-2 notes (U5, U6), for step S5.1, which builds the doctor and
   runs a day through the vendor adapter (G5.2): `vendor.py` passes the key
   to the client unstripped while its presence check strips it;
@@ -359,6 +389,14 @@ items 146 to 153).
   by a decision naming the test and the assertion (O-19).
 - Finding D-014: G1.3 ran 607 s and 618 s in REVIEW-13, above O-3's 10
   minutes, against the builder's 576 s; O-20 keeps the gate as it is.
+  Decided by the owner's O-26 and O-27 (`meta/decisions/2026-10-18-owner.md`,
+  after G1.3 reached 1087 s in REVIEW-19): a flat cost per replay day
+  within one process, and a 15-minute stop for every M1 item. Built by
+  mission 20.
+- `config/run.toml`'s `[coordinator]` table (mission 20, decision 163 (b)):
+  the model name, the turn limit, the spending limit and the timeout are
+  the project's own choices, unverified until live check L4. Confirming or
+  replacing the model is the owner's.
 - REVIEW-11's note on G1.3's scenario: every scripted admission line has
   an adjusted admission score equal to its plain one, so G1.3 tells the two
   measures apart only through dormancy and return. Giving one admission

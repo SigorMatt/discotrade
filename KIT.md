@@ -1,1 +1,1 @@
-plan: mission 19 kit (S4.1, alerts and dashboard under O-23 to O-25)
+plan: mission 20 kit (S4.2a, speed under O-26 and O-27, coordinator)
