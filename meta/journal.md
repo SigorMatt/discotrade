@@ -181,3 +181,4 @@
 2026-10-18T02:53:41.104Z  consult 0mvd8bkjw-hmjs (architect done) on aux.done of aux job 0mvd0teyb-rnvb: VERDICT: escalate ruling: D-014, G1.3's time against O-3's 10-minute target and O-2's 20-minute cap, before mission 20
 2026-10-18T10:14:43.099Z  consult 0mvdo4yji-jqh0 (driver done) on builder.done of builder job 0mvdo43me-0vea: VERDICT: escalate The builder has stopped correctly. Writing the mission 20 brief belongs to the architect (CLAUDE.md rule 10: mission text is not the driver's to write), so I can't answer this.
 2026-10-18T10:32:24.386Z  consult 0mvdoc8h7-s02n (architect done) on aux.done of aux job 0mvdoby7d-j90u: VERDICT: next kit mission-20-kit
+- 2026-10-18 mission 20 U0 started and done: plan, checkpoint, FINDINGS lines (D-014 status, D-018, HF-006, HF-012, HF-010, HF-013, HF-015); U1 next.

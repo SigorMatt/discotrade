@@ -867,3 +867,45 @@ What this project does meanwhile: nothing in product code.
 Status: open
 D-013 times (appended 2026-10-18, mission 19 U6): at the pushed tip ef9359f, with no uncommitted file but the git-ignored drafts, after `discotrade sandbox build` (discotrade-sandbox:3b7d75c39621, present, nothing built), three `./scripts/check` runs, each its own foreground call with a 20-minute timeout, all green (`2458 passed, 204 deselected`, 0 skipped, so the `container` tests ran) took 1066 s, 1079 s and 1131 s wall (pytest 1063.69 s, 1075.34 s, 1127.53 s); all three are above HF-006's 15 minutes and none passed the 20-minute timeout (no run moved to the background). Mission 18's were 917 s to 931 s; mission 19 added 94 tests to the check (2364 to 2458). Load average about 1.2 to 2.2 on 4 cores. No test was dropped or shortened. Status: open (decision 121 (c); decision 140)
 D-014 times (appended 2026-10-18, mission 19 U6): at the pushed tip ef9359f, with no uncommitted file but the git-ignored drafts, after `discotrade sandbox build` (discotrade-sandbox:3b7d75c39621, present, nothing built) and `./scripts/check` green three times, each item its own foreground call with a 20-minute timeout (decision 154 (d)): G1.1 411 s (`G1.1 PASS 6 passed, 1 warning in 410.20s`), G1.2 280 s (`G1.2 PASS 4 passed in 278.60s`), G1.3 1049 s (`G1.3 PASS 10 passed in 1048.60s (0:17:28)`), G1.4 1 s (`G1.4 PASS 15 passed in 0.52s`), against mission 17 U5's 450 s, 204 s, 542 s and 1 s. Finding: G1.3 took above 10 minutes (1049 s, 507 s more than mission 17 U5's 542 s), under the 20-minute call, so it is PASS under O-2 and no test was weakened (decision 154 (c)); the rise was not measured per test. Gate M3 took 547 s (G3.1 PASS 3 passed in 212.89 s, G3.2 PASS 9 passed in 165.95 s, G3.3 PASS 10 passed in 166.07 s), M2 130 s, M0 245 s, all PASS; no M3, M2 or M0 item took above 15 minutes. Status: open (for the owner, O-3's target)
+D-014 status: decided meta/decisions/2026-10-18-owner.md (O-26, O-27)
+
+### D-018 — decision 152 (a)'s alert-state entry has no `p` that decision 153 (b) 1 asks the page to read from it
+
+Severity: low · Component: `src/discotrade/dashboard.py` (`_rank_p`) and `src/discotrade/alerts.py`
+(`ENTRY_KEYS`), with decisions 2026-10-17-m19 152 (a) and 153 (b) 1 · Found: 2026-10-18,
+REVIEW-19 (should-fix 1), recorded by mission 20 U0 (decision 167 (b)).
+
+Symptom. Decision 152 (a) says the dashboard reads the rules' figures from the alert state and never
+recomputes them. Decision 153 (b) 1 asks for the `rank_persistence` rule's `p` "from the alert state",
+but 152 (a)'s entry has no `p` (`alerts.ENTRY_KEYS`). Mission 19 U5 resolved it in code: `_rank_p`
+derives `p` on the page from the state's `value` and `threshold` and the current `alerts.rank_blocks`
+and `alerts.rank_level`. That is exact while the thresholds are unchanged, and can differ from the
+rule's own `p` (which is in the payload) if they change after the state was written. Two decisions
+disagree, so this is a finding, not a choice made in the code.
+
+Direction (for the architect). Say which item gives way.
+
+Status: open
+D-018 status (appended 2026-10-18, mission 20 U0): Status: answered meta/decisions/decisions-2026-10-18-m20.md (item 160)
+HF-006 status (appended 2026-10-18, mission 20 U0): REVIEW-19 (note 11) saw mission 19 U1's sub-agent move a check run past the cap into a background task with a Monitor and stop waiting for a notice that never came; it was resumed twice. This project's answer is decision 2026-10-18-m20 159 (d) (a lone `sleep 240`, then a lone read of the output file, repeated). Status: open (meta/decisions/decisions-2026-10-18-m20.md item 167 (b))
+HF-012 status (appended 2026-10-18, mission 20 U0): REVIEW-19 (note 12) saw outside load of about 7.6 on four cores during U1's review decide whether a check run fits the cap. Status: open (meta/decisions/decisions-2026-10-18-m20.md item 167 (b))
+HF-010 status (appended 2026-10-18, mission 20 U0): REVIEW-19 (note 13) still found `/tmp/rv13-8b9f9be` and `/tmp/u5/parent` registered as worktrees. Status: open (meta/decisions/decisions-2026-10-18-m20.md item 167 (b))
+HF-013 status (appended 2026-10-18, mission 20 U0): REVIEW-19 (note 14) again recorded every sub-agent report past the 12-line limit. Status: open (meta/decisions/decisions-2026-10-18-m20.md item 167 (b))
+
+### HF-015 — a reviewer waiting on a sub-agent has no sanctioned way to wait
+
+Severity: medium · Component: the reviewer's harness and the project's `no_background` rule (hands) ·
+Found: 2026-10-18, REVIEW-19 (`hands:` note 15), recorded by mission 20 U0 (decision 167 (b)).
+
+Symptom. The reviewer's harness refused a `sleep` followed by other commands and pointed to Monitor
+or background tasks instead. Those are the tools the project's `no_background` rule
+(`.claude/hooks/no_background.py`) forbids, so a reviewer waiting on a sub-agent has no sanctioned way
+to wait.
+
+Direction (for the hands Project). Give the reviewer one sanctioned way to wait in the foreground
+that the harness and the `no_background` rule both admit.
+
+What this project does meanwhile: nothing in product code; decision 2026-10-18-m20 159 (d) gives the
+builder's sub-agents a lone `sleep 240` call followed by a lone read.
+
+Status: open
