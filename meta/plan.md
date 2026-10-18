@@ -23,8 +23,8 @@ Left items:
 - the digest, the issue sinks, the full daily run, the `no_finding` call, the live defaults of `run-day`, REVIEW-17 notes 3 to 5 and REVIEW-19 notes 4 and 6 — step S4.2b (decision 155, 167 (a));
 - G4.4 and G4.5 as gate tests — step S4.3.
 
-- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (D-014 status; D-018 and its status; HF-006, HF-012, HF-010, HF-013 lines; HF-015 new; decision 167 (b)).
-- [ ] U1 The measurement (`./scripts/speed`), the equality test, the clearing function, and the table without growth (O-26 items 2 to 5; decisions 156, 157, 158; DESIGN §10.4, §16.4). `table:` commit. G1.3 and the four figures at parent and commit.
+- [x] U0 Plan (`plan:` commit) — 4ed47b4: this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (D-014 status; D-018 and its status; HF-006, HF-012, HF-010, HF-013 lines; HF-015 new; decision 167 (b)).
+- [x] U1 The measurement (`./scripts/speed`), the equality test, the clearing function, and the table without growth (O-26 items 2 to 5; decisions 156, 157, 158; DESIGN §10.4, §16.4). `table:` commit. G1.3 and the four figures at parent and commit. — 431a82e (G1.3 PASS 898 s; ratio parent 1.577, commit 1.600; table.build 0.89->1.58 s became 0.20->0.31 s; finding D-019 (table not fully incremental); check 3/3 1168, 1196, 1317 s; 157 (d) 267 trees equal, 157 (e) diff empty)
 - [ ] U2 Step 6 without growth (O-26 item 2; decisions 157, 158; DESIGN §15.1-§15.3, §16.1 step 6). `alerts:` commit. G1.3 and the four figures.
 - [ ] U3 Step 7 and the rest without growth; the ratio at most 1.25 (O-26 items 2, 4; decisions 157, 158; DESIGN §15.5, §16.1). `dashboard:` commit (or the area that took most). G1.3 and the four figures.
 - [ ] U4 REVIEW-19 should-fix 1 and 2 (decisions 160, 161; D-018; DESIGN §15.3, §15.5). `alerts:` commit. G1.3 and the four figures.

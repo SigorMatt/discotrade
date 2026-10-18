@@ -3,15 +3,16 @@
 Mission: 20 (`meta/BUILDER-20-PROMPT.md`), roadmap step S4.2a. Closes no milestone. Base f1b8346.
 Container runtime: docker. Image at mission 19's tip: discotrade-sandbox:3b7d75c39621.
 
-Done: U0 (plan; D-014 status; D-018 and status; HF-006, HF-012, HF-010, HF-013 lines; HF-015 new).
+Done: U0 4ed47b4 (plan; D-014 status; D-018 and status; HF-006, HF-012, HF-010, HF-013 lines; HF-015 new).
+U1 431a82e (table: scripts/speed, state.clear_caches, table file cache; 12 tests; check 3/3 1168, 1196, 1317 s
+(third past the cap, waited); G1.3 PASS 898 s; figures parent 0.0587/0.0926/1.577/8.887 s, commit
+0.0447/0.0716/1.600/7.817 s, load 1.9-2.5; 157 (d) 267 trees equal; 157 (e) diff empty, HEAD tree 5f9c06b7;
+D-019 filed: table still recomputed over the whole paper record; D-013 times line; HF-015 status line).
 
-Next: U1 — `./scripts/speed` (decision 156), the cache-clearing function and cache tests (157 (a), (b)), the
-equality test in the check (157 (c)), the table's figures reused across the days of one process (158). Done means:
-`table:` commit pushed; check 3/3 green with container tests run; new tests pass; the two wrong changes (table
-cache keyed by path only; clearing function skipping the table cache) seen red and reverted; body gives the four
-figures at parent (speed files copied into a worktree at the parent, 156 (e)) and commit, the profiles (first and
-last 30 days, parent and commit), 157 (d) cold comparison and 157 (e) byte-identical comparison, G1.3 wall time and
-line beside 1049 s and 1087 s, load average.
+Next: U2 — step 6 without growth (alerts.rank_rows, detectors, step, four rules, slots' series), registered with
+state.clear_caches. Done means: `alerts:` commit pushed; check 3/3; equality test unchanged and passing; wrong
+change (alert cache not cleared by clear_caches) seen red; body gives the four figures at parent and commit,
+profiles, 157 (d)/(e), G1.3 beside U1's 898 s.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-26, O-27 win, then O-25 and earlier owner
 items, then decisions 155-167, then 1-154 where not replaced. Speed units U1-U3 change no test's assertion, nothing

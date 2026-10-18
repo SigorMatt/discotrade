@@ -182,3 +182,4 @@
 2026-10-18T10:14:43.099Z  consult 0mvdo4yji-jqh0 (driver done) on builder.done of builder job 0mvdo43me-0vea: VERDICT: escalate The builder has stopped correctly. Writing the mission 20 brief belongs to the architect (CLAUDE.md rule 10: mission text is not the driver's to write), so I can't answer this.
 2026-10-18T10:32:24.386Z  consult 0mvdoc8h7-s02n (architect done) on aux.done of aux job 0mvdoby7d-j90u: VERDICT: next kit mission-20-kit
 - 2026-10-18 mission 20 U0 started and done: plan, checkpoint, FINDINGS lines (D-014 status, D-018, HF-006, HF-012, HF-010, HF-013, HF-015); U1 next.
+- 2026-10-18 mission 20 U1 done 431a82e: G1.3 PASS 898 s (2 s under O-27's stop); ratio 1.577 -> 1.600 (table.build growth cut, D-019 filed); check 3/3 1168, 1196, 1317 s; U2 started.
