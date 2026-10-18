@@ -9,14 +9,16 @@ U1 431a82e (table: scripts/speed, state.clear_caches, table file cache; 12 tests
 0.0447/0.0716/1.600/7.817 s, load 1.9-2.5; 157 (d) 267 trees equal; 157 (e) diff empty, HEAD tree 5f9c06b7;
 D-019 filed: table still recomputed over the whole paper record; D-013 times line; HF-015 status line).
 
-In progress: U2 (resumed under §R 2026-10-18; uncommitted WIP in src/discotrade/alerts.py, src/discotrade/state.py,
-tests/test_caches.py adding alerts._SPLITS registered with state.clear_caches). STOPPED 2026-10-18: no sub-agent
-can be dispatched (HF-016: no_background.py demands run_in_background: false, which the Agent tool of Claude Code
-2.1.302 does not carry). The WIP is stashed as `wip U2 2026-10-18` (git stash list); restore it with `git stash pop`
-when U2 is resumed. Tree clean. — step 6 without growth (alerts.rank_rows, detectors, step, four rules, slots' series), registered with
-state.clear_caches. Done means: `alerts:` commit pushed; check 3/3; equality test unchanged and passing; wrong
-change (alert cache not cleared by clear_caches) seen red; body gives the four figures at parent and commit,
-profiles, 157 (d)/(e), G1.3 beside U1's 898 s.
+U2 becb570 (alerts: _SPLITS cache in step 6, registered with clear_caches; 8 tests; check 3/3 1045, 1016, 1001 s;
+G1.3 PASS 582 s; figures parent 0.0436/0.0786/1.805/7.41 s (load 2.3-3.0), commit 0.0359/0.0453/1.260/5.67 s (load
+1.1-1.6); 157 (d) 267 trees equal; 157 (e) diff empty, HEAD tree 5f9c06b7; D-020 filed (step 6 residual growth);
+body overclaims "rest of step 6 does not grow" (alerts.write 0.016->0.052 s), noted for the report). HF-016's cause
+was CLAUDE_CODE_DISABLE_BACKGROUND_TASKS, removed by the owner.
+
+In progress: U3 — step 7 (dashboard.render) and the rest without growth; the ratio at most 1.25 (O-26 item 4). Done
+means: `dashboard:` (or the area that took most) commit pushed; check 3/3; equality test unchanged and passing;
+ratio <= 1.25 at the commit; wrong change (dashboard cache not cleared by clear_caches) seen red; body gives the four
+figures at parent and commit, profiles, 157 (d)/(e), G1.3 beside U2's 582 s.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-26, O-27 win, then O-25 and earlier owner
 items, then decisions 155-167, then 1-154 where not replaced. Speed units U1-U3 change no test's assertion, nothing
