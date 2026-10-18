@@ -178,3 +178,4 @@
 - 2026-10-18 mission 19 U5 done a21beb7: dashboard, step 7, config/gates.toml; check 3/3 (1060, 1060, 1061 s); U6 started.
 - 2026-10-18 mission 19 U6 done d1f4b81: regression gates at ef9359f all PASS (G1.3 1049 s, finding in D-014 times line); check 3/3 (1066, 1079, 1131 s); U7 started.
 - 2026-10-18 mission 19 U7 done 8837eed: final report; mission 19 finished.
+2026-10-18T02:53:41.104Z  consult 0mvd8bkjw-hmjs (architect done) on aux.done of aux job 0mvd0teyb-rnvb: VERDICT: escalate ruling: D-014, G1.3's time against O-3's 10-minute target and O-2's 20-minute cap, before mission 20
