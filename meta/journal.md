@@ -179,3 +179,5 @@
 - 2026-10-18 mission 19 U6 done d1f4b81: regression gates at ef9359f all PASS (G1.3 1049 s, finding in D-014 times line); check 3/3 (1066, 1079, 1131 s); U7 started.
 - 2026-10-18 mission 19 U7 done 8837eed: final report; mission 19 finished.
 2026-10-18T02:53:41.104Z  consult 0mvd8bkjw-hmjs (architect done) on aux.done of aux job 0mvd0teyb-rnvb: VERDICT: escalate ruling: D-014, G1.3's time against O-3's 10-minute target and O-2's 20-minute cap, before mission 20
+2026-10-18T10:14:43.099Z  consult 0mvdo4yji-jqh0 (driver done) on builder.done of builder job 0mvdo43me-0vea: VERDICT: escalate The builder has stopped correctly. Writing the mission 20 brief belongs to the architect (CLAUDE.md rule 10: mission text is not the driver's to write), so I can't answer this.
+2026-10-18T10:32:24.386Z  consult 0mvdoc8h7-s02n (architect done) on aux.done of aux job 0mvdoby7d-j90u: VERDICT: next kit mission-20-kit
