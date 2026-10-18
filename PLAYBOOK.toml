@@ -20,7 +20,8 @@ max_resumes = 2
 max_consults = 2
 # Thirteen planned missions need thirteen consultations; the rest is room for
 # missions that close a review's blockers. Spent, the engine stops by itself.
-max_architect_consults = 30
+# 2026-10-18 (owner): raised from 30 to 35; step S4.2 was split, leaving one spare.
+max_architect_consults = 35
 
 # The builder finished a mission: cold review by aux, with no context.
 [[rule]]
