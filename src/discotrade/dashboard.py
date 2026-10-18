@@ -247,6 +247,9 @@ def _t_critical(level: float, df: int) -> float:
     return alerts._t_critical(level, df)
 
 
+state.register_cache("discotrade.dashboard._t_critical", _t_critical.cache_clear)
+
+
 def rank_chart(rows: Sequence[Mapping[str, Any]], level: float) -> list[dict[str, Any]]:
     """The rank panel's rows, in file order: ``block``, ``timing``, its running
     mean and the critical mean ``t_crit * s / sqrt(n)`` over the non-null

@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# The measurement of O-26 item 4 (meta/decisions/2026-10-18-owner.md; decision
+# 156 of meta/decisions/decisions-2026-10-18-m20.md):
+#
+#     scripts/speed --work <dir> [--cold] [--from D] [--to D] [--budget-seconds S]
+#                   [--profile D ...]
+#
+# Replays the G1.3 scenario on the gate configuration into <dir>/state, one
+# foreground call at a time, and prints the four figures when the replay is
+# done. The Python it runs is scripts/speed.py, run with the project's
+# environment (`uv sync --extra dev` first, as scripts/check does).
+set -u
+here="$(cd "$(dirname "$0")" && pwd)"
+exec uv run --project "$here/.." --no-sync python "$here/speed.py" "$@"

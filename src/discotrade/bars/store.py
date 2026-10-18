@@ -76,7 +76,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from discotrade.state import HealthEvent, content_hash
+from discotrade.state import HealthEvent, content_hash, register_cache
 
 COLUMNS = ("ts", "open", "high", "low", "close", "volume", "contract")
 FLOATS = ("open", "high", "low", "close", "volume")
@@ -106,6 +106,15 @@ def day_run() -> Iterator[None]:
         yield
     finally:
         _RUN = outer
+
+
+def _clear_run() -> None:
+    """Empty the frames kept for the current day run; None outside one stays None."""
+    if _RUN is not None:
+        _RUN.clear()
+
+
+register_cache("discotrade.bars.store._RUN", _clear_run)
 
 
 def _run_key(path: Path, entry: dict[str, Any]) -> tuple[str, int, str]:

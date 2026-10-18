@@ -137,7 +137,14 @@ from discotrade.sandbox.base import (
     open_backend,
 )
 from discotrade.spreads import spread_table
-from discotrade.state import Approach, HealthEvent, canonical_json, content_hash, read_approaches
+from discotrade.state import (
+    Approach,
+    HealthEvent,
+    canonical_json,
+    content_hash,
+    read_approaches,
+    register_cache,
+)
 from discotrade.stats import trading_dates
 from discotrade.tradingcal import trading_date
 
@@ -270,6 +277,9 @@ def _digest(path: Path) -> str:
     digest = hashlib.sha256(path.read_bytes()).hexdigest()
     _DIGESTS[path] = (key, digest)
     return digest
+
+
+register_cache("discotrade.journal._DIGESTS", _DIGESTS.clear)
 
 
 def trusted_hashes(root: Path = REPO_ROOT, exclude: Sequence[str] = ()) -> frozenset[str]:

@@ -69,6 +69,25 @@ hashes are equal rows, ``state.content_hash`` covering every column), so that
 a replay reads each journal day once rather than every day again; the cache
 changes no result.
 
+The unit and position records a ``build`` reads (``exposure_records``, the
+staged file first) are kept in a cache of the process, per file, keyed by its
+path and a content identity, its length and the sha256 of its bytes, parsed
+from the bytes hashed (decision 2026-10-18-m20 157 (a)): a file read again
+with the same bytes is served from the cache, any other bytes are read
+again. The cache holds the files of one state directory and track at a time;
+a read for another forgets them. With the position records it keeps their
+rows split per subject, in file order. Each figure is still computed over
+all of a subject's paper days every day (a day-by-day update would not give
+the same bits; finding D-019), but each subject's rows are split once
+instead of every random slot filtering every subject's history again: the
+approach's ``paper.adjusted`` and ``paper.hbar`` are handed its own rows;
+``adjusted_deflated`` computes each random slot's series from the slot's own
+rows as ``paper.adjusted`` does; the plain ``E_N`` takes each slot's net 1x
+over the approach's days, in date order, as ``stats.control_moments`` does.
+The same numbers go through the same operations in the same order, so every
+figure is the same (O-26 item 3, decision 157). ``state.clear_caches``
+empties both caches (decision 157 (b)).
+
 ``write(root, track, table)`` writes ``table/<track>/table.json`` (the object
 as ``ledger.line`` writes a row: keys sorted, no whitespace, a newline) and
 ``table.md`` (``render``: a title, ``N``, then one Markdown table per section
@@ -82,15 +101,18 @@ only, so a re-run of a finished day writes neither (I-6).
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 from collections.abc import Mapping, Sequence
 from datetime import date, timedelta
 from pathlib import Path
-from typing import Any
+from typing import Any, NamedTuple
 
 import numpy as np
 import pandas as pd
+import pyarrow as pa
+import pyarrow.parquet as pq
 
 from discotrade import journal, ledger, lifecycle, paper, state, stats
 from discotrade.bars.store import write_atomic
@@ -129,6 +151,71 @@ SLOT_COLUMN = "adjusted_net"
 
 #: (track, day, content hash) -> subject -> (gross, trade, rolled turnover) sums.
 _DAY_SUMS: dict[tuple[str, str, str], dict[str, tuple[float, float, float]]] = {}
+
+state.register_cache("discotrade.table._DAY_SUMS", _DAY_SUMS.clear)
+
+
+class Exposure(NamedTuple):
+    """The unit and position records, and the position records split per
+    subject (each subject's rows in file order)."""
+    unit: pd.DataFrame
+    positions: pd.DataFrame
+    by_subject: dict[str, pd.DataFrame]
+
+
+#: The exposure records kept for one (state directory, track): ``scope`` and,
+#: per resolved file path, (length, sha256 of the bytes, parsed value).
+_EXPOSURE: dict[str, Any] = {"scope": None, "files": {}}
+
+
+def _clear_exposure() -> None:
+    _EXPOSURE["scope"] = None
+    _EXPOSURE["files"] = {}
+
+
+state.register_cache("discotrade.table._EXPOSURE", _clear_exposure)
+
+
+def cached_exposure_files() -> list[str]:
+    """The paths of the files the exposure cache holds, sorted."""
+    return sorted(_EXPOSURE["files"])
+
+
+def _split(positions: pd.DataFrame) -> dict[str, pd.DataFrame]:
+    return {str(s): mine for s, mine in positions.groupby("subject", sort=False)}
+
+
+def _read_cached(path: Path, split: bool) -> tuple[pd.DataFrame, dict[str, pd.DataFrame]]:
+    key = str(path)
+    data = path.read_bytes()
+    identity = (len(data), hashlib.sha256(data).hexdigest())
+    held = _EXPOSURE["files"].get(key)
+    if held is not None and held[:2] == identity:
+        return held[2]
+    frame = pq.read_table(pa.BufferReader(data)).to_pandas()
+    value = (frame, _split(frame) if split else {})
+    _EXPOSURE["files"][key] = (*identity, value)
+    return value
+
+
+def exposure_records(state_dir: Path, track: str, into: Path | None = None) -> Exposure:
+    """The unit and position records of ``track``, each ``into``'s when it holds
+    one, else the state's (as ``paper.read_unit`` and ``paper.read_positions``
+    read them), through the cache; ``ValueError`` when neither holds one."""
+    scope = (str(Path(state_dir).resolve()), track)
+    if _EXPOSURE["scope"] != scope:
+        _clear_exposure()
+        _EXPOSURE["scope"] = scope
+    out = []
+    for where, split in ((paper.unit_path, False), (paper.positions_path, True)):
+        path = None if into is None else where(into, track)
+        if path is None or not path.is_file():
+            path = where(state_dir, track)
+        if not path.is_file():
+            raise ValueError(f"{track} has no derived exposure records under "
+                             f"{paper.PAPER_DIR}/{track}/")
+        out.append(_read_cached(path.resolve(), split))
+    return Exposure(out[0][0], out[1][0], out[1][1])
 
 
 def table_dir(root: Path, track: str) -> Path:
@@ -194,6 +281,40 @@ def _record(mine: pd.DataFrame | None) -> dict[str, Any]:
             "trades": int(mine["trades"].sum()), "max_drawdown": max_drawdown(mine["net_1x"])}
 
 
+def _legs(positions: pd.DataFrame) -> dict[str, dict[str, tuple[np.ndarray, np.ndarray]]]:
+    """Per subject and instrument, the ``rows`` and ``position`` of
+    ``positions``' rows of that subject and instrument, in frame order."""
+    rows = positions["rows"].to_numpy(dtype=np.int64)
+    held = positions["position"].to_numpy(dtype=np.float64)
+    out: dict[str, dict[str, tuple[np.ndarray, np.ndarray]]] = {}
+    for (who, symbol), where in positions.groupby(["subject", "instrument"],
+                                                  sort=False).indices.items():
+        out.setdefault(str(who), {})[str(symbol)] = (rows[where], held[where])
+    return out
+
+
+_NO_ROWS = (np.zeros(0, dtype=np.int64), np.zeros(0, dtype=np.float64))
+
+
+def _day_numbers(days: Sequence[date]) -> np.ndarray:
+    return np.array([d.toordinal() for d in days], dtype=np.int64)
+
+
+def _by_subject(frame: pd.DataFrame, column: str
+                ) -> dict[str, tuple[np.ndarray, np.ndarray]] | None:
+    """Per subject, its day numbers in ascending order and ``column`` in that
+    order; None when a subject holds two rows of one date."""
+    if frame.duplicated(["subject", "date"]).any():
+        return None
+    when = _day_numbers(list(frame["date"]))
+    values = frame[column].to_numpy(dtype=np.float64)
+    out = {}
+    for who, where in frame.groupby("subject", sort=False).indices.items():
+        order = where[np.argsort(when[where], kind="stable")]
+        out[str(who)] = (when[order], values[order])
+    return out
+
+
 def adjusted_deflated(state_dir: Path, setup: Any, subject: str, days: Sequence[date],
                       n: int, records: pd.DataFrame, into: Path | None = None,
                       exposure: tuple[pd.DataFrame, pd.DataFrame] | None = None
@@ -202,28 +323,76 @@ def adjusted_deflated(state_dir: Path, setup: Any, subject: str, days: Sequence[
     ``adjusted_E_N`` and ``adjusted_excess`` of ``subject`` over its paper days
     ``days``, with ``N`` ``n``. ``exposure`` is passed on to ``paper.adjusted``
     (decision 147 (d)); only its rows dated in ``days`` are handed on, which
-    are the rows ``paper.adjusted`` reads, so the figures are the same."""
+    are the rows ``paper.adjusted`` reads, so the figures are the same.
+
+    With ``exposure`` given (decision 2026-10-18-m20 157), ``subject``'s
+    ``paper.adjusted`` is handed only its own paper and position rows, and each
+    random slot's series is computed as ``paper.adjusted`` computes it, without
+    filtering every subject's history again for each slot: its paper rows
+    dated in ``days`` in date order; for each instrument, in symbol order, its
+    ``hbar_i`` the summed ``position`` of its position rows dated in ``days``,
+    in frame order, over their summed ``rows`` (0 with none), as ``paper.hbar``;
+    the unit records of those days; and O-4's one subtraction,
+    ``paper.less_exposure``. Its Sharpe and the moments are those of
+    ``stats.control_moments`` (``stats.moments``). The same numbers in the same
+    order go through the same operations, so every figure is the same."""
     span = sorted(set(days))
     wanted = set(span)
-    if exposure is not None:
-        exposure = (exposure[0][exposure[0]["date"].isin(wanted)],
-                    exposure[1][exposure[1]["date"].isin(wanted)])
-    near = records[records["date"].isin(wanted)]
-    s = sharpe(paper.adjusted(state_dir, setup, subject, span, "net_1x", records=near,
-                              overlay=into, exposure=exposure))
-    frames = []
-    slots = near[near["kind"] == stats.CONTROL_RANDOM]
-    for slot, mine in slots.groupby("subject", sort=True):
-        if not span or set(mine["date"]) != wanted:
-            continue
-        series = paper.adjusted(state_dir, setup, str(slot), span, "net_1x", records=near,
-                                overlay=into, exposure=exposure)
-        frames.append(pd.DataFrame({"subject": str(slot), "kind": stats.CONTROL_RANDOM,
-                                    "date": list(series.index),
-                                    SLOT_COLUMN: series.to_numpy(dtype=np.float64)}))
-    frame = (pd.concat(frames, ignore_index=True) if frames
-             else pd.DataFrame(columns=["subject", "kind", "date", SLOT_COLUMN]))
-    mu_c, sd_c = stats.control_moments(frame, span, column=SLOT_COLUMN)
+    if exposure is None:
+        near = records[records["date"].isin(wanted)]
+        s = sharpe(paper.adjusted(state_dir, setup, subject, span, "net_1x", records=near,
+                                  overlay=into, exposure=exposure))
+        frames = []
+        slots = near[near["kind"] == stats.CONTROL_RANDOM]
+        for slot, mine in slots.groupby("subject", sort=True):
+            if not span or set(mine["date"]) != wanted:
+                continue
+            series = paper.adjusted(state_dir, setup, str(slot), span, "net_1x", records=near,
+                                    overlay=into, exposure=exposure)
+            frames.append(pd.DataFrame({"subject": str(slot), "kind": stats.CONTROL_RANDOM,
+                                        "date": list(series.index),
+                                        SLOT_COLUMN: series.to_numpy(dtype=np.float64)}))
+        frame = (pd.concat(frames, ignore_index=True) if frames
+                 else pd.DataFrame(columns=["subject", "kind", "date", SLOT_COLUMN]))
+        mu_c, sd_c = stats.control_moments(frame, span, column=SLOT_COLUMN)
+    else:
+        unit = exposure[0][exposure[0]["date"].isin(wanted)]
+        positions = exposure[1][exposure[1]["date"].isin(wanted)]
+        near = records[records["date"].isin(wanted)]
+        legs = _legs(positions)
+        s = sharpe(paper.adjusted(state_dir, setup, subject, span, "net_1x",
+                                  records=near[near["subject"] == subject], overlay=into,
+                                  exposure=(unit, positions[positions["subject"] == subject])))
+        symbols = sorted(inst.symbol for inst in setup.instruments)
+        width = len(setup.instruments)
+        returns: dict[tuple[str, date], float] | None = None
+        sharpes = []
+        slots = near[near["kind"] == stats.CONTROL_RANDOM]
+        for slot, mine in slots.groupby("subject", sort=True):
+            if not span or set(mine["date"]) != wanted:
+                continue
+            if returns is None:
+                missing = sorted(wanted - set(unit["date"]))
+                if missing:
+                    raise ValueError(
+                        f"the exposure records of {setup.track.name} hold no "
+                        f"{missing[0].isoformat()}; a caller passing staged paper records "
+                        f"passes overlay too")
+                returns = {(str(i), d): float(v) for i, d, v in
+                           zip(unit["instrument"], unit["date"], unit["unit"], strict=True)}
+            mine = mine.sort_values("date", kind="stable")
+            leg = legs.get(str(slot), {})
+            average = {}
+            for symbol in symbols:
+                rows, held = leg.get(symbol, _NO_ROWS)
+                count, total = int(rows.sum()), float(held.sum())
+                average[symbol] = total / count if count else 0.0
+            values = paper.less_exposure(zip(mine["date"], mine["net_1x"], strict=True),
+                                         symbols, average, returns, width)
+            figure = sharpe(pd.Series(values, dtype=np.float64))
+            if not math.isnan(figure):
+                sharpes.append(figure)
+        mu_c, sd_c = stats.moments(sharpes)
     e_n = stats.expected_max(mu_c, sd_c, n)
     return {"adjusted_S": s, "adjusted_E_N": e_n, "adjusted_excess": stats.excess(s, e_n)}
 
@@ -248,26 +417,22 @@ def build(state_dir: Path, setup: Any, day: date, records: pd.DataFrame,
     records = records[records["date"] <= day]
     groups = {str(s): g.sort_values("date", kind="mergesort")
               for s, g in records.groupby("subject", sort=False)}
+    slot_records = records[records["kind"] == stats.CONTROL_RANDOM]
+    slot_series: list[dict[str, tuple[np.ndarray, np.ndarray]] | None] = []
     sums = journal_sums(state_dir, track, into)
     symbols = [inst.symbol for inst in setup.instruments]
-    held: list[tuple[pd.DataFrame, pd.DataFrame]] = []
+    held: list[Exposure] = []
 
-    def exposure() -> tuple[pd.DataFrame, pd.DataFrame]:
+    def exposure() -> Exposure:
         """The unit and position records, ``into``'s first, read once."""
         if not held:
-            pair = []
-            for reader in (paper.read_unit, paper.read_positions):
-                frame = None if into is None else reader(into, track)
-                if frame is None:
-                    frame = reader(state_dir, track)
-                if frame is None:
-                    raise ValueError(f"{track} has no derived exposure records")
-                pair.append(frame)
-            held.append((pair[0], pair[1]))
+            held.append(exposure_records(state_dir, track, into))
         return held[0]
 
-    def positions() -> pd.DataFrame:
-        return exposure()[1]
+    def own(aid: str) -> tuple[pd.DataFrame, pd.DataFrame]:
+        """The unit records and ``aid``'s own position rows."""
+        ex = exposure()
+        return ex.unit, ex.by_subject.get(aid, ex.positions.iloc[:0])
 
     live = sorted((str(by_id[a].meta["cell"]), a) for a, s in after.items() if s.state == LIVE)
     dormant = sorted(a for a, s in after.items() if s.state == DORMANT)
@@ -287,15 +452,34 @@ def build(state_dir: Path, setup: Any, day: date, records: pd.DataFrame,
         adjusted_score = (float(adjusted_t["sharpe"]) if isinstance(adjusted_t, Mapping)
                           and adjusted_t.get("sharpe") is not None else None)
         days = [] if mine is None else list(mine["date"])
+        handed = own(aid) if days else None
         adjusted = {c: sharpe(paper.adjusted(state_dir, setup, aid, days, c,
-                                             records=records, overlay=into))
+                                             records=records if mine is None else mine,
+                                             overlay=into, exposure=handed))
                     for c in ("net_1x", "net_2x")}
-        average = (paper.hbar(positions(), aid, symbols, days) if days
+        average = (paper.hbar(own(aid)[1], aid, symbols, days) if days
                    else dict.fromkeys(symbols, 0.0))
-        mu_c, sd_c = stats.control_moments(records, days)
+        if not slot_series:
+            slot_series.append(_by_subject(slot_records, "net_1x"))
+        if slot_series[0] is None:
+            mu_c, sd_c = stats.control_moments(slot_records, days)
+        else:
+            # stats.control_moments(slot_records, days), each slot's net 1x
+            # over the days in date order, from the slots split once.
+            span = _day_numbers(sorted(set(days)))
+            sharpes = []
+            for slot in sorted(slot_series[0]):
+                when, values = slot_series[0][slot]
+                held = np.isin(when, span)
+                if not len(span) or int(held.sum()) != len(span):
+                    continue
+                figure = sharpe(pd.Series(values[held], dtype=np.float64))
+                if not math.isnan(figure):
+                    sharpes.append(figure)
+            mu_c, sd_c = stats.moments(sharpes)
         e_n = stats.expected_max(mu_c, sd_c, n)
         deflated = adjusted_deflated(state_dir, setup, aid, days, n, records, into,
-                                     exposure() if days else None)
+                                     exposure()[:2] if days else None)
         return {"section": section, "subject": aid, "cell": a.meta["cell"],
                 "description": a.meta["description"], "model_id": a.meta["model_id"],
                 "model_version": a.meta["model_version"], "admitted": a.meta["admitted"],

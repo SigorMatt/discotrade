@@ -909,3 +909,33 @@ What this project does meanwhile: nothing in product code; decision 2026-10-18-m
 builder's sub-agents a lone `sleep 240` call followed by a lone read.
 
 Status: open
+HF-015 status (appended 2026-10-18, mission 20 U1): the builder's sub-agent met the same refusal. Its harness refused a lone `sleep 240` call, decision 2026-10-18-m20 159 (d)'s wait, with "Blocked: standalone sleep 240. To wait for a condition, use Monitor with an until-loop ... To wait for a command you started, use run_in_background: true", so 159 (d) cannot be followed as written. For a `./scripts/check` run the harness moved to the background at the 20-minute cap, the sub-agent waited instead with one foreground call, `timeout 1100 bash -c 'while ! grep -q ^real <output file>; do sleep 15; done'`, then read the whole output file. Status: open
+
+### D-019 — the table's figures over a whole paper record cannot be updated day by day and stay equal to a full recompute
+
+Severity: low · Component: `src/discotrade/table.py` (`build`, `adjusted_deflated`) with O-26 items 2
+and 5 · Found: 2026-10-18, mission 20 U1.
+
+Symptom. Every figure of a table row is taken over all of the subject's paper days: the paper record
+(Sharpe at 1x and 2x, drawdown), `adjusted_sharpe`, `avg_position`, `S`, `E_N`, `adjusted_S`,
+`adjusted_E_N`, and behind the last two every random slot's adjusted series and Sharpe over the
+approach's days. The paper days grow by one each day, and a new day changes `hbar_i`, so it changes
+every adjusted value of the window, not only the new one. O-26 item 5 asks for the same value, not one
+within a tolerance. numpy's pairwise sum, `np.mean`, `np.std` and O-4's subtraction in Python's order
+cannot be carried from yesterday's partial results and give the same bits. So U1 does not make these
+figures incremental. It recomputes them each day from the records, as before, but each subject's paper
+and position rows are split once per build (the exposure files once per content) instead of each
+random slot filtering every subject's history again. What is left grows with history as plain
+arithmetic: one subtraction per slot and day, and each slot's Sharpe over the approach's days.
+
+Measured on the G1.3 state of the full replay (`/tmp/m20u1/cw/before-last`, through 2020-06-09), warm,
+one process each, one after the other: `table.build` took 0.20 s for 2019-07-03 and 0.31 s for
+2020-06-09 at U1's commit, against 0.89 s and 1.58 s at the parent 4ed47b4. Under cProfile within
+`./scripts/speed`'s replay: 0.355 s on 2019-07-03 and 0.593 s on 2020-05-11 at U1's commit, against
+1.739 s and 2.298 s at the parent.
+
+Direction (for the owner). Accept these figures recomputed from the records each day with the residual
+growth above, or say what tolerance or change to their arithmetic would allow a day-by-day update.
+
+Status: open
+D-013 times (appended 2026-10-18, mission 20 U1): on 4ed47b4 with U1's files uncommitted, after `discotrade sandbox build` (discotrade-sandbox:3b7d75c39621, present, nothing built), three `./scripts/check` runs, each its own foreground call with a 20-minute timeout, all green (`2470 passed, 204 deselected`, 0 skipped, so the `container` tests ran) took 1168 s, 1196 s and 1317 s wall (pytest 1165.06 s, 1192.89 s, 1312.94 s). The third passed the 20-minute timeout, was moved to the background by the harness and was waited for to its end in the foreground (HF-015's status line of U1) before anything else ran; it is counted green only after it printed `check: green`. All three are above HF-006's 15 minutes. Mission 19's tip took 1066 s to 1131 s; U1 adds 12 tests (2458 to 2470), about 40 s of one run (the warm-against-cold replay and the command's three-day replay). Load average about 1.6 to 3.1 on 4 cores, from other work on the machine. An earlier run in U1, before `tests/test_speed_*.py` stopped naming subprocess, failed `tests/test_offline.py` (3 tests) after 1410 s; it was not counted. No test was dropped or shortened. Status: open (decision 121 (c); decision 140; HF-006)

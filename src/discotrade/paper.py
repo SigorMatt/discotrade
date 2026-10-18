@@ -667,6 +667,15 @@ def _less_exposure(values: Iterable[tuple[date, Any]], symbols: Sequence[str],
     return out
 
 
+def less_exposure(values: Iterable[tuple[date, Any]], symbols: Sequence[str],
+                  average: Mapping[str, float], unit: Mapping[tuple[str, date], float],
+                  n: int) -> list[float]:
+    """O-4's one subtraction (``_less_exposure``), for a caller that holds the
+    average positions and the unit returns already: the table's random slots
+    (decision 2026-10-18-m20 157)."""
+    return _less_exposure(values, symbols, average, unit, n)
+
+
 def window_positions(evaluations: Sequence[backtest.Evaluation]) -> dict[str, float]:
     """``hbar_i(W)`` of each evaluation's instrument: the mean of its rows' ``h``
     over its window bars, 0 with none (decision 2026-10-14-m12 97 (b))."""

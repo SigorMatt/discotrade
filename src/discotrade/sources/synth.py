@@ -94,6 +94,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from discotrade import state
 from discotrade.config import Calendar, Instrument, Source
 from discotrade.tradingcal import expected_bars
 
@@ -142,6 +143,9 @@ _SERIES: dict[tuple[Source, date, Calendar, int],
 def clear_cache() -> None:
     """Forget every series kept for the process."""
     _SERIES.clear()
+
+
+state.register_cache("discotrade.sources.synth._SERIES", clear_cache)
 
 
 class SynthSource:

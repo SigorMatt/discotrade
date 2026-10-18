@@ -275,9 +275,16 @@ def control_moments(paper: pd.DataFrame, days: Iterable[date],
         s = sharpe(pd.Series([float(by_day[d]) for d in span], dtype=np.float64))
         if not math.isnan(s):
             sharpes.append(s)
-    if len(sharpes) < 2:
+    return moments(sharpes)
+
+
+def moments(values: Sequence[float]) -> tuple[float, float]:
+    """``(mean, sd)`` of ``values`` (``sd`` with one degree of freedom), each not
+    a number with fewer than two values: ``control_moments``' last step
+    (decision 2026-10-18-m20 157)."""
+    if len(values) < 2:
         return math.nan, math.nan
-    x = np.asarray(sharpes, dtype=np.float64)
+    x = np.asarray(values, dtype=np.float64)
     return float(np.mean(x)), float(np.std(x, ddof=1))
 
 

@@ -43,6 +43,13 @@ The API, for the units that build on it:
 - ``write_trial(path, ...)``: a trial that was not admitted, under
   ``trials/<id>/`` with the same two files (decision 62), ``admitted`` null.
 
+- ``register_cache(name, clear)``, ``registered_caches()`` and
+  ``clear_caches()``: the one function that clears every cache the project
+  holds in the process (decision 2026-10-18-m20 157 (b)). Each module that
+  keeps a cache registers it here, by its dotted name, when it is imported;
+  ``clear_caches`` calls every registered clearing function, so that what
+  follows computes from the records as a new process would.
+
 Git runs with ``git_environment()``: ``GIT_ALLOW_PROTOCOL=file`` (decision
 50), no global or system configuration (so that no hook, signing or
 identity of the machine's user changes a state commit; the design is
@@ -68,7 +75,7 @@ import json
 import math
 import os
 import subprocess
-from collections.abc import Iterable, Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import date
@@ -472,3 +479,44 @@ def read_approaches(path: Path) -> list[Approach]:
         out.append(Approach(aid, source, meta["params"], date.fromisoformat(meta["admitted"]),
                             meta))
     return out
+
+
+# --- the caches of the process (decision 2026-10-18-m20 157 (b)) -----------------------
+
+#: Each cache the project holds in the process, by its dotted name, and the
+#: function that empties it.
+_CACHES: dict[str, Callable[[], None]] = {}
+
+
+def register_cache(name: str, clear: Callable[[], None]) -> None:
+    """Register the cache ``name`` (its module's dotted name and its own) with
+    ``clear_caches``; ``clear`` empties it."""
+    _CACHES[name] = clear
+
+
+def registered_caches() -> list[str]:
+    """The names of the caches registered, sorted."""
+    return sorted(_CACHES)
+
+
+def clear_caches() -> list[str]:
+    """Empty every cache the project holds in the process and return their
+    names, sorted (decision 2026-10-18-m20 157 (b)). The caches, each
+    registered by its module when it is imported:
+
+    - ``discotrade.sources.synth._SERIES``: the synthetic source's generated
+      series (decision 2026-10-16-m15 121);
+    - ``discotrade.journal._DIGESTS``: the sha256 of each trusted file, against
+      its stat key (decision 2026-10-15-m14 114);
+    - ``discotrade.bars.store._RUN``: the month frames verified in the current
+      day run (decision 2026-10-14 80 (b)); emptied, and left None outside a
+      day run;
+    - ``discotrade.table._DAY_SUMS``: the table's journal sums per journal day;
+    - ``discotrade.table._EXPOSURE``: the table's unit and position records,
+      per file, keyed by its path, length and sha256 (decision 157 (a));
+    - ``discotrade.dashboard._t_critical``: the critical t values of the
+      dashboard's rank panel.
+    """
+    for name in sorted(_CACHES):
+        _CACHES[name]()
+    return sorted(_CACHES)
