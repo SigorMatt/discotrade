@@ -365,3 +365,81 @@ def test_dashboard_without_a_state_is_a_usage_error(monkeypatch, capsys):
     monkeypatch.delenv("DISCOTRADE_STATE", raising=False)
     assert main(["dashboard"]) == 2
     assert "--state" in capsys.readouterr().err
+
+
+# --- --coordinator claude, refused before any day (decision 2026-10-18-m20 163 (e)) -------
+
+
+def _coordinator_config(tmp_path, table):
+    """``tests/fixtures/config/`` copied under tmp with the production thresholds,
+    its run.toml's ``[coordinator]`` table replaced by ``table`` (none when None)."""
+    import shutil
+
+    from conftest import FIXTURE_CONFIG
+
+    config = tmp_path / "config"
+    shutil.copytree(FIXTURE_CONFIG, config)
+    shutil.copy(REPO_ROOT / "config" / "thresholds.toml", config / "thresholds.toml")
+    path = config / "run.toml"  # the fixture's own [coordinator] table removed
+    text = path.read_text(encoding="utf-8")
+    text = text[:text.index("\n# The coordinator's Claude Code form")] + "\n"
+    path.write_text(text if table is None else text + "\n[coordinator]\n" + table,
+                    encoding="utf-8")
+    return config
+
+
+def _coordinator_table(binary):
+    return (f'binary = "{binary}"\nmodel = "m"\nmax_turns = 1\nmax_budget_usd = 0.1\n'
+            "timeout_seconds = 10.0\npropose_fixes = false\n")
+
+
+def _state_files(state):
+    return sorted(p.relative_to(state).as_posix() for p in state.rglob("*")
+                  if p.is_file() and ".git" not in p.relative_to(state).parts)
+
+
+@pytest.mark.parametrize("command", ["run-day", "replay"])
+@pytest.mark.parametrize("case, status, needle", [
+    ("no table", 2, "[coordinator]"),
+    ("no key", 2, "ANTHROPIC_API_KEY"),
+    ("no binary", 1, "not found on PATH"),
+])
+def test_coordinator_claude_is_refused_before_any_day(tmp_path, monkeypatch, capsys,
+                                                      command, case, status, needle):
+    monkeypatch.setenv("GIT_ALLOW_PROTOCOL", "file")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test-not-a-key")
+    fake = tmp_path / "claude"
+    fake.write_text(f"#!{sys.executable}\nraise SystemExit(9)\n", encoding="utf-8")
+    fake.chmod(0o755)
+    table = {"no table": None, "no key": _coordinator_table(fake),
+             "no binary": _coordinator_table(tmp_path / "missing" / "claude")}[case]
+    if case == "no key":
+        monkeypatch.delenv("ANTHROPIC_API_KEY")
+    config = _coordinator_config(tmp_path, table)
+    state = tmp_path / "state"
+    assert main(["init-state", "--state", str(state),
+                 "--as-of", "2019-06-03T00:00:00+00:00"]) == 0
+    capsys.readouterr()
+    before = _state_files(state)
+    common = ["--state", str(state), "--config", str(config), "--track", "test_synth"]
+    if command == "run-day":
+        argv = [*common, "--as-of", "2019-07-15T21:00:00+00:00", "run-day", "--day",
+                "2019-07-15"]
+    else:
+        argv = [*common, "replay", "--from", "2019-07-15", "--to", "2019-07-15"]
+    assert main([*argv, "--coordinator", "claude"]) == status
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    lines = captured.err.strip().splitlines()
+    assert len(lines) == 1, lines
+    assert needle in lines[0] and "--coordinator claude" in lines[0]
+    assert "sk-test-not-a-key" not in captured.err
+    assert _state_files(state) == before
+
+
+def test_coordinator_scripted_stays_the_default():
+    from discotrade.replay import COORDINATORS
+
+    _, args = parse(["--state", "/tmp/x", "run-day"])
+    assert args.coordinator == "scripted" == COORDINATORS[0]
+    assert "claude" in COORDINATORS

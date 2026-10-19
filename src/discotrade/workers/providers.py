@@ -23,6 +23,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import signal
 import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -230,6 +231,49 @@ def openai_compat_from_env(base_url: str, timeout: float,
                                 transport=transport)
 
 
+# --- one headless claude process (decision 2026-10-18-m20 166) -------------------------
+
+@dataclass(frozen=True)
+class ClaudeRun:
+    """What one ``claude`` process gave: its exit status and its two streams."""
+
+    returncode: int
+    stdout: str
+    stderr: str
+
+
+class ClaudeTimeout(Exception):
+    """The ``claude`` process ran past its timeout; its whole process group was killed."""
+
+
+def kill_group(child: subprocess.Popen[str]) -> None:
+    """SIGKILL to the child's whole process group (the child leads it: it was started in
+    a new session), then reap the child (REVIEW-15 note 3; decision 166)."""
+    try:
+        os.killpg(child.pid, signal.SIGKILL)
+    except ProcessLookupError:
+        pass
+    child.communicate()
+
+
+def run_claude(argv: Sequence[str], prompt: str, env: Mapping[str, str],
+               timeout: float) -> ClaudeRun:
+    """Run ``argv`` with ``prompt`` on standard input in a new session
+    (``start_new_session``), so that on a timeout every process it started is killed
+    with it (decision 166). ``ClaudeTimeout`` on a timeout; ``OSError`` when it cannot
+    be started. Used by :class:`ClaudeWorkerProvider` and by the coordinator's Claude
+    Code form alike."""
+    child = subprocess.Popen(list(argv), stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                             stderr=subprocess.PIPE, text=True, env=dict(env),
+                             start_new_session=True)
+    try:
+        out, err = child.communicate(prompt, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        kill_group(child)
+        raise ClaudeTimeout(f"timeout after {timeout} s") from None
+    return ClaudeRun(child.returncode, out, err)
+
+
 # --- ClaudeWorkerProvider ---------------------------------------------------------------
 
 def claude_arguments(model: str) -> list[str]:
@@ -268,10 +312,9 @@ class ClaudeWorkerProvider:
             raise ProviderError(f"model {model}: this Claude worker serves {self.model} only")
         env = {k: v for k, v in os.environ.items() if k not in WITHHELD_ENV}
         try:
-            done = subprocess.run([self.executable, *claude_arguments(model)],
-                                  input=render_prompt(messages), capture_output=True,
-                                  text=True, env=env, timeout=self.timeout, check=False)
-        except subprocess.TimeoutExpired:
+            done = run_claude([self.executable, *claude_arguments(model)],
+                              render_prompt(messages), env, self.timeout)
+        except ClaudeTimeout:
             raise ProviderError(f"model {model}: timeout after {self.timeout} s") from None
         except OSError as exc:
             raise ProviderError(f"model {model}: could not start the Claude worker: "

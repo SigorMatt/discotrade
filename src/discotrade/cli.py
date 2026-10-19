@@ -467,13 +467,14 @@ def _add_doctor(subparsers: argparse._SubParsersAction, common: argparse.Argumen
         "doctor", parents=[common],
         help="live checks against the real services (DESIGN 19.3); in this step only "
         "--live vendor (L1), --live spreads (L2), --live workers (L3, the pool against "
-        "the provider's model list) and --live sandbox (L5)",
+        "the provider's model list), --live coordinator (L4) and --live sandbox (L5)",
     )
     doctor.add_argument(
         "--live", metavar="NAME", default=None,
         help="the live check to run: vendor (L1) and spreads (L2) need DATABENTO_API_KEY "
         "and refuse, exit 1, without it; workers (L3) needs the worker key and "
-        "config/models.toml and refuses, exit 1, without either; sandbox (L5) runs the "
+        "config/models.toml and refuses, exit 1, without either; coordinator (L4) needs "
+        "ANTHROPIC_API_KEY and refuses, exit 1, without it; sandbox (L5) runs the "
         "container self-test and refuses, exit 1, without a container runtime; plain "
         "doctor and the other checks are built by step S5.1",
     )
@@ -575,8 +576,9 @@ def _add_role_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--provider", metavar="PROVIDER", type=_provider_spec,
                         default=PROVIDER_NONE, help=_PROVIDER_HELP)
     parser.add_argument("--coordinator", choices=COORDINATORS, default=COORDINATORS[0],
-                        help="the coordinator of daily step 4: scripted (the default and, "
-                        "in this step, the only one; DESIGN 14.2)")
+                        help="the coordinator of daily step 4: scripted (the default) or "
+                        "claude, one headless Claude Code call per task with run.toml's "
+                        "[coordinator] table and ANTHROPIC_API_KEY (DESIGN 14.2)")
 
 
 def _roles(ctx: Context, args: argparse.Namespace, command: str
@@ -584,15 +586,27 @@ def _roles(ctx: Context, args: argparse.Namespace, command: str
     """The provider and coordinator of the command, built once, before any day
     runs; a refusal prints one line and gives its exit status (decision 137 (b))."""
     from discotrade.config import ConfigError, load_track_config
-    from discotrade.replay import RolesRefused, make_coordinator, make_provider
+    from discotrade.replay import (
+        COORDINATOR_SCRIPTED,
+        RolesRefused,
+        make_coordinator,
+        make_provider,
+    )
 
     assert ctx.state is not None
     try:
+        coordinator = None
+        if args.coordinator != COORDINATOR_SCRIPTED:  # refused before any day (163 (e))
+            coordinator = make_coordinator(args.coordinator,
+                                           load_track_config(ctx.config, ctx.track).track,
+                                           ctx.config)
         provider = make_provider(args.provider, ctx.state, ctx.config, ctx.track)
         if provider is None:
             return None, None, None
-        coordinator = make_coordinator(args.coordinator,
-                                       load_track_config(ctx.config, ctx.track).track)
+        if coordinator is None:
+            coordinator = make_coordinator(args.coordinator,
+                                           load_track_config(ctx.config, ctx.track).track,
+                                           ctx.config)
     except RolesRefused as exc:
         prefix = f"discotrade {command}: error:" if exc.status == 2 else f"{command}: FAIL:"
         print(f"{prefix} {exc}", file=sys.stderr)

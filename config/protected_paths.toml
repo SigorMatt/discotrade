@@ -1,0 +1,43 @@
+# The protected paths (DESIGN 14.4; I-8; decision 2026-10-18-m20 164 (a)). Not one of
+# the frozen files of DESIGN 4.3. The coordinator's Claude Code settings deny every
+# editing tool on each of these paths (coordinator.deny_rules). `code` is relative to
+# the code repository, `state` to the state directory; a path ending in / is a
+# directory. digests/ and runlog/, which the coordinator writes, are not here.
+code = [
+    "src/discotrade/backtest.py",
+    "src/discotrade/costs.py",
+    "src/discotrade/executor.py",
+    "src/discotrade/metrics.py",
+    "src/discotrade/paper.py",
+    "src/discotrade/controls.py",
+    "src/discotrade/ledger.py",
+    "src/discotrade/lifecycle.py",
+    "src/discotrade/journal.py",
+    "src/discotrade/stats.py",
+    "src/discotrade/table.py",
+    "src/discotrade/alerts.py",
+    # Added by the builder: the deny rules are generated here, so a fix session that
+    # could edit this file could drop a rule from the next session's settings.
+    "src/discotrade/coordinator.py",
+    "src/discotrade/validation/",
+    "src/discotrade/sandbox/",
+    "config/",
+    "reference/",
+    "tests/gates/",
+]
+state = [
+    "bars/",
+    "rolls/",
+    "approaches/",
+    "trials/",
+    "journal/",
+    "paper/",
+    "controls/",
+    "ledger/",
+    "responses/",
+    "stats/",
+    "table/",
+    "alerts/",
+    "dashboard/",
+    "health/",
+]

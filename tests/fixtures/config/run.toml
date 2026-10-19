@@ -20,3 +20,14 @@ tmpfs_bytes = 67108864       # size of the tmpfs at /tmp, 64 MiB
 [workers]
 claude_fallback = false          # R-21: the Claude worker fallback for a failing cell is off
 request_timeout_seconds = 300.0  # a worker provider request's timeout
+
+# The coordinator's Claude Code form (DESIGN 3, 14.2, 14.4; decision 2026-10-18-m20
+# 163 (b)). Every value is the project's own choice, not a fact from outside it; model
+# is not verified until live check L4 and is the owner's to confirm (meta/BACKLOG.md).
+[coordinator]
+binary = "claude"          # the claude executable, found on PATH
+model = "sonnet"           # an alias the installed `claude --help` names under --model
+max_turns = 1              # read, not passed: the installed `claude --help` has no --max-turns
+max_budget_usd = 0.10      # --max-budget-usd of one call
+timeout_seconds = 300.0    # after it the call's whole process group is killed
+propose_fixes = false      # DESIGN 14.4: fix sessions are off in v1

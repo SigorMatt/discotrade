@@ -154,6 +154,9 @@ candidates). In this order:
   empty pool (``pool_empty``) makes no call.
 - Step 4: ``coordinator.choose`` with ``coordinator`` (default
   ``ScriptedCoordinator``) over the offered cells and ``coordinator.registry_lines``.
+  A coordinator with ``begin_day`` (the Claude Code form) is given ``D`` before
+  step 1, so that its token sum is that of one run of the day (decision
+  2026-10-18-m20 165).
 - Step 5: ``workers.generate.generate`` with the provider, the day's pool, ``D``'s
   trading ordinal and the day's backend, its call rows staged (``into``), its
   responses stored at once under the state directory; a candidate is scored on T
@@ -510,6 +513,9 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
         raise DailyError(f"{d.isoformat()} is before the last journaled day "
                          f"{max(journaled).isoformat()} and is not in the journal")
 
+    begin = getattr(coordinator, "begin_day", None)
+    if begin is not None:  # the coordinator's token sum is per run of a day (165)
+        begin(d)
     appended: list[HealthEvent] = []
     staging = state_dir / state.STAGING
     try:

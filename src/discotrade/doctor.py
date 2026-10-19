@@ -34,6 +34,12 @@ model list, exit 1 when one is not listed. Without the worker key, without
 ``base_url`` it refuses with one line, exits 1 and makes no request. The rest of L3 (whether a
 seed is accepted, twenty replay days with the real pool) is step S3.2b's.
 
+L4, ``--live coordinator`` (decision 2026-10-18-m20 163 (f)), makes one real
+headless coordinator call for a brief and one for a digest with the installed
+flags (the Claude Code form, ``run.toml``'s ``[coordinator]``) and prints what came
+back. Without ``ANTHROPIC_API_KEY`` it prints one line naming it, exits 1 and makes
+no call; only that refusal is tested (DESIGN 19.3).
+
 L5, ``--live sandbox``, runs the container self-test of ``discotrade sandbox
 selftest`` (:func:`discotrade.sandbox.container.selftest`). Without a container
 runtime it refuses, naming that none was found, exits 1 and starts nothing.
@@ -70,11 +76,11 @@ def run(ctx: Any, args: argparse.Namespace) -> int:
     if name is None:
         return usage_error(f"plain 'doctor' (the offline checks) is built by step "
                            f"{LATER_STEP}; in this step give --live vendor, --live spreads, "
-                           f"--live workers or --live sandbox")
+                           f"--live workers, --live coordinator or --live sandbox")
     check = LIVE.get(name)
     if check is None:
         return usage_error(f"no live check {name!r} in this step; the live checks other than "
-                           f"vendor, spreads, workers and sandbox are built by step "
+                           f"vendor, spreads, workers, coordinator and sandbox are built by step "
                            f"{LATER_STEP} (DESIGN 19.3)")
     return check(ctx, out=sys.stdout, err=sys.stderr, args=args)
 
@@ -279,3 +285,39 @@ def live_sandbox(ctx: Any, out: TextIO, err: TextIO, args: Any = None) -> int:
 
 
 LIVE["sandbox"] = live_sandbox
+
+
+def live_coordinator(ctx: Any, out: TextIO, err: TextIO, args: Any = None) -> int:
+    """Live check L4 (DESIGN 19.3; decision 2026-10-18-m20 163 (f)): one real headless
+    coordinator call for a brief and one for a digest, with the installed flags.
+    Without ``ANTHROPIC_API_KEY`` it prints one line naming it, exits 1, makes no call."""
+    from discotrade import coordinator as coord
+    from discotrade.replay import COORDINATOR_CLAUDE, RolesRefused, make_coordinator
+
+    head = "doctor --live coordinator: FAIL:"
+    if not coord.key_present():
+        print(f"{head} {coord.no_key_message()}", file=err)
+        return 1
+    try:
+        track = load_track_config(ctx.config, ctx.track).track
+        claude = make_coordinator(COORDINATOR_CLAUDE, track, ctx.config)
+    except (ConfigError, RolesRefused) as exc:
+        print(f"{head} {exc}", file=err)
+        return 1
+    claude.begin_day(ctx.clock.now().date())
+    cells = [coord.CellStatus(cell, 0, int(track.cell_slots), True) for cell in track.cells]
+    brief = claude.choose_cell(cells, [])
+    digest = claude.write_digest([coord.AlertPayload("live_check", coord.SUBJECT)])
+    events = claude.take_events()
+    print(f"L4 coordinator: flags {' '.join(coord.claude_flags(claude.settings))}", file=out)
+    print(f"brief: cell {brief.cell[0]}/{brief.cell[1]}: {brief.text}", file=out)
+    print(f"digest: {digest}", file=out)
+    print(f"tokens: {claude.used}", file=out)
+    for event in events:
+        print(f"health: {event.kind} {event.detail}", file=out)
+    print(f"doctor --live coordinator: {'FAIL' if events else 'ok'}, {len(events)} "
+          "fallback or budget events", file=out)
+    return 1 if events else 0
+
+
+LIVE["coordinator"] = live_coordinator

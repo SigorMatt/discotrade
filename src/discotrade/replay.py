@@ -49,9 +49,12 @@ corpus file is served twice); ``openai`` is the provider
 directory that does not exist, or (for ``openai``) a ``run.toml`` without
 ``[workers]`` is ``RolesRefused`` with status 2; ``openai`` without a usable key
 (or with an empty ``base_url``) is ``RolesRefused`` with status 1, no request
-made. ``make_coordinator(name, track)`` gives the coordinator of
-``--coordinator``, whose only value in this step is ``scripted``. ``replay``
-passes the one provider and the one coordinator to every day.
+made. ``make_coordinator(name, track, config_dir)`` gives the coordinator of
+``--coordinator``: ``scripted`` (the default) or ``claude``, the Claude Code form
+(decision 2026-10-18-m20 163 (e)), refused before any day without its
+``[coordinator]`` table or its key (status 2) or without its binary on ``PATH``
+(status 1). ``replay`` passes the one provider and the one coordinator to every
+day.
 
 No wall clock is read (I-12): every instant comes from the calendars.
 """
@@ -90,7 +93,8 @@ _TEXT_KEYS = ("cell", "description", "model_id", "model_version", "profile_versi
 WORKERS_TRANSPORT: Any = None
 #: The values of ``--provider`` and ``--coordinator`` (decision 2026-10-16-m17 137 (a)).
 PROVIDER_NONE, PROVIDER_OPENAI, SCRIPTED_PREFIX = "none", "openai", "scripted:"
-COORDINATORS = ("scripted",)
+COORDINATOR_SCRIPTED, COORDINATOR_CLAUDE = "scripted", "claude"
+COORDINATORS = (COORDINATOR_SCRIPTED, COORDINATOR_CLAUDE)
 
 
 class RolesRefused(ValueError):
@@ -151,13 +155,38 @@ def make_provider(spec: str, state_dir: Path, config_dir: Path, track: str) -> A
         raise RolesRefused(1, f"{exc}") from None
 
 
-def make_coordinator(name: str, track: Track) -> Any:
-    """The coordinator of ``--coordinator name``: ``scripted`` only in this step."""
-    from discotrade.coordinator import ScriptedCoordinator
+def make_coordinator(name: str, track: Track, config_dir: Path | None = None) -> Any:
+    """The coordinator of ``--coordinator name`` (decision 2026-10-18-m20 163 (e)):
+    ``scripted`` (the default), or ``claude``, the Claude Code form with the
+    ``[coordinator]`` table of ``<config_dir>/run.toml`` and the day's budget
+    ``budgets.coordinator_tokens_per_day`` of its thresholds. ``claude`` without that
+    table or without the key is ``RolesRefused`` with status 2; with a ``binary`` not
+    found on ``PATH``, with status 1. Nothing is called here."""
+    import shutil
+
+    from discotrade import coordinator as coord
+    from discotrade.config import load_thresholds
 
     if name not in COORDINATORS:
         raise RolesRefused(2, f"--coordinator {name!r} is not one of {', '.join(COORDINATORS)}")
-    return ScriptedCoordinator(track)
+    if name == COORDINATOR_SCRIPTED:
+        return coord.ScriptedCoordinator(track)
+    if config_dir is None:
+        raise RolesRefused(2, "--coordinator claude needs the configuration directory")
+    try:
+        settings = load_run(Path(config_dir)).coordinator
+        budget = int(load_thresholds(Path(config_dir) / "thresholds.toml")[coord.BUDGET_KEY])
+    except ConfigError as exc:
+        raise RolesRefused(2, f"--coordinator claude: {exc}") from None
+    if settings is None:
+        raise RolesRefused(2, f"--coordinator claude: {Path(config_dir) / 'run.toml'} has no "
+                              "[coordinator] table (decision 2026-10-18-m20 163 (b))")
+    if not coord.key_present():
+        raise RolesRefused(2, f"--coordinator claude: {coord.no_key_message()}")
+    if shutil.which(settings.binary) is None:
+        raise RolesRefused(1, f"--coordinator claude: the binary {settings.binary!r} is not "
+                              "found on PATH; no call was made")
+    return coord.ClaudeCodeCoordinator(track, settings, budget)
 
 
 class CandidatesError(ValueError):

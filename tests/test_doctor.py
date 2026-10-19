@@ -58,8 +58,8 @@ def test_plain_doctor_is_a_usage_error_naming_s5_1(capsys):
 
 # "sandbox" (L5) left this list: decision 2026-10-14-m13 103 (d) builds it in step S2.2.
 # "workers" (L3) left it: decision 2026-10-16-m15 122 (e) builds its offline behaviour.
-@pytest.mark.parametrize("name", ["coordinator", "issues", "costs",
-                                  "planted", "nonsense"])
+# "coordinator" (L4) left it: decision 2026-10-18-m20 163 (f) builds its refusal.
+@pytest.mark.parametrize("name", ["issues", "costs", "planted", "nonsense"])
 def test_another_check_is_a_usage_error_naming_s5_1(monkeypatch, capsys, name):
     monkeypatch.delenv(KEY_ENV, raising=False)
     assert doctor("--live", name) == 2
@@ -396,3 +396,44 @@ def test_doctor_module_holds_no_timeout_constant_and_no_raw_toml_parse():
     imported = {a.name for n in ast.walk(tree) if isinstance(n, ast.Import) for a in n.names}
     imported |= {n.module for n in ast.walk(tree) if isinstance(n, ast.ImportFrom)}
     assert "tomllib" not in imported
+
+
+# --- L4 coordinator (decision 2026-10-18-m20 163 (f)): the refusal only ------------------
+
+
+@pytest.mark.parametrize("key", [None, "", "   "])
+def test_live_coordinator_without_the_key_prints_one_line_exits_1_no_call(
+        monkeypatch, capsys, tmp_path, key):
+    """A fake ``claude`` written here is named by a copied run.toml's [coordinator]
+    binary; it records any start. Without the key it is never started."""
+    import shutil
+    import stat
+    import sys
+
+    from conftest import FIXTURE_CONFIG
+
+    if key is None:
+        monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    else:
+        monkeypatch.setenv("ANTHROPIC_API_KEY", key)
+    marker = tmp_path / "started"
+    fake = tmp_path / "claude"
+    fake.write_text(f"#!{sys.executable}\nopen({str(marker)!r}, 'w').close()\n",
+                    encoding="utf-8")
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    config = tmp_path / "config"
+    shutil.copytree(FIXTURE_CONFIG, config)
+    run = config / "run.toml"  # its [coordinator] table replaced by one naming the fake
+    text = run.read_text(encoding="utf-8")
+    run.write_text(text[:text.index("\n# The coordinator's Claude Code form")]
+                   + f'\n\n[coordinator]\nbinary = "{fake}"\nmodel = "m"\nmax_turns = 1\n'
+                   "max_budget_usd = 0.1\ntimeout_seconds = 10.0\npropose_fixes = false\n",
+                   encoding="utf-8")
+    assert doctor("--live", "coordinator", config=config, track="test_synth") == 1
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    lines = captured.err.splitlines()
+    assert len(lines) == 1, lines
+    assert "doctor --live coordinator: FAIL" in lines[0]
+    assert "ANTHROPIC_API_KEY" in lines[0] and "no call was made" in lines[0]
+    assert not marker.exists()

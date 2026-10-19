@@ -20,7 +20,7 @@ import tomllib
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -816,6 +816,8 @@ RUN_FILE = "run.toml"
 _SANDBOX_KEYS = ("wall_seconds", "cpu_seconds", "memory_bytes", "output_bytes", "image",
                  "pids", "cpus", "tmpfs_bytes", "runtime")
 _WORKERS_KEYS = ("claude_fallback", "request_timeout_seconds")
+_COORDINATOR_KEYS = ("binary", "model", "max_turns", "max_budget_usd", "timeout_seconds",
+                     "propose_fixes")
 #: The container runtimes ``sandbox.runtime`` may name (DESIGN 12.4; decision 102 (a)).
 RUNTIMES = ("docker", "podman")
 #: An image repository name without a tag or digest (decision 102 (d), (e): the tag
@@ -857,11 +859,31 @@ class WorkerSettings:
 
 
 @dataclass(frozen=True)
+class CoordinatorSettings:
+    """``[coordinator]`` of ``run.toml`` (DESIGN 3, 14.2, 14.4; decision 2026-10-18-m20
+    163 (b)): ``binary``, the ``claude`` executable (default ``claude``, found on
+    ``PATH``); ``model``, the explicit model; ``max_turns``, read but not passed (the
+    installed ``claude --help`` lists no ``--max-turns``); ``max_budget_usd``, the
+    spending limit of one call; ``timeout_seconds``, after which the call's process
+    group is killed; ``propose_fixes``, whether fix sessions run (off in v1)."""
+
+    binary: str
+    model: str
+    max_turns: int
+    max_budget_usd: float
+    timeout_seconds: float
+    propose_fixes: bool
+
+
+@dataclass(frozen=True)
 class RunConfig:
     sandbox: SandboxSettings
     #: None when ``run.toml`` has no ``[workers]`` table: only the code that builds a
     #: worker provider or the day's pool needs it, as only job building needs ``[sandbox]``.
     workers: WorkerSettings | None = None
+    #: None when ``run.toml`` has no ``[coordinator]`` table: only ``--coordinator
+    #: claude`` and ``doctor --live coordinator`` need it (decision 163 (e), (f)).
+    coordinator: CoordinatorSettings | None = None
 
 
 def load_run(config_dir: Path) -> RunConfig:
@@ -871,7 +893,7 @@ def load_run(config_dir: Path) -> RunConfig:
     if not path.is_file():
         raise ConfigError(f"{path}: no such file; a sandbox job takes its limits from "
                           f"{RUN_FILE} (DESIGN 3, 12.4)")
-    top = _Table(path, read_toml(path), "", ("sandbox", "workers"))
+    top = _Table(path, read_toml(path), "", ("sandbox", "workers", "coordinator"))
     s = _Table(path, top.raw("sandbox"), "sandbox.", _SANDBOX_KEYS)
     workers = None
     if top.has("workers"):
@@ -880,7 +902,18 @@ def load_run(config_dir: Path) -> RunConfig:
             claude_fallback=w.boolean("claude_fallback"),
             request_timeout_seconds=w.number("request_timeout_seconds", positive=True),
         )
-    return RunConfig(workers=workers, sandbox=SandboxSettings(
+    coordinator = None
+    if top.has("coordinator"):
+        c = _Table(path, top.raw("coordinator"), "coordinator.", _COORDINATOR_KEYS)
+        coordinator = CoordinatorSettings(
+            binary=c.text("binary", "claude"),
+            model=c.text("model"),
+            max_turns=c.integer("max_turns", low=1),
+            max_budget_usd=c.number("max_budget_usd", positive=True),
+            timeout_seconds=c.number("timeout_seconds", positive=True),
+            propose_fixes=c.boolean("propose_fixes"),
+        )
+    return RunConfig(workers=workers, coordinator=coordinator, sandbox=SandboxSettings(
         wall_seconds=s.number("wall_seconds", positive=True),
         cpu_seconds=s.number("cpu_seconds", positive=True),
         memory_bytes=s.integer("memory_bytes", low=1),
@@ -891,6 +924,44 @@ def load_run(config_dir: Path) -> RunConfig:
         tmpfs_bytes=s.integer("tmpfs_bytes", low=1),
         runtime=s.choice("runtime", RUNTIMES, default=None),
     ))
+
+
+#: The protected paths of a configuration directory (DESIGN 14.4; decision
+#: 2026-10-18-m20 164 (a)). Not frozen.
+PROTECTED_FILE = "protected_paths.toml"
+
+
+@dataclass(frozen=True)
+class ProtectedPaths:
+    """``protected_paths.toml``: ``code``, paths relative to the code repository, and
+    ``state``, paths relative to the state directory; a path ending in ``/`` is a
+    directory (DESIGN 14.4; decision 164 (a))."""
+
+    code: tuple[str, ...]
+    state: tuple[str, ...]
+
+
+def load_protected_paths(path: Path) -> ProtectedPaths:
+    """Load ``protected_paths.toml``; refuse an empty list, a path that is not
+    relative text, that is absolute, or that holds a ``..`` part (decision 164 (c))."""
+    path = Path(path)
+    top = _Table(path, read_toml(path), "", ("code", "state"))
+    lists: dict[str, tuple[str, ...]] = {}
+    for key in ("code", "state"):
+        value = top.raw(key)
+        if not isinstance(value, list) or not value:
+            top.fail(key, "must be a non-empty array of relative paths")
+        for item in value:
+            if not isinstance(item, str) or not item.strip("/"):
+                top.fail(key, f"holds {item!r}, which is not a path")
+            if item.startswith(("/", "~")) or PurePosixPath(item).is_absolute():
+                top.fail(key, f"holds {item!r}, an absolute path; give it relative")
+            if ".." in PurePosixPath(item).parts or "\\" in item:
+                top.fail(key, f"holds {item!r}, which holds '..' or a backslash")
+        if len(set(value)) != len(value):
+            top.fail(key, "holds a path twice")
+        lists[key] = tuple(value)
+    return ProtectedPaths(code=lists["code"], state=lists["state"])
 
 
 def _image_name(table: _Table) -> str:
