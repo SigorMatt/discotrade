@@ -201,3 +201,4 @@
 - 2026-10-19 mission 21 U6 done dec0f84: FINAL-REPORT-21.md; mission 21 finished.
 2026-10-19T16:27:28.784Z  consult 0mvfgfdk2-hv9m (architect done) on aux.done of aux job 0mvfdbvwr-0pr8: VERDICT: next kit mission-22-kit
 - 2026-10-19 mission 22 U0: plan written (base 72400d7, step S4.2b, closes no milestone); D-013 times, HF-010, HF-012 lines appended; U1 started.
+- 2026-10-19 mission 22 U1 done 41accb7 (digest:): resumed under §R; sinks, render, --issues, doctor --live issues; test_offline listing extended (decision 47); check 3/3 green (1014 s), sandbox 3b7d75c39621; U2 started.

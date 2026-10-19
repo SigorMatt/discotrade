@@ -24,7 +24,7 @@ Left items:
 - REVIEW-10's note on a death between the moves of a day — step S5.1's doctor (`meta/BACKLOG.md`; decision 187 (b)).
 
 - [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (D-013 times, HF-010, HF-012 lines; decision 187 (b)).
-- [ ] U1 The digest module and the issue sinks (decision 178; decision 179 (a), (b) as functions; DESIGN 15.4, 19.3 L6; I-8, I-11, I-13). `digest:` commit.
+- [x] U1 (41accb7) The digest module and the issue sinks (decision 178; decision 179 (a), (b) as functions; DESIGN 15.4, 19.3 L6; I-8, I-11, I-13). `digest:` commit.
 - [ ] U2 The digest, the run log and step 8 in the day (decisions 179, 180; DESIGN 15.4, 16.1 steps 7 and 8, 16.2, 14.3). `daily:` commit. G1.3 and decision 170's three measurements at the commit.
 - [ ] U3 Step 1 staged (decision 181; DESIGN 16.2, 5.2, 5.4, 5.6). `daily:` commit. G1.3 and the three measurements.
 - [ ] U4 The retry, `run_failed` and the catch-up (decisions 182, 183; DESIGN 16.1, 16.2, 15.2; SPEC §11). `daily:` commit. G1.3 and the three measurements.
