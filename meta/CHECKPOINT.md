@@ -15,10 +15,18 @@ G1.3 PASS 582 s; figures parent 0.0436/0.0786/1.805/7.41 s (load 2.3-3.0), commi
 body overclaims "rest of step 6 does not grow" (alerts.write 0.016->0.052 s), noted for the report). HF-016's cause
 was CLAUDE_CODE_DISABLE_BACKGROUND_TASKS, removed by the owner.
 
-In progress: U3 — step 7 (dashboard.render) and the rest without growth; the ratio at most 1.25 (O-26 item 4). Done
-means: `dashboard:` (or the area that took most) commit pushed; check 3/3; equality test unchanged and passing;
-ratio <= 1.25 at the commit; wrong change (dashboard cache not cleared by clear_caches) seen red; body gives the four
-figures at parent and commit, profiles, 157 (d)/(e), G1.3 beside U2's 582 s.
+U3 e8d31bb (bars: dashboard.render did not grow, unchanged; bars/store month files reused by bytes, gaps/rolls per
+month, stats.trading_dates, table slots at once, paper/alerts shared subtraction; 26 tests; check 3/3 1459, 1356,
+1198 s (first past cap, waited); G1.3 PASS 625 s at load 2.0-3.1; ratio at commit 1.234 and 1.246 in the two quiet
+runs (load <=1.5), above 1.25 in every run ending at load >=2.6 (1.289-2.104), parent 1.189-1.461; figures parent p1
+0.032473/0.044932/1.384/6.074 s, commit c7 0.029458/0.036355/1.234/5.675 s; 157 (d) 267 trees equal, 157 (e) diff
+empty, HEAD tree 5f9c06b7; D-021 filed (U1's adjusted_E_N with two rows of one date)). Report: the ratio holds only
+under low load.
+
+In progress: U4 — REVIEW-19 should-fix 1 and 2 (decisions 160, 161; D-018). Done means: `alerts:` commit pushed;
+check 3/3; equality test unchanged and passing; the tests of 160 and 161 pass; wrong changes (page computing p from
+value and threshold; window = 20 in place of pool.fail_window) each seen red; G1.3 and the four figures at the
+commit; ratio <= 1.25 (fails U4 above).
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-26, O-27 win, then O-25 and earlier owner
 items, then decisions 155-167, then 1-154 where not replaced. Speed units U1-U3 change no test's assertion, nothing
