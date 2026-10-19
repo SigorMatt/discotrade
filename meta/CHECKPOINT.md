@@ -27,10 +27,16 @@ U4 9269ad7 (alerts: rank_persistence entry holds p (null when not evaluated); da
 health panel over pool.fail_window; 9 tests; two tests changed only to admit p (146 (c)); check 3/3 1044, 1128,
 1101 s; G1.3 PASS 534 s; speed 0.031791/0.037430/1.177/5.583 s, load 1.9-2.4, one run; no finding).
 
-In progress: U5 — the Claude Code coordinator, budget, process-group kill, config/protected_paths.toml, deny rules
-(decisions 163-166). Done means: `coordinator:` commit pushed; check 3/3; equality test unchanged; tests of 163 (g),
-164 (c), 165, 166 pass; five wrong changes seen red; body quotes claude --help lines and claude --version and the
-deny-rule syntax source; G1.3 and the four figures; ratio <= 1.25.
+U5 6833101 (coordinator: ClaudeCodeCoordinator vs a fake claude, claude 2.1.303 flags --bare -p --output-format json
+--max-budget-usd --permission-mode dontAsk --model --tools "" (no --max-turns in help), deny rules Edit(//path) from
+code.claude.com/docs/en/permissions.md, config/protected_paths.toml (164 (a) lists + coordinator.py), run_claude
+process-group kill; 48 tests; fixture run.toml [coordinator] table only (163 (b)); check 3/3 1111, 1073, 989 s; G1.3
+PASS 462 s; speed 0.027775/0.033040/1.190/5.784 s, load 1.1-1.3; no finding. Report: test_cli_provider's unknown
+coordinator test passes only with ANTHROPIC_API_KEY unset; token count omits cache fields).
+
+In progress: U6 — the regression gates at the pushed tip 6833101 (decision 155 (a)). Done means: check 3x green with
+wall times; sandbox build tag; gate M1 G1.1-G1.4 each PASS within 15 min, gate M3/M2/M0 PASS; speed at the tip; all
+outputs verbatim with wall times and HEAD saved under meta/drafts/; `meta:` commit with one D-013 times line.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-26, O-27 win, then O-25 and earlier owner
 items, then decisions 155-167, then 1-154 where not replaced. Speed units U1-U3 change no test's assertion, nothing
