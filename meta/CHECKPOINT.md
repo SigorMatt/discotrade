@@ -24,9 +24,12 @@ U4 d679adc (tests: test_a_rewritten_complete_month_gives_its_new_missing_bars, s
 replaced through BarStore.append after the test deletes index.json and the month files (append and recover cannot
 replace a complete month; docstring says so); wrong change seen red; check 3/3 986, 978, 997 s; no finding).
 
-In progress: U5 — regression gates at the pushed tip: check 3x, sandbox build, G1.1-G1.4, M3, M2, M0, decision
-170's three measurements. Done means: all PASS, every M1 item within 15 minutes, median ratio <= 1.25, outputs kept
-under meta/drafts/, a `meta:` commit with one D-013 times line pushed.
+U5 2affd42 (gates at tip c36df23: check 3/3 987, 974, 989 s (2576 passed); sandbox discotrade-sandbox:3b7d75c39621;
+G1.1 PASS 282 s, G1.2 PASS 169 s, G1.3 PASS 462 s, G1.4 PASS 1 s, M3 PASS 503 s, M2 PASS 132 s, M0 PASS 245 s; speed
+1.197, 1.170, 1.096, median 1.170, load 1.2-1.3; outputs meta/drafts/m21-u5-*.txt; D-013 times line; no finding).
+
+In progress: U6 — meta/FINAL-REPORT-21.md (drafted under meta/drafts/, moved in by its commit). Done means: the report
+with every section the brief names committed and pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-26, O-27 win, then O-25 and earlier owner items,
 then decisions 168-176, then 1-167 where not replaced. No file under tests/gates/, tests/fixtures/rejected/, no record

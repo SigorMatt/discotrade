@@ -197,3 +197,4 @@
 - 2026-10-19 mission 21 U2 done 943a18c: unknown coordinators parametrized, claude-off-PATH test, autouse secret-free env (3 vars); check 3/3 987, 997, 985 s; U3 started.
 - 2026-10-19 mission 21 U3 done 50341fc: fix session --tools file tools only, deny Bash/WebFetch/WebSearch, protected paths extended; check 3/3 994, 990, 994 s; U4 started.
 - 2026-10-19 mission 21 U4 done d679adc: _MONTH_MISSING content identity pinned (deletion then append; writers cannot replace a complete month); check 3/3 986, 978, 997 s; U5 started.
+- 2026-10-19 mission 21 U5 done 2affd42: at c36df23 check 3/3, G1.1-G1.4 PASS (G1.3 462 s), gate M3, M2, M0 PASS; median ratio 1.170; U6 started.
