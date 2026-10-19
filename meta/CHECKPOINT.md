@@ -28,8 +28,7 @@ U5 2affd42 (gates at tip c36df23: check 3/3 987, 974, 989 s (2576 passed); sandb
 G1.1 PASS 282 s, G1.2 PASS 169 s, G1.3 PASS 462 s, G1.4 PASS 1 s, M3 PASS 503 s, M2 PASS 132 s, M0 PASS 245 s; speed
 1.197, 1.170, 1.096, median 1.170, load 1.2-1.3; outputs meta/drafts/m21-u5-*.txt; D-013 times line; no finding).
 
-In progress: U6 — meta/FINAL-REPORT-21.md (drafted under meta/drafts/, moved in by its commit). Done means: the report
-with every section the brief names committed and pushed.
+U6 dec0f84 (meta/FINAL-REPORT-21.md). Mission 21 finished; nothing in progress.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-26, O-27 win, then O-25 and earlier owner items,
 then decisions 168-176, then 1-167 where not replaced. No file under tests/gates/, tests/fixtures/rejected/, no record

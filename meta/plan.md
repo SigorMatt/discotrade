@@ -29,4 +29,4 @@ Left items:
 - [x] U3 The fix session's tools and the protected paths (REVIEW-20 should-fix 3, note 5; decision 172; DESIGN §14.4). `coordinator:` commit. — 50341fc (check 994, 990, 994 s)
 - [x] U4 `gaps._MONTH_MISSING`'s content identity (REVIEW-20 should-fix 4; decision 173; DESIGN §5.4). `tests:` commit. — d679adc (check 986, 978, 997 s)
 - [x] U5 The regression gates at the pushed tip (O-2, O-25, O-27; decisions 168 (a), 170; DESIGN §18.2). `meta:` commit (one D-013 times line). — 2affd42 (all gates PASS at c36df23; G1.3 462 s; median ratio 1.170; check 987, 974, 989 s)
-- [ ] U6 The final report (decisions 168-176; O-26, O-27; DESIGN §18.2). `meta/FINAL-REPORT-21.md`.
+- [x] U6 The final report (decisions 168-176; O-26, O-27; DESIGN §18.2). `meta/FINAL-REPORT-21.md`. — dec0f84
