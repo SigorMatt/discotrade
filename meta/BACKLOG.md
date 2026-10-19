@@ -97,6 +97,20 @@ speed figure at mission 18's tip) by mission 20's report (item 162), its
 note 1 by the owner's O-26 and O-27 (`meta/decisions/2026-10-18-owner.md`),
 built by mission 20 (units U1 to U3; items 155 to 159), and its notes 11
 to 15 are recorded as hands findings by mission 20 U0 (item 167 (b)).
+REVIEW-20's blocker 1 (finding D-022, `persistent_approach`'s `p(N)`
+recomputed on the page) is taken by mission 21 (step S4.2a, unit U1;
+decisions-2026-10-19-m21 item 169). Its should-fix 1 (which speed run
+binds) is taken by mission 21 U1 and U5 (item 170). Should-fix 2 (the
+unknown-coordinator test depends on the environment) is taken by U2 (item
+171), should-fix 3 with note 5 (the fix session's tools, the protected
+paths) by U3 (item 172), and should-fix 4 (`_MONTH_MISSING`'s key
+untested) by U4 (item 173). Note 6 is taken by items 169 (e) and 170 (d),
+the corrections of FINAL-REPORT-20 by mission 21's report (item 174), and
+notes 1 and 8 to 10 are recorded by mission 21 U0 (item 175 (b)).
+
+- REVIEW-20 notes, not carried as work unless named (decision 175 (a)):
+  notes 1 to 4 stand as the review accepts them; note 1's check times go
+  to finding D-013, open; note 7 is answered by HF-016's status line.
 
 - REVIEW-19 notes, not carried as work unless named (decision 167 (a)):
   note 3 (U2's body does not say which two-sided form it used), note 5
@@ -393,6 +407,20 @@ to 15 are recorded as hands findings by mission 20 U0 (item 167 (b)).
   after G1.3 reached 1087 s in REVIEW-19): a flat cost per replay day
   within one process, and a 15-minute stop for every M1 item. Built by
   mission 20.
+- Findings D-019 and D-020 (mission 20 U1 and U2): the table's figures and
+  step 6's figures over a whole paper record cannot be updated day by day
+  and stay bit-equal to a full recompute (O-26 item 5). So they are still
+  recomputed from the records each day, with a residual growth as plain
+  arithmetic. The tip's ratio was 1.166, within O-26 item 4. Accepting this,
+  or naming a tolerance or a change to their arithmetic, is the owner's.
+  Neither blocks the series while the ratio holds (decision 175 (a)).
+- Finding D-021 (mission 20 U3): with exposure passed, `table.adjusted_deflated`
+  takes every paper row of a slot dated in the approach's days. The code
+  before mission 20 U1 kept the last row of a date, so the two give
+  different figures for a slot holding two rows of one date. No writer
+  produces such a record, and the G1.3 replay is bit-identical. Saying which
+  reading holds, or that `paper.write` refuses such records, is the owner's,
+  or the role's at the step that next touches `table.py` (decision 175 (a)).
 - `config/run.toml`'s `[coordinator]` table (mission 20, decision 163 (b)):
   the model name, the turn limit, the spending limit and the timeout are
   the project's own choices, unverified until live check L4. Confirming or
