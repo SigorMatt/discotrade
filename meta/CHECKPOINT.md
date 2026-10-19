@@ -23,10 +23,14 @@ runs (load <=1.5), above 1.25 in every run ending at load >=2.6 (1.289-2.104), p
 empty, HEAD tree 5f9c06b7; D-021 filed (U1's adjusted_E_N with two rows of one date)). Report: the ratio holds only
 under low load.
 
-In progress: U4 — REVIEW-19 should-fix 1 and 2 (decisions 160, 161; D-018). Done means: `alerts:` commit pushed;
-check 3/3; equality test unchanged and passing; the tests of 160 and 161 pass; wrong changes (page computing p from
-value and threshold; window = 20 in place of pool.fail_window) each seen red; G1.3 and the four figures at the
-commit; ratio <= 1.25 (fails U4 above).
+U4 9269ad7 (alerts: rank_persistence entry holds p (null when not evaluated); dashboard reads p, _rank_p removed;
+health panel over pool.fail_window; 9 tests; two tests changed only to admit p (146 (c)); check 3/3 1044, 1128,
+1101 s; G1.3 PASS 534 s; speed 0.031791/0.037430/1.177/5.583 s, load 1.9-2.4, one run; no finding).
+
+In progress: U5 — the Claude Code coordinator, budget, process-group kill, config/protected_paths.toml, deny rules
+(decisions 163-166). Done means: `coordinator:` commit pushed; check 3/3; equality test unchanged; tests of 163 (g),
+164 (c), 165, 166 pass; five wrong changes seen red; body quotes claude --help lines and claude --version and the
+deny-rule syntax source; G1.3 and the four figures; ratio <= 1.25.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-26, O-27 win, then O-25 and earlier owner
 items, then decisions 155-167, then 1-154 where not replaced. Speed units U1-U3 change no test's assertion, nothing
