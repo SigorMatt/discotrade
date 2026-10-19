@@ -1,32 +1,33 @@
-# PLAN — mission 21 (roadmap step S4.2a)
+# PLAN — mission 22 (roadmap step S4.2b)
 
-Base commit: e477f67 (`plan: mission 21 kit (S4.2a, closes REVIEW-20 blocker and should-fix)`).
-Brief: `meta/BUILDER-21-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-19-m21.md` (items 168-176 new); owner `meta/decisions/2026-10-18-owner.md` (O-26, O-27); `meta/decisions/decisions-2026-10-18-m20.md` (155-167; 155, 156, 157 (c), 160, 163, 164, 166); owner `meta/decisions/2026-10-17-owner.md` (O-25); `meta/decisions/decisions-2026-10-17-m19.md` (146-154; 146 (b), (c), 151 (a), 152 (a), 153); owner `meta/decisions/decisions-2026-10-13-owner.md` (O-18); `meta/decisions/decisions-2026-10-17-m18.md` (145); `meta/decisions/decisions-2026-10-16-m17.md` (137, 140); `meta/decisions/decisions-2026-10-12.md` (1-75 still bind; 72).
-Roadmap step: S4.2a. Mission 21 closes REVIEW-20's items (blocker 1, should-fix 1 to 4).
+Base commit: 72400d7 (`plan: mission 22 kit (S4.2b, the full daily run, digest and issue sinks)`).
+Brief: `meta/BUILDER-22-PROMPT.md`. Decisions: `meta/decisions/decisions-2026-10-19-m22.md` (items 177-188 new); owner `meta/decisions/2026-10-18-owner.md` (O-26, O-27); `meta/decisions/decisions-2026-10-19-m21.md` (168-176; 168, 170, 171, 176); `meta/decisions/decisions-2026-10-18-m20.md` (155-167; 155, 156, 157 (c), 160, 163, 165, 166); owner `meta/decisions/2026-10-17-owner.md` (O-25); `meta/decisions/decisions-2026-10-17-m19.md` (146-154; 146 (b), (c), 152 (e), (f)); owner `meta/decisions/decisions-2026-10-13-owner.md` (O-18); `meta/decisions/decisions-2026-10-17-m18.md` (145); `meta/decisions/decisions-2026-10-16-m17.md` (136, 137); `meta/decisions/decisions-2026-10-12.md` (1-75 still bind; 47, 50, 51, 52, 54, 72).
+Roadmap step: S4.2b. The rest of the daily run: the digest and the issue sinks, step 1 staged, the retry, `run_failed`, the catch-up, the push, the weekly recomputation, the `no_finding` call, the live defaults of `run-day`.
 
-This mission closes no milestone. It moves no gate of M4.
+This mission closes no milestone. It moves no gate of M4; the M4 gate tests are step S4.3's.
 
-Regression gates (decision 168 (a); O-25), taken by U5: at the pushed tip after U4, with nothing uncommitted but the git-ignored drafts, each its own foreground call with a 20-minute timeout: `discotrade sandbox build`; gate M1 item by item (`./scripts/gate M1 G1.1`, `G1.2`, `G1.3`, `G1.4`); then `./scripts/gate M3`, `./scripts/gate M2`, `./scripts/gate M0`; then decision 170's three measurements (median ratio at most 1.25). Each must pass unchanged. Under O-27 item 3, an M1 item above 15 minutes of wall time stops the mission (finding, then `VERDICT: question`). No file under `tests/gates/` changes in this mission (decision 168 (b)).
+Regression gates (decision 177 (a); O-25), taken by U6: at the pushed tip after U5, with nothing uncommitted but the git-ignored drafts, each its own foreground call with a 20-minute timeout: `discotrade sandbox build`; gate M1 item by item (`./scripts/gate M1 G1.1`, `G1.2`, `G1.3`, `G1.4`); then `./scripts/gate M3`, `./scripts/gate M2`, `./scripts/gate M0`; then decision 170's three measurements (median ratio at most 1.25). Each must pass unchanged. Under O-27 item 3, an M1 item above 15 minutes of wall time stops the mission (finding, then `VERDICT: question`). Each of U2 to U5 gives `./scripts/gate M1 G1.3` and decision 170's three measurements at its commit (decision 177 (c)). No file under `tests/gates/` changes in this mission (decision 177 (b)).
 
 Carried items:
-- REVIEW-20 blocker 1, finding D-022: `persistent_approach`'s `N` and `p_N` in the alert state, the page reads them (decision 169). — taken by U1
-- REVIEW-20 should-fix 1: the binding ratio is the median of three complete measurements (decision 170). — taken by U1 and U5
-- REVIEW-20 should-fix 2: the unknown-coordinator test, the secret-free test environment (decision 171). — taken by U2
-- REVIEW-20 should-fix 3 and note 5: the fix session's `--tools` and whole-tool deny rules; the protected paths extended (decision 172). — taken by U3
-- REVIEW-20 should-fix 4: `gaps._MONTH_MISSING`'s content identity pinned (decision 173). — taken by U4
-- REVIEW-20 note 6: the literal `"p"` replaced by `RANK_P` (decision 169 (e)), U1; the speed day's bookkeeping (decision 170 (d)), stands.
-- REVIEW-20 notes 1 and 8 to 10: D-013 times, HF-015, HF-012, HF-010 lines (decision 175 (b)). — taken by U0
-- The corrections of `meta/FINAL-REPORT-20.md` (decision 174). — taken by U6
+- REVIEW-17 note 3's second half and note 4, REVIEW-19 notes 4 and 6 (decision 182 (d), (e)). — taken by U4
+- REVIEW-17 note 5 (decision 186 (c)). — taken by U5
+- REVIEW-7's note on `revised_data` and `_indexed_last_ts`, REVIEW-2's note on `update_rolls` (decision 181). — taken by U3
+- The live defaults of `run-day` (decision 137 (a); decision 186). — taken by U5
+- The `no_finding` call (decision 152 (e); decision 185). — taken by U5
+- The digest and the issues for the alerts mission 19 fires (decision 152 (f); decisions 178 to 180). — taken by U1 and U2
+- REVIEW-21 notes 1, 10 and 11 (decision 187 (b)): D-013 times, HF-010, HF-012 lines. — taken by U0
+- REVIEW-21 note 2 (decision 188 (a)): the correction of FINAL-REPORT-21's pytest order. — taken by U7
 
 Left items:
-- findings D-019, D-020 and D-021 — the owner (`meta/BACKLOG.md`; decision 175 (a));
-- the digest, the issue sinks, the full daily run, the `no_finding` call, the live defaults of `run-day`, REVIEW-17 notes 3 to 5 and REVIEW-19 notes 4 and 6 — step S4.2b;
-- G4.4 and G4.5 as gate tests — step S4.3.
+- findings D-019, D-020 and D-021 — the owner (`meta/BACKLOG.md`; decision 187 (b));
+- the M4 gate tests, G4.4 and G4.5 among them, the planted-edge market and its corpus, and the failure injection of G4.3 — step S4.3;
+- REVIEW-10's note on a death between the moves of a day — step S5.1's doctor (`meta/BACKLOG.md`; decision 187 (b)).
 
-- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (D-022 and its status; HF-015, HF-012, HF-010 lines; D-013 times line; decision 175 (b)).
-- [x] U1 `persistent_approach`'s `N` and `p(N)` from the alert state (REVIEW-20 blocker 1, D-022; decisions 169, 170; DESIGN §15.1, §15.3, §15.5, §11.4). `alerts:` commit. G1.3 and decision 170's three measurements at the commit. — 558e02a (G1.3 PASS 462 s; median ratio 1.116; check 976, 981, 995 s)
-- [x] U2 The unknown-coordinator test and a secret-free test environment (REVIEW-20 should-fix 2; decision 171; DESIGN §14.2, §19.3 L4). `tests:` commit. — 943a18c (check 987, 997, 985 s)
-- [x] U3 The fix session's tools and the protected paths (REVIEW-20 should-fix 3, note 5; decision 172; DESIGN §14.4). `coordinator:` commit. — 50341fc (check 994, 990, 994 s)
-- [x] U4 `gaps._MONTH_MISSING`'s content identity (REVIEW-20 should-fix 4; decision 173; DESIGN §5.4). `tests:` commit. — d679adc (check 986, 978, 997 s)
-- [x] U5 The regression gates at the pushed tip (O-2, O-25, O-27; decisions 168 (a), 170; DESIGN §18.2). `meta:` commit (one D-013 times line). — 2affd42 (all gates PASS at c36df23; G1.3 462 s; median ratio 1.170; check 987, 974, 989 s)
-- [x] U6 The final report (decisions 168-176; O-26, O-27; DESIGN §18.2). `meta/FINAL-REPORT-21.md`. — dec0f84
+- [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (D-013 times, HF-010, HF-012 lines; decision 187 (b)).
+- [ ] U1 The digest module and the issue sinks (decision 178; decision 179 (a), (b) as functions; DESIGN 15.4, 19.3 L6; I-8, I-11, I-13). `digest:` commit.
+- [ ] U2 The digest, the run log and step 8 in the day (decisions 179, 180; DESIGN 15.4, 16.1 steps 7 and 8, 16.2, 14.3). `daily:` commit. G1.3 and decision 170's three measurements at the commit.
+- [ ] U3 Step 1 staged (decision 181; DESIGN 16.2, 5.2, 5.4, 5.6). `daily:` commit. G1.3 and the three measurements.
+- [ ] U4 The retry, `run_failed` and the catch-up (decisions 182, 183; DESIGN 16.1, 16.2, 15.2; SPEC §11). `daily:` commit. G1.3 and the three measurements.
+- [ ] U5 The weekly recomputation, the `no_finding` call and the live defaults of `run-day` (decisions 184, 185, 186; DESIGN 9.4, 15.2, 16.1 step 6). `daily:` commit. G1.3 and the three measurements.
+- [ ] U6 The regression gates at the pushed tip (O-2, O-25, O-27; decisions 177 (a), 170; DESIGN §18.2). `meta:` commit (one D-013 times line).
+- [ ] U7 The final report (decisions 177-188; O-26, O-27; DESIGN §18.2). `meta/FINAL-REPORT-22.md`.

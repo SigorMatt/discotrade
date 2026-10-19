@@ -199,3 +199,5 @@
 - 2026-10-19 mission 21 U4 done d679adc: _MONTH_MISSING content identity pinned (deletion then append; writers cannot replace a complete month); check 3/3 986, 978, 997 s; U5 started.
 - 2026-10-19 mission 21 U5 done 2affd42: at c36df23 check 3/3, G1.1-G1.4 PASS (G1.3 462 s), gate M3, M2, M0 PASS; median ratio 1.170; U6 started.
 - 2026-10-19 mission 21 U6 done dec0f84: FINAL-REPORT-21.md; mission 21 finished.
+2026-10-19T16:27:28.784Z  consult 0mvfgfdk2-hv9m (architect done) on aux.done of aux job 0mvfdbvwr-0pr8: VERDICT: next kit mission-22-kit
+- 2026-10-19 mission 22 U0: plan written (base 72400d7, step S4.2b, closes no milestone); D-013 times, HF-010, HF-012 lines appended; U1 started.
