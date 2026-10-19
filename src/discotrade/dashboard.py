@@ -44,9 +44,12 @@ The panels, in SPEC 13's order, each under its ``<h2>`` heading (``HEADINGS``):
    ``data-verdict="<name>"``.
 2. Alert rules: for each finding rule, its thresholds and each entry of the
    alert state (subject, value, threshold, active, since); for
-   ``persistent_approach`` also the base percentile, ``N`` (the trials ledger's
-   rows) and ``p(N)`` (``stats.tightened_percentile``), so the tightening shows;
-   for ``rank_persistence`` also the entry's ``p`` as above.
+   ``persistent_approach`` also the base percentile (a threshold of the
+   configuration) and, on each approach's row, the entry's ``N`` and ``p(N)``
+   (``alerts.PERSISTENT_KEYS``), the rule's own on its day, read from the alert
+   state and never recomputed (decision 2026-10-19-m21 169); an entry without
+   them (a state written before that decision) shows ``NO_P`` for both; for
+   ``rank_persistence`` also the entry's ``p`` as above.
 3. The combined paper portfolio: ``portfolio``'s cumulative ``net_1x`` and
    ``net_2x`` against the band of the random control slots' cumulative plain
    ``net_1x``, its 5% and 95% quantiles (``numpy.quantile``) per day
@@ -395,7 +398,9 @@ def _entries(held: Mapping[str, Any] | None, kind: str) -> list[tuple[str, dict[
 
 
 #: How the page shows the ``p`` of a ``rank_persistence`` entry that holds none
-#: (a state written before decision 2026-10-18-m20 160).
+#: (a state written before decision 2026-10-18-m20 160), and the ``N`` and
+#: ``p(N)`` of a ``persistent_approach`` entry that holds none (before decision
+#: 2026-10-19-m21 169).
 NO_P = "\u2014"
 
 
@@ -458,30 +463,35 @@ def _gates_panel(setup: journal.Setup, records: pd.DataFrame, held: Mapping[str,
     return "".join(out)
 
 
-def _alerts_panel(setup: journal.Setup, held: Mapping[str, Any] | None,
-                  trials: Sequence[Mapping[str, Any]]) -> str:
+def _held_shown(entry: Mapping[str, Any], key: str) -> str:
+    """An entry's ``key`` as the page shows it, read from the alert state and never
+    recomputed; ``NO_P`` where the entry holds no such key (a state written before
+    the decision that added it)."""
+    return _n(entry[key]) if key in entry else NO_P
+
+
+def _alerts_panel(setup: journal.Setup, held: Mapping[str, Any] | None) -> str:
     track = setup.track.name
     out = []
     for kind in alerts.FINDING_KINDS:
         out.append(f"<h3>{_e(kind)}</h3>")
         out.append(_p("thresholds: " + ", ".join(
             f"<code>{_e(k)}</code> {_th(setup, k)}" for k in alerts.THRESHOLD_KEYS[kind])))
+        extra: tuple[tuple[str, str], ...] = ()
         if kind == alerts.PERSISTENT:
-            force = alerts.in_force(setup, kind)
-            n = len(trials)
-            p_n = stats.tightened_percentile(
-                n, float(force["alerts.persistent_base_percentile"]),
-                float(force["alerts.false_alerts_per_year"]))
+            extra = (("N", alerts.PERSISTENT_N), ("p(N)", alerts.PERSISTENT_P_N))
             out.append(_p(f"the control percentile tightens with the trial count: base "
-                          f"{_th(setup, 'alerts.persistent_base_percentile')}, N {n}, "
-                          f"p(N) {_e(_n(p_n))}; each approach's threshold below is at the "
-                          f"current N"))
+                          f"{_th(setup, 'alerts.persistent_base_percentile')}; each "
+                          f"approach's N, p(N) and threshold below are the rule's on its "
+                          f"day, as the alert state holds them"))
         if kind == alerts.RANK:
             entry = None if held is None else held["alerts"].get(alerts.key_of(kind, track))
             out.append(_p(f"p {_e(_p_shown(entry))}"))
         entries = _entries(held, kind)
-        out.append(_table(("subject", "value", "threshold", "active", "since"),
+        out.append(_table(("subject", "value", "threshold") + tuple(h for h, _ in extra)
+                          + ("active", "since"),
                           [(_e(subject), _e(_n(e["value"])), _e(_n(e["threshold"])),
+                            *(_e(_held_shown(e, k)) for _, k in extra),
                             "yes" if e["active"] else "no", _e(e["since"] or "-"))
                            for subject, e in entries]) if entries
                    else _p("no entry in the alert state"))
@@ -670,7 +680,7 @@ def render(state_dir: Path, setup: journal.Setup, day: date, *, overlay: Path | 
     table_rows = [] if held_table is None else held_table["rows"]
     panels = (
         _gates_panel(setup, records, held, table_rows, events),
-        _alerts_panel(setup, held, trials),
+        _alerts_panel(setup, held),
         _portfolio_panel(state_dir, setup, day, records, overlay, exposure),
         _rank_panel(setup, rank_rows),
         _table_panel(held_table),

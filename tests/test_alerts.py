@@ -899,6 +899,51 @@ def test_rank_persistence_takes_the_last_twelve_non_missing_blocks(tmp_path, set
     assert entry["active"] is True
 
 
+def own_p_n(n, base, per_year):
+    """DESIGN 11.4's ``p(N)``, written out here."""
+    return 1 - min(1 - base, per_year / max(n, 1))
+
+
+def test_the_alert_step_writes_the_persistent_rules_n_and_p_n_into_each_entry(
+        setup, persistent, tmp_path):
+    # decision 2026-10-19-m21 169 (a): each persistent_approach entry of the state
+    # holds the rule's own N (the trials ledger's rows on D) and p(N), as its payload.
+    p = persistent
+    want = own_p_n(N_TRIALS, p["base"], p["per_year"])
+    assert want != 1 - p["base"]                  # p(N) tightened at N_TRIALS
+    day = P_DAYS[-1]
+    new, _ = alerts.step(p["root"], setup, day, paper.read(p["root"], TRACK),
+                         into=tmp_path / "staging")
+    held = alerts.read_state(tmp_path / "staging", TRACK)
+    assert held == new
+    mine = {k.split("|", 1)[1]: e for k, e in held["alerts"].items()
+            if k.startswith("persistent_approach|")}
+    assert sorted(mine) == sorted(p["ids"][name] for name in P_SPEC)
+    for subject, e in mine.items():
+        assert set(e) == {*alerts.ENTRY_KEYS, "N", "p_N"}, subject
+        assert e["N"] == N_TRIALS and isinstance(e["N"], int)
+        assert close(e["p_N"], want), subject
+    for name, entry in p["by_name"].items():
+        assert entry["N"] == entry["payload"]["N"] == N_TRIALS, name
+        assert entry["p_N"] == entry["payload"]["p_N"], name
+    others = [k for k in held["alerts"]
+              if not k.startswith(("persistent_approach|", "rank_persistence|"))]
+    assert all(set(held["alerts"][k]) == set(alerts.ENTRY_KEYS) for k in others)
+
+
+def test_transition_carries_n_and_p_n_for_persistent_approach_only():
+    d = date(2019, 9, 3)
+    extra = {"N": 7, "p_N": 0.9}
+    entries = [{**entry(alerts.PERSISTENT, "a1", True, 1.5, 1.0), **extra},
+               {**entry(alerts.REVIVAL, "a2", True, 70, 60), **extra}]
+    new, _ = alerts.transition(None, d, entries)
+    assert new["alerts"]["persistent_approach|a1"] == {
+        "active": True, "since": "2019-09-03", "value": 1.5, "threshold": 1.0,
+        "N": 7, "p_N": 0.9}
+    assert new["alerts"]["revival|a2"] == {"active": True, "since": "2019-09-03",
+                                           "value": 70, "threshold": 60}
+
+
 def test_rank_persistence_is_not_evaluated_with_eleven_blocks(tmp_path, setup):
     write_rank_state(tmp_path, timing_values(3.0)[:11], extra_null=True)
     entry = alerts.rank_persistence(tmp_path, setup, date(2019, 9, 2))

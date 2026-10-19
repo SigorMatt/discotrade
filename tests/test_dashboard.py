@@ -481,3 +481,71 @@ def test_the_health_panel_counts_each_models_failures_over_pool_fail_window(
         want[model] = (len(last), sum(o.startswith("invalid:") for o in last))
     assert want == {"model-a": (5, 1), "model-b": (5, 2)}
     assert got == want
+
+
+# ------------- persistent_approach's N and p(N) from the alert state (decision 2026-10-19-m21 169)
+
+
+def with_entry(state, key, entry):
+    """The stored alert state with its entry ``key`` set to ``entry``."""
+    path = state / "alerts" / TRACK / "state.json"
+    held = json.loads(path.read_text(encoding="utf-8"))
+    held["alerts"][key] = entry
+    path.write_text(json.dumps(held, sort_keys=True, separators=(",", ":")) + "\n",
+                    encoding="utf-8")
+
+
+def persistent_rows(page):
+    """The ``persistent_approach`` table of the alert-rules panel: subject to its
+    cells (value, threshold, N, p(N), active, since)."""
+    section = page.split("<h2>Alert rules</h2>", 1)[1].split("<h2>", 1)[0]
+    section = section.split("<h3>persistent_approach</h3>", 1)[1].split("<h3>", 1)[0]
+    head = re.findall(r"<th[^>]*>([^<]*)</th>", section)
+    assert head == ["subject", "value", "threshold", "N", "p(N)", "active", "since"]
+    rows = {}
+    for row in re.findall(r"<tr>(.*?)</tr>", section):
+        cells = re.findall(r"<td[^>]*>([^<]*)</td>", row)
+        if cells:
+            rows[cells[0]] = cells[1:]
+    return rows
+
+
+def own_p_n(n, base, per_year):
+    """DESIGN 11.4's ``p(N)``, written out here."""
+    return 1 - min(1 - base, per_year / max(n, 1))
+
+
+def test_the_page_shows_n_and_p_n_as_the_persistent_entry_holds_them(ran, config, setup,
+                                                                       tmp_path):
+    state = copy_template(ran, tmp_path / "state")
+    t = setup.thresholds
+    n = len(ledger.read(state, TRACK, ledger.TRIALS))
+    derived = own_p_n(n, t["alerts.persistent_base_percentile"],
+                      t["alerts.false_alerts_per_year"])
+    held_n, held_p = n + 7919, 0.987654321
+    assert abs(derived - held_p) > 1e-3
+    assert abs(own_p_n(held_n, t["alerts.persistent_base_percentile"],
+                       t["alerts.false_alerts_per_year"]) - held_p) > 1e-3
+    with_entry(state, "persistent_approach|written-by-the-test",
+               {"active": False, "since": None, "value": 0.25, "threshold": 1.5,
+                "N": held_n, "p_N": held_p})
+    got = persistent_rows(render(state, config))
+    assert got["written-by-the-test"][:4] == ["0.25", "1.5", str(held_n), f"{held_p:.6g}"]
+
+
+def test_a_persistent_entry_without_n_and_p_n_shows_a_dash_for_both(ran, config, tmp_path):
+    state = copy_template(ran, tmp_path / "state")
+    with_entry(state, "persistent_approach|written-by-the-test",
+               {"active": False, "since": None, "value": 0.25, "threshold": 1.5})
+    got = persistent_rows(render(state, config))
+    assert got["written-by-the-test"][2:4] == ["—", "—"]
+
+
+def test_the_stored_persistent_entries_hold_n_and_p_n_and_the_page_shows_them(ran, page):
+    held = json.loads((ran / "alerts" / TRACK / "state.json").read_text(encoding="utf-8"))
+    mine = {k.split("|", 1)[1]: e for k, e in held["alerts"].items()
+            if k.startswith("persistent_approach|")}
+    assert mine
+    got = persistent_rows(page)
+    for subject, e in mine.items():
+        assert got[subject][2:4] == [str(e["N"]), f"{e['p_N']:.6g}"], subject

@@ -64,7 +64,9 @@ keys read with their values.
   ``W`` beside them (O-18), ``mu_c``, ``sd_c``, ``N``, ``p_N``, the threshold,
   ``days`` (of ``W``), ``clean_days`` and ``exposed_days``
   (``stats.clean_counts``), and the approach's description, source text, cell,
-  model id and model version.
+  model id and model version. The entry also holds ``N`` and ``p_N``
+  (``PERSISTENT_KEYS``), the payload's two, which the state keeps for every
+  approach the rule evaluates (decision 2026-10-19-m21 169 (a)).
 - ``group_edge``: one entry, subject the track's name (the design names no
   subject; the track is the simplest, as for ``rank_persistence``). ``W`` is the
   last ``alerts.group_days`` dates of ``portfolio_clean`` on or before ``D``;
@@ -142,7 +144,9 @@ from ``setup.thresholds`` only.
   ``alerts`` keyed ``<kind>|<subject>`` with ``active``, ``since`` (the date it
   last turned true, or null), ``value`` and ``threshold`` (``ENTRY_KEYS``), the
   ``rank_persistence`` entry also ``p`` (``RANK_P``, decision 2026-10-18-m20
-  160, null where the rule was not evaluated); and the entries that
+  160, null where the rule was not evaluated), each ``persistent_approach``
+  entry also ``N`` and ``p_N`` (``PERSISTENT_KEYS``, decision 2026-10-19-m21
+  169), no other kind's entry another key; and the entries that
   fire: active on ``D`` and not active, or absent, in ``previous`` (DESIGN
   15.3).
 - ``write(into, state_dir, track, D, state, fired)``: ``alerts/<track>/state.json``
@@ -617,7 +621,8 @@ def persistent_approach(state_dir: Path, setup: journal.Setup, day: date,
                    "cell": a.meta["cell"], "model_id": a.meta["model_id"],
                    "model_version": a.meta["model_version"]}
         out.append({"kind": PERSISTENT, "subject": aid, "active": bool(active),
-                    "value": _real(s1), "threshold": _real(threshold), "payload": payload})
+                    "value": _real(s1), "threshold": _real(threshold),
+                    PERSISTENT_N: n, PERSISTENT_P_N: p_n, "payload": payload})
     return out
 
 
@@ -705,6 +710,11 @@ ENTRY_KEYS = ("active", "since", "value", "threshold")
 #: rule's own ``p`` on ``D``, null where it was not evaluated (decision
 #: 2026-10-18-m20 160).
 RANK_P = "p"
+#: The two keys the ``persistent_approach`` entry holds beside ``ENTRY_KEYS``: the
+#: trial count ``N`` the rule used on ``D`` and the ``p(N)`` it computed, the
+#: payload's ``N`` and ``p_N`` (decision 2026-10-19-m21 169 (a)).
+PERSISTENT_N, PERSISTENT_P_N = "N", "p_N"
+PERSISTENT_KEYS = (PERSISTENT_N, PERSISTENT_P_N)
 
 
 def _entry(kind: str, subject: str) -> dict[str, Any]:
@@ -743,7 +753,7 @@ def rank_persistence(state_dir: Path, setup: journal.Setup, day: date, *,
     blocks = int(force["alerts.rank_blocks"])
     level = float(force["alerts.rank_level"])
     entry = _entry(RANK, track)
-    entry["p"] = None
+    entry[RANK_P] = None
     rows = [r for r in stats.read_rank_rows(state_dir, track, into=overlay)
             if r.get(TIMING) is not None]
     if blocks < 2 or len(rows) < blocks:
@@ -759,10 +769,12 @@ def rank_persistence(state_dir: Path, setup: journal.Setup, day: date, *,
     t = mean / se
     p = stats.t_sf(t, n - 1)
     critical = _t_critical(level, n - 1) * se
-    entry.update(active=bool(p < level), value=_real(mean), threshold=_real(critical),
-                 p=_real(p), payload={"mean": _real(mean), "sd": _real(sd), "n": n, "t": _real(t),
-                          "p": _real(p), "critical_mean": _real(critical),
-                          "blocks": [int(r["block"]) for r in last], "thresholds": force})
+    entry.update({"active": bool(p < level), "value": _real(mean),
+                  "threshold": _real(critical), RANK_P: _real(p),
+                  "payload": {"mean": _real(mean), "sd": _real(sd), "n": n, "t": _real(t),
+                              RANK_P: _real(p), "critical_mean": _real(critical),
+                              "blocks": [int(r["block"]) for r in last],
+                              "thresholds": force}})
     return entry
 
 
@@ -968,6 +980,8 @@ def transition(previous: Mapping[str, Any] | None, day: date,
                     "threshold": e["threshold"]}
         if e["kind"] == RANK:
             out[key][RANK_P] = e.get(RANK_P)
+        elif e["kind"] == PERSISTENT:
+            out[key].update({k: e.get(k) for k in PERSISTENT_KEYS})
     return {"date": day.isoformat(), "alerts": dict(sorted(out.items()))}, fired
 
 
