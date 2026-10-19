@@ -692,7 +692,7 @@ def _run_day(ctx: Context, args: argparse.Namespace) -> int:
     from discotrade.backtest import EvaluationError
     from discotrade.bars.store import BarStoreError
     from discotrade.config import ConfigError
-    from discotrade.daily import DailyError, describe, run_day
+    from discotrade.daily import MODE_LIVE, DailyError, describe, run_day
     from discotrade.journal import JournalError
     from discotrade.sources import NotBuiltError
     from discotrade.state import StateError
@@ -707,12 +707,13 @@ def _run_day(ctx: Context, args: argparse.Namespace) -> int:
     refused, provider, coordinator = _roles(ctx, args, "run-day")
     if refused is not None:
         return refused
-    refused, _sink = _issue_sink(ctx, args, "run-day")  # passed to the day by step S4.2b U2
+    refused, sink = _issue_sink(ctx, args, "run-day")
     if refused is not None:
         return refused
     try:
         done = run_day(ctx.state, ctx.config, ctx.track, ctx.clock, args.day,
-                       sandbox=args.sandbox, provider=provider, coordinator=coordinator)
+                       sandbox=args.sandbox, provider=provider, coordinator=coordinator,
+                       issues=sink, mode=MODE_LIVE)
     except (DailyError, StateError, JournalError, ConfigError, BarStoreError, StrategyError,
             ResultError, EvaluationError, NotBuiltError, OSError, ValueError) as exc:
         print(f"run-day: FAIL: {exc}", file=sys.stderr)
@@ -801,7 +802,7 @@ def _replay(ctx: Context, args: argparse.Namespace) -> int:
     refused, provider, coordinator = _roles(ctx, args, "replay")
     if refused is not None:
         return refused
-    refused, _sink = _issue_sink(ctx, args, "replay")  # passed to the day by step S4.2b U2
+    refused, sink = _issue_sink(ctx, args, "replay")
     if refused is not None:
         return refused
 
@@ -821,7 +822,7 @@ def _replay(ctx: Context, args: argparse.Namespace) -> int:
     try:
         replay(ctx.state, ctx.config, ctx.track, tc, calendars, args.first, args.last, line,
                failures, candidates, sandbox=args.sandbox, provider=provider,
-               coordinator=coordinator)
+               coordinator=coordinator, issues=sink)
     except DayFailed as exc:
         print(f"replay: FAIL: {ctx.track} {exc}", file=sys.stderr)
         return 1

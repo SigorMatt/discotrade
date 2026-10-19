@@ -1,5 +1,5 @@
-"""The daily run, steps 1 to 5, step 6, the table and the dashboard (DESIGN 16.1,
-16.2, 5.4, 5.6, 9.2, 9.3, 10.4, 10.5, 11.1, 15.1 to 15.3, 15.5; decisions
+"""The daily run, steps 1 to 8 (DESIGN 16.1,
+16.2, 15.4, 5.4, 5.6, 9.2, 9.3, 10.4, 10.5, 11.1, 15.1 to 15.3, 15.5; decisions
 2026-10-12 2, 3, 19, 50 to 53, 55, 59, 62, 69, 70, 71, 2026-10-17-m19 152, 153;
 I-5, I-6, I-12, I-14).
 
@@ -82,10 +82,26 @@ releasing it on success and on failure:
   directory; a re-run writes neither. Then, when the day is new, the dashboard
   (step 7; DESIGN 15.5; decision 2026-10-17-m19 153 (a)): ``dashboard.render`` of
   ``D`` over the staged files, written as ``dashboard/<track>/index.html`` to the
-  staging directory (``dashboard.write``); a re-run writes none. Only when all of
-  this has succeeded are the staged files moved into place (``os.replace``,
-  in path order) and the state committed as ``run <track> <D>``
-  (``state.commit``; no commit when nothing was moved). A re-run whose rows
+  staging directory (``dashboard.write``); a re-run writes none. Then, when the day
+  is new, the rest of step 7 (decision 2026-10-19-m22 179): on a day on which step 6
+  fired an entry, the digest page ``digests/<track>/<D>.md`` (``digest.render``: the
+  harness's tables of every fired payload, the coordinator's ``write_digest`` prose
+  over kinds and subjects only, the day's coordinator tokens and budget); on a day
+  with none, the coordinator's ``write_runlog_line`` sentence; both calls through
+  ``coordinator.write`` (its events appended to the health log at once); then one
+  line appended to ``runlog/<track>.jsonl`` (``date``, ``mode``, the sorted fired
+  keys ``alerts``, ``digest`` the page's path or null, ``line`` the sentence or null,
+  ``coordinator_tokens``), all in the staging directory; a re-run writes none. Only
+  when all of this has succeeded are the staged files moved into place
+  (``os.replace``, in path order) and the state committed as ``run <track> <D>``
+  (``state.commit``; no commit when nothing was moved). Then step 8 (decision 180),
+  only after a commit: ``git push`` of ``main`` to ``origin`` when the state
+  repository has one (``[state] push_timeout_seconds``; a failure is a
+  ``push_failed`` notice), then one issue per fired entry but ``run_failed``
+  through the command's sink (title ``<kind> <subject> <D>``, labels as
+  ``digest.issue_labels``, body the entry's section of the page and its path; an
+  ``IssueError`` is an ``issue_failed`` notice); these notices are appended after
+  the commit and stay uncommitted until the next day's; the day still succeeds. A re-run whose rows
   equal the journal's writes nothing and makes no commit (I-6): its lifecycle
   rows, computed from the states in force on ``D``, are those already in the
   ledger, which appends no line it holds. One whose rows differ moves nothing,
@@ -177,6 +193,7 @@ from __future__ import annotations
 
 import os
 import shutil
+import subprocess
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time, timedelta
@@ -188,6 +205,7 @@ import pandas as pd
 from discotrade import (
     alerts,
     dashboard,
+    digest,
     journal,
     ledger,
     lifecycle,
@@ -199,7 +217,7 @@ from discotrade import (
 )
 from discotrade import coordinator as coord
 from discotrade.bars.gaps import check_gaps, day_end, latest_closed_day
-from discotrade.bars.store import BarStore, BarStoreError, day_run, finite_rows
+from discotrade.bars.store import BarStore, BarStoreError, day_run, finite_rows, write_atomic
 from discotrade.clock import Clock
 from discotrade.config import (
     Calendar,
@@ -225,6 +243,16 @@ REVISED_DATA = "revised_data"
 SANDBOX_RESTARTED = "sandbox_restarted"
 #: The phrase by which the bar store's errors name a revised data point.
 _REVISED = "a revised data point"
+#: The ``mode`` of a run log line: a day ``run-day`` runs, or one ``replay`` runs
+#: (decision 2026-10-19-m22 179 (c)).
+MODE_LIVE, MODE_REPLAY = "live", "replay"
+MODES = (MODE_LIVE, MODE_REPLAY)
+#: The run log and the digest pages, relative to the state directory (DESIGN 15.4).
+RUNLOG_DIR, DIGESTS_DIR = "runlog", "digests"
+#: The keys of a run log line (decision 179 (c)).
+RUNLOG_KEYS = ("alerts", "coordinator_tokens", "date", "digest", "line", "mode")
+#: Step 8's notices (decision 180) and the kind whose issue its failure opens (182 (c)).
+PUSH_FAILED, ISSUE_FAILED, RUN_FAILED = "push_failed", "issue_failed", "run_failed"
 
 
 class DailyError(RuntimeError):
@@ -394,18 +422,138 @@ def _models(config_dir: Path) -> ModelsConfig | None:
     return load_models(path) if path.exists() else None
 
 
+def runlog_path(root: Path, track: str) -> Path:
+    """``runlog/<track>.jsonl`` under ``root``."""
+    return Path(root) / RUNLOG_DIR / f"{track}.jsonl"
+
+
+def digest_path(root: Path, track: str, day: date) -> Path:
+    """``digests/<track>/<D>.md`` under ``root``."""
+    return Path(root) / DIGESTS_DIR / track / f"{day.isoformat()}.md"
+
+
+def _append_runlog(state_dir: Path, track: str, row: Mapping[str, Any], staging: Path) -> None:
+    """Append ``row``'s line to the run log in ``staging``, after the lines the stored
+    log holds, as the ledgers' lines are appended."""
+    target, source = runlog_path(staging, track), runlog_path(state_dir, track)
+    held = target if target.exists() else source
+    old = held.read_bytes() if held.exists() else b""
+    if old and not old.endswith(b"\n"):
+        raise state.StateError(f"{held} does not end with a newline; its last line is torn")
+    data = old + (ledger.line(row) + "\n").encode("utf-8")
+    write_atomic(target, lambda p: p.write_bytes(data))
+
+
+def _step_7(state_dir: Path, setup: journal.Setup, d: date, fired: Sequence[Mapping[str, Any]],
+            coordinator: coord.Coordinator | None, brief: coord.Brief | None, mode: str,
+            staging: Path) -> list[HealthEvent]:
+    """Step 7's digest page (a day on which an entry fired) or the coordinator's run log
+    sentence (a day with none), then the day's run log line, in ``staging`` (decision
+    179); return the health events, appended at once (DESIGN 16.2's exception)."""
+    track = setup.track
+    line, rel = None, None
+    if fired:
+        prose, events = coord.write(coordinator, track, d, "write_digest",
+                                    digest.alert_payloads(fired))
+        page = digest.render(track.name, d, fired, prose, coord.day_tokens(coordinator),
+                             int(setup.thresholds[coord.BUDGET_KEY]))
+        target = digest_path(staging, track.name, d)
+        write_atomic(target, lambda p: p.write_bytes(page.encode("utf-8")))
+        rel = target.relative_to(staging).as_posix()
+    else:
+        summary = coord.RunSummary(track.name, None if brief is None else brief.cell)
+        line, events = coord.write(coordinator, track, d, "write_runlog_line", summary)
+    appended = state.append_health(state_dir, track.name, events)
+    _append_runlog(state_dir, track.name, {
+        "date": d.isoformat(), "mode": mode,
+        "alerts": sorted(alerts.key_of(e["kind"], e["subject"]) for e in fired),
+        "digest": rel, "line": line, "coordinator_tokens": coord.day_tokens(coordinator)},
+        staging)
+    return appended
+
+
+def _push(state_dir: Path, config_dir: Path) -> str | None:
+    """Push ``main`` of the state repository to its ``origin`` (decision 180 (a)); None
+    when it went, else git's error text."""
+    from discotrade.config import ConfigError
+
+    try:
+        settings = load_run(config_dir).state
+    except ConfigError as exc:
+        return str(exc)
+    if settings is None:
+        return f"{Path(config_dir) / 'run.toml'} has no [state] table"
+    try:
+        done = subprocess.run(["git", "-C", str(state_dir), "push", "-q", digest.ORIGIN,
+                               "main"], env=state.git_environment(), capture_output=True,
+                              text=True, check=False, stdin=subprocess.DEVNULL,
+                              timeout=settings.push_timeout_seconds)
+    except subprocess.TimeoutExpired:
+        return f"git push: timeout after {settings.push_timeout_seconds:g} s"
+    except OSError as exc:
+        return f"git push could not start: {type(exc).__name__}"
+    if done.returncode != 0:
+        return (done.stderr.strip() or f"git push: exit status {done.returncode}")
+    return None
+
+
+def _labels(config_dir: Path) -> tuple[str, ...]:
+    """``[issues] labels`` of ``run.toml`` (decision 178 (c)); none without the table."""
+    from discotrade.config import ConfigError
+
+    try:
+        settings = load_run(config_dir).issues
+    except ConfigError:
+        return ()
+    return () if settings is None else settings.labels
+
+
+def _step_8(state_dir: Path, config_dir: Path, track: str, d: date,
+            fired: Sequence[Mapping[str, Any]], issues: Any) -> list[HealthEvent]:
+    """Step 8 after the day's commit (decision 180): the push when the state repository
+    has ``origin`` (``push_failed`` when it fails), then one issue per fired entry but
+    ``run_failed`` through ``issues`` (``issue_failed`` when the sink raises), its body
+    the entry's section of the digest page and the page's path. The notices are
+    appended to the health log now and committed with the next day (180 (c))."""
+    events: list[HealthEvent] = []
+    if digest.has_origin(state_dir):
+        error = _push(state_dir, config_dir)
+        if error is not None:
+            events.append(HealthEvent(d, "notice", PUSH_FAILED, track,
+                                      {"day": d.isoformat(), "error": error}))
+    entries = [e for e in fired if e["kind"] != RUN_FAILED]
+    if issues is not None and entries:
+        labels = _labels(config_dir)
+        page = f"{DIGESTS_DIR}/{track}/{d.isoformat()}.md"
+        for e in entries:
+            title = f"{e['kind']} {e['subject']} {d.isoformat()}"
+            body = f"{digest.section(e)}\n\nDigest page: {page}\n"
+            try:
+                issues.open(title, body, digest.issue_labels(labels, e["kind"]))
+            except digest.IssueError as exc:
+                events.append(HealthEvent(d, "notice", ISSUE_FAILED, track,
+                                          {"title": title, "error": str(exc)}))
+    return state.append_health(state_dir, track, events)
+
+
 def run_day(state_dir: Path, config_dir: Path, track: str, clock: Clock,
             day: date | None = None, candidate: lifecycle.Candidate | None = None,
             sandbox: Sandbox | str | None = None, provider: Any = None,
-            coordinator: coord.Coordinator | None = None) -> DayRun:
+            coordinator: coord.Coordinator | None = None, issues: Any = None,
+            mode: str = MODE_REPLAY) -> DayRun:
     """Run steps 1 and 2 of ``day`` (or decision 19's ``D``), with the
     admission of ``candidate`` when given, or steps 3 to 5 with ``provider``
-    when given (and ``coordinator``, the scripted one by default), and commit
-    it. Approaches run on ``sandbox``: a backend, or the name of one (None: the
+    when given (and ``coordinator``, the scripted one by default), steps 6 and 7,
+    and commit it; then step 8's push and one issue per fired entry through
+    ``issues`` (an ``IssueSink``; None opens none). ``mode`` is the run log line's
+    (``live`` for ``run-day``, ``replay`` for ``replay``, decision 179 (c)).
+    Approaches run on ``sandbox``: a backend, or the name of one (None: the
     track's default, decision 2026-10-14-m13 105 (b)); a name the track does
     not allow is refused (``SandboxChoiceError``) before anything is read or
     written."""
     state_dir = Path(state_dir)
+    if mode not in MODES:
+        raise ValueError(f"mode {mode!r} is not one of {', '.join(MODES)}")
     if candidate is not None and provider is not None:
         raise ValueError("a day has one source of candidates: a scripted candidate or a "
                          "worker provider, not both (decision 2026-10-16-m17 137 (b))")
@@ -414,7 +562,7 @@ def run_day(state_dir: Path, config_dir: Path, track: str, clock: Clock,
     state.require_state_directory(state_dir)
     with state.lock(state_dir), day_run():
         return _locked(state_dir, Path(config_dir), track, clock, day, candidate, sandbox,
-                       provider, coordinator)
+                       provider, coordinator, issues, mode)
 
 
 @dataclass(frozen=True)
@@ -488,7 +636,8 @@ def _steps_3_to_5(state_dir: Path, config_dir: Path, setup: journal.Setup, tc: T
 def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
             day: date | None, candidate: lifecycle.Candidate | None,
             sandbox: Sandbox | str | None, provider: Any = None,
-            coordinator: coord.Coordinator | None = None) -> DayRun:
+            coordinator: coord.Coordinator | None = None, issues: Any = None,
+            mode: str = MODE_REPLAY) -> DayRun:
     setup = journal.Setup.load(config_dir, track)
     tc = load_track_config(config_dir, track)
     calendars = dict(setup.calendars)
@@ -553,6 +702,7 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
                                            dict(result.failures), into=staging))
         admission = None
         generated = _Generated()
+        fired: list[Mapping[str, Any]] = []
         if result.status == journal.WRITTEN and candidate is not None:
             admission = lifecycle.admit(state_dir, setup, candidate, d, into=staging)
             changes += admission.lifecycle
@@ -569,12 +719,15 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
             appended += state.append_health(state_dir, track, alerts.detectors(
                 state_dir, setup, d, reached_step_5=generated.brief is not None,
                 models=_models(config_dir), overlay=staging))
-            alerts.step(state_dir, setup, d, records, into=staging, exposure=(unit, positions))
+            _, fired = alerts.step(state_dir, setup, d, records, into=staging,
+                                   exposure=(unit, positions))
             table.write(staging, track, table.build(state_dir, setup, d, records,
                                                     into=staging))
             dashboard.write(staging, track, dashboard.render(
                 state_dir, setup, d, overlay=staging, records=records,
                 exposure=(unit, positions)))
+            appended += _step_7(state_dir, setup, d, fired, coordinator, generated.brief,
+                                mode, staging)
         moved = _move(staging, state_dir)
     except BarStoreError as exc:
         if _REVISED in str(exc):
@@ -584,6 +737,8 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
     finally:
         shutil.rmtree(staging, ignore_errors=True)
     sha = state.commit(state_dir, track, d, clock) if moved else None
+    if sha is not None:  # step 8 (decision 180); a re-run commits, pushes and opens nothing
+        appended += _step_8(state_dir, config_dir, track, d, fired, issues)
     return DayRun(d, result.status, result.rows, sha, tuple(appended), tuple(changes),
                   admission, generated.statuses, generated.brief, generated.calls)
 

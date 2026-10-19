@@ -31,7 +31,8 @@
   <sum> of <budget>``. Every number on the page comes from the payloads and the
   budget, rendered here (DESIGN 14.3; decision 179 (a)). The prose is the
   coordinator's ``write_digest`` over ``alert_payloads(fired)``, kind and subject
-  only (I-8; decision 179 (b)). Nothing the day calls uses this module yet.
+  only (I-8; decision 179 (b)). ``section(entry)`` is one entry's section of the
+  page, which the day's issue for that entry holds too (decision 180 (b)).
 - ``--issues``: ``none``, ``gh`` or ``file:<directory>`` (decision 178 (d));
   ``has_origin`` tells whether a state repository has a remote named ``origin``.
 """
@@ -190,16 +191,22 @@ def _value(value: Any) -> str:
     return row[len('{"v":'):-1]
 
 
+def section(entry: Mapping[str, Any]) -> str:
+    """The page's section of one fired entry: ``## <kind> — <subject>``, an empty line,
+    then the table of its payload (decision 179 (a)); an issue's body holds it too
+    (decision 180 (b))."""
+    flat: dict[str, Any] = {}
+    for key, value in (entry["payload"] or {}).items():
+        _flatten(str(key), value, flat)
+    rows = ["| key | value |", "|---|---|"]
+    rows += [f"| {_cell(key)} | {_cell(_value(flat[key]))} |" for key in sorted(flat)]
+    return f"## {entry['kind']} — {entry['subject']}\n\n" + "\n".join(rows)
+
+
 def render(track: str, day: date, fired: Sequence[Mapping[str, Any]], prose: str,
            tokens: int, budget: int) -> str:
     """The digest page of ``day`` (decision 179 (a)), ending with one newline."""
     parts = [f"# {track} {day.isoformat()}", prose]
-    for e in fired:
-        flat: dict[str, Any] = {}
-        for key, value in (e["payload"] or {}).items():
-            _flatten(str(key), value, flat)
-        rows = ["| key | value |", "|---|---|"]
-        rows += [f"| {_cell(key)} | {_cell(_value(flat[key]))} |" for key in sorted(flat)]
-        parts.append(f"## {e['kind']} — {e['subject']}\n\n" + "\n".join(rows))
+    parts += [section(e) for e in fired]
     parts.append(f"Coordinator tokens: {tokens} of {budget}")
     return "\n\n".join(parts) + "\n"

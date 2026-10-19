@@ -34,6 +34,7 @@ New York; ``always_open``'s day is the UTC date, its last bar opening at
 
 import contextlib
 import io
+import json
 import os
 import shutil
 import subprocess
@@ -231,9 +232,31 @@ def test_replay_equals_run_day_day_by_day(tmp_path, configs, replayed, track):
                               "--day", d.isoformat())
         assert status == 0, (d, err)
     rep = replayed[track][0]
-    assert files(state) == files(rep)
-    assert tree(state) == tree(rep)
-    assert head(state) == head(rep)
+    # Decision 2026-10-19-m22 179 (c): each run log line's mode is live for run-day and
+    # replay for replay; with it set to replay the logs are equal byte for byte, and
+    # every other file and every other entry of the commit's tree is equal.
+    mine, theirs = files(state), files(rep)
+    runlog = f"{daily.RUNLOG_DIR}/{track}.jsonl"
+    live, replayed_log = mine.pop(runlog), theirs.pop(runlog)
+    lines = [json.loads(x) for x in live.decode("utf-8").splitlines()]
+    assert [x["mode"] for x in lines] == ["live"] * len(CASES[track]["days"])
+    assert b"".join((json.dumps({**x, "mode": "replay"}, sort_keys=True,
+                                separators=(",", ":")) + "\n").encode("utf-8")
+                    for x in lines) == replayed_log
+    assert mine == theirs
+    assert entries(state, runlog) == entries(rep, runlog)
+    assert log(state) == log(rep)
+
+
+def entries(state, skip: str) -> list[str]:
+    """``git ls-tree -r HEAD``'s lines but the one of the path ``skip``."""
+    return [x for x in git(state, "ls-tree", "-r", "HEAD").splitlines()
+            if not x.endswith("\t" + skip)]
+
+
+def log(state) -> list[str]:
+    """Every commit's message, author date and committer date, oldest first."""
+    return git(state, "log", "--reverse", "--format=%s|%aI|%cI").splitlines()
 
 
 @pytest.mark.parametrize("track", TRACKS)

@@ -72,7 +72,7 @@ from typing import Any
 from discotrade.bars.gaps import day_end
 from discotrade.clock import FixedClock
 from discotrade.config import Calendar, ConfigError, Track, TrackConfig, load_models, load_run
-from discotrade.daily import DayRun, is_trading_day, run_day
+from discotrade.daily import MODE_REPLAY, DayRun, is_trading_day, run_day
 from discotrade.journal import REPO_ROOT, TRUSTED_DIRS
 from discotrade.lifecycle import Candidate
 from discotrade.sandbox.base import Sandbox
@@ -336,10 +336,12 @@ def replay(state_dir: Path, config_dir: Path, track: str, tc: TrackConfig,
            failures: tuple[type[Exception], ...],
            candidates: Mapping[date, Candidate] | None = None,
            sandbox: Sandbox | str | None = None, provider: Any = None,
-           coordinator: Any = None) -> int:
+           coordinator: Any = None, issues: Any = None) -> int:
     """Run every day of ``replay_days``, with its scripted candidate if any,
-    approaches on ``sandbox`` (as ``run_day`` takes it), and the one ``provider``
-    and ``coordinator`` of the command passed to every day (decision 137); call
+    approaches on ``sandbox`` (as ``run_day`` takes it), and the one ``provider``,
+    ``coordinator`` and issue sink ``issues`` of the command passed to every day
+    (decision 137; decision 2026-10-19-m22 180 (b)), each day's run log line of mode
+    ``replay`` (decision 179 (c)); call
     ``on_day`` after each success. An exception of a type in ``failures`` stops the replay as
     ``DayFailed``. Return the number of days run."""
     count = 0
@@ -350,7 +352,7 @@ def replay(state_dir: Path, config_dir: Path, track: str, tc: TrackConfig,
         try:
             done = run_day(state_dir, config_dir, track, FixedClock(instant), d,
                            candidate=candidate, sandbox=sandbox, provider=provider,
-                           coordinator=coordinator)
+                           coordinator=coordinator, issues=issues, mode=MODE_REPLAY)
         except failures as exc:
             raise DayFailed(d, instant, exc) from exc
         on_day(done, instant)

@@ -254,6 +254,57 @@ def choose(coordinator: Coordinator, cells: Sequence[CellStatus], lines: Sequenc
     return Brief((brief.cell[0], brief.cell[1]), text), events
 
 
+#: The tasks :func:`write` runs (decision 2026-10-19-m22 179 (d)).
+WRITE_TASKS = ("write_digest", "write_runlog_line")
+
+
+def day_tokens(coordinator: Coordinator | None) -> int:
+    """The tokens ``coordinator`` has used in the run of the day so far: the Claude Code
+    form's sum (decision 165), 0 for the scripted form (decision 179 (c))."""
+    used = getattr(coordinator, "used", 0) if coordinator is not None else 0
+    return int(used) if isinstance(used, int) and not isinstance(used, bool) else 0
+
+
+def _budget_reached(coordinator: Coordinator) -> bool:
+    used, budget = getattr(coordinator, "used", None), getattr(coordinator, "budget", None)
+    return isinstance(used, int) and isinstance(budget, int) and used >= budget
+
+
+def write(coordinator: Coordinator | None, track: Track, day: date, task: str,
+          argument: Any) -> tuple[str, list[HealthEvent]]:
+    """The text of ``task`` (``write_digest`` over a list of :class:`AlertPayload`, or
+    ``write_runlog_line`` over a :class:`RunSummary`) and the health events, as step 4
+    goes through :func:`choose` (decision 2026-10-19-m22 179 (d)): a coordinator of
+    None is the scripted form; the Claude Code form's fallback and budget events
+    (``take_events``) are returned; a call that raises, that returns no text, or that
+    the day's token budget refuses gives the scripted form's text and a
+    ``coordinator_fallback`` notice (subject ``coordinator``, detail the reason and the
+    task). The text is stored as written (DESIGN 14.3)."""
+    if task not in WRITE_TASKS:
+        raise ValueError(f"{task!r} is not one of {', '.join(WRITE_TASKS)}")
+    scripted = ScriptedCoordinator(track)
+    if coordinator is None:
+        return getattr(scripted, task)(argument), []
+    refused = _budget_reached(coordinator)
+    reason: str | None = "the day's token budget is reached" if refused else None
+    try:
+        text = getattr(coordinator, task)(argument)
+    except Exception as exc:  # noqa: BLE001 - any failure of the call is the scripted text
+        text, reason = None, f"the call raised {type(exc).__name__}"
+    events: list[HealthEvent] = []
+    take = getattr(coordinator, "take_events", None)
+    if take is not None:  # the Claude Code form's fallback and budget events
+        events.extend(take())
+    if not isinstance(text, str):
+        reason = reason or "the call returned no text"
+        text = None
+    if reason is not None:
+        events.append(HealthEvent(day, "notice", FALLBACK, SUBJECT,
+                                  {"reason": reason, "task": task}))
+        return getattr(scripted, task)(argument), events
+    return text, events
+
+
 # --- the Claude Code form (DESIGN 14.2, 14.3, 16.3; decisions 163, 165, 166) ---------------
 
 #: The environment variable that holds the coordinator's key (SPEC 17; I-13). Its value

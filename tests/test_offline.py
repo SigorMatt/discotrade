@@ -394,6 +394,12 @@ SUBPROCESS_FILES = {
         "the gh executable it is given (a fake written by the test in tests), without the "
         "withheld keys; git remote get-url on the local state directory "
         "(decision 2026-10-19-m22 178 (b), (d))",
+    "src/discotrade/daily.py":
+        "git push of the local state repository to its origin, GIT_ALLOW_PROTOCOL=file "
+        "(decision 2026-10-19-m22 180 (a))",
+    "tests/test_daily_digest.py":
+        "git on local paths (a bare origin), GIT_ALLOW_PROTOCOL=file; a fake gh and a fake "
+        "claude, Python programs the test writes that open no connection",
     "tests/test_digest.py":
         "git on local paths, GIT_ALLOW_PROTOCOL=file; a fake gh, a Python program the test "
         "writes that opens no connection",

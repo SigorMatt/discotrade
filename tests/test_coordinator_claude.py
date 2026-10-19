@@ -59,7 +59,8 @@ BUDGET_USD = 0.37
 CONFIG = REPO_ROOT / "config"
 
 #: The fake ``claude``. Modes: ``ok`` replies ``reply.json`` beside it; ``first``
-#: replies the first offered cell of the prompt with the brief ``BRIEF-MARK``;
+#: replies the first offered cell of the prompt with the brief ``BRIEF-MARK``, and to a
+#: prompt that offers no cell (a run log sentence) the text ``RUNLOG-MARK: ...``;
 #: ``exit3``, ``sleep``, ``garbage`` and ``grandchild`` (starts a sleeping
 #: grandchild, writes its pid to ``grandchild.pid``, then sleeps).
 FAKE = '''#!{python}
@@ -91,6 +92,11 @@ if mode == "exit3":
     sys.exit(3)
 if mode == "garbage":
     sys.stdout.write("not json at all")
+    sys.exit(0)
+if mode == "first" and "OFFERED CELLS (JSON):" not in stdin:
+    reply = {{"type": "result", "is_error": False, "result": "RUNLOG-MARK: a quiet day.",
+             "usage": {{"input_tokens": 4, "output_tokens": 2}}}}
+    sys.stdout.write(json.dumps(reply))
     sys.exit(0)
 if mode == "first":
     line = stdin.split("OFFERED CELLS (JSON):\\n", 1)[1].split("\\n", 1)[0]
@@ -608,7 +614,11 @@ def test_a_replay_with_the_claude_coordinator_runs_step_4_through_the_fake(tmp_p
                             "2019-07-16", "--provider", scripted, "--coordinator", "claude")
     assert status == 0, err
     seen = records(script)
-    assert len(seen) == 2  # one choose_cell call on each day
+    # Each day: one choose_cell call, then the run log sentence of a day with no fired
+    # entry (decision 2026-10-19-m22 179 (c), (d)).
+    assert len(seen) == 4
+    assert ["OFFERED CELLS (JSON):" in s["stdin"] for s in seen] == [True, False, True, False]
+    assert all("SUMMARY (JSON):" in s["stdin"] for s in seen[1::2])
     assert all(s["args"][-6:] == ["--permission-mode", "dontAsk", "--model", MODEL,
                                   "--tools", ""] for s in seen)
     rows = ledger.read(st, "test_synth", ledger.CALLS)
@@ -622,6 +632,10 @@ def test_a_replay_with_the_claude_coordinator_runs_step_4_through_the_fake(tmp_p
     kinds = [json.loads(line)["kind"] for line in
              health.read_text(encoding="utf-8").splitlines()] if health.exists() else []
     assert "coordinator_fallback" not in kinds and "token_budget" not in kinds
+    runlog = [json.loads(line) for line in (st / "runlog" / "test_synth.jsonl").read_text(
+        encoding="utf-8").splitlines()]
+    assert [(r["date"], r["mode"], r["line"], r["coordinator_tokens"]) for r in runlog] == \
+        [(d, "replay", "RUNLOG-MARK: a quiet day.", 15 + 6) for d in days]
     assert FAKE_KEY not in "".join(p.read_text(encoding="utf-8", errors="replace")
                                    for p in st.rglob("*") if p.is_file()
                                    and ".git" not in p.parts)

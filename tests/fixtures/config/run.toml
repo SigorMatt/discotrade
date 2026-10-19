@@ -38,3 +38,8 @@ propose_fixes = false      # DESIGN 14.4: fix sessions are off in v1
 binary = "gh"              # the gh executable, found on PATH
 timeout_seconds = 60       # after it the gh call's whole process group is killed
 labels = ["discotrade"]    # an issue's first labels; then finding or health, then its kind
+
+# The state repository's push (DESIGN 16.1 step 8, 16.2; decision 2026-10-19-m22 180 (a)).
+# The project's own choice, not a fact from outside it; the same value in both run.toml files.
+[state]
+push_timeout_seconds = 120   # after it the push of the day's commit to origin is push_failed

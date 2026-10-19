@@ -819,6 +819,7 @@ _WORKERS_KEYS = ("claude_fallback", "request_timeout_seconds")
 _COORDINATOR_KEYS = ("binary", "model", "max_turns", "max_budget_usd", "timeout_seconds",
                      "propose_fixes")
 _ISSUES_KEYS = ("binary", "timeout_seconds", "labels")
+_STATE_KEYS = ("push_timeout_seconds",)
 #: The container runtimes ``sandbox.runtime`` may name (DESIGN 12.4; decision 102 (a)).
 RUNTIMES = ("docker", "podman")
 #: An image repository name without a tag or digest (decision 102 (d), (e): the tag
@@ -890,6 +891,15 @@ class IssueSettings:
 
 
 @dataclass(frozen=True)
+class StateSettings:
+    """``[state]`` of ``run.toml`` (DESIGN 16.1 step 8, 16.2; decision 2026-10-19-m22
+    180 (a)): ``push_timeout_seconds``, after which the push of the state repository to
+    its ``origin`` is a ``push_failed`` notice."""
+
+    push_timeout_seconds: float
+
+
+@dataclass(frozen=True)
 class RunConfig:
     sandbox: SandboxSettings
     #: None when ``run.toml`` has no ``[workers]`` table: only the code that builds a
@@ -901,6 +911,9 @@ class RunConfig:
     #: None when ``run.toml`` has no ``[issues]`` table: only ``--issues gh`` and
     #: ``doctor --live issues`` need it (decision 178 (d), (e)).
     issues: IssueSettings | None = None
+    #: None when ``run.toml`` has no ``[state]`` table: only the push of a state
+    #: repository that has an ``origin`` needs it (decision 180 (a)).
+    state: StateSettings | None = None
 
 
 def load_run(config_dir: Path) -> RunConfig:
@@ -910,7 +923,8 @@ def load_run(config_dir: Path) -> RunConfig:
     if not path.is_file():
         raise ConfigError(f"{path}: no such file; a sandbox job takes its limits from "
                           f"{RUN_FILE} (DESIGN 3, 12.4)")
-    top = _Table(path, read_toml(path), "", ("sandbox", "workers", "coordinator", "issues"))
+    top = _Table(path, read_toml(path), "",
+                 ("sandbox", "workers", "coordinator", "issues", "state"))
     s = _Table(path, top.raw("sandbox"), "sandbox.", _SANDBOX_KEYS)
     workers = None
     if top.has("workers"):
@@ -938,7 +952,12 @@ def load_run(config_dir: Path) -> RunConfig:
             timeout_seconds=i.number("timeout_seconds", positive=True),
             labels=i.names("labels"),
         )
-    return RunConfig(workers=workers, coordinator=coordinator, issues=issues,
+    state = None
+    if top.has("state"):
+        t = _Table(path, top.raw("state"), "state.", _STATE_KEYS)
+        state = StateSettings(
+            push_timeout_seconds=t.number("push_timeout_seconds", positive=True))
+    return RunConfig(workers=workers, coordinator=coordinator, issues=issues, state=state,
                      sandbox=SandboxSettings(
         wall_seconds=s.number("wall_seconds", positive=True),
         cpu_seconds=s.number("cpu_seconds", positive=True),
