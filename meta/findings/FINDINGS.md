@@ -1016,3 +1016,26 @@ or that such records are refused by `paper.write`. U3 keeps U1's behaviour uncha
 Status: open
 D-013 times (appended 2026-10-19, mission 20 U6): at the pushed tip 78b5535 (U5's code 6833101, later commits meta only), with no uncommitted file but the git-ignored drafts, after `discotrade sandbox build` (discotrade-sandbox:3b7d75c39621, present, nothing built), three `./scripts/check` runs, each its own foreground call with a 20-minute timeout, all green (`2560 passed, 204 deselected`, 0 skipped, so the `container` tests ran) took 990 s, 988 s and 982 s wall (pytest 987.22 s, 985.47 s, 979.09 s); all three are above HF-006's 15 minutes and none passed the 20-minute timeout (no run moved to the background). Mission 20 U1's were 1168 s, 1196 s and 1317 s at 2470 tests; mission 20 added 102 tests to the check (2458 to 2560). Load average about 0.3 to 1.4 on 4 cores. No test was dropped or shortened. Status: open (decision 121 (c); decision 140; HF-006)
 HF-016 status (appended 2026-10-19, mission 20 close): the owner reported the cause as `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS`, an environment setting added to the builder role on 2026-10-18, not the hook; it was removed and the daemon restarted, after which `Agent` calls with `run_in_background: false` were admitted and U2 to U7 ran. This mission did not prove the cause. Status: answered (owner, 2026-10-18)
+
+### D-022 — decision 153 (b) 2's `p(N)` on the alert-rules panel is recomputed by the page, which decision 152 (a) forbids
+
+Severity: low · Component: `src/discotrade/dashboard.py` (`stats.tightened_percentile` on the alert-rules panel)
+and `src/discotrade/alerts.py` (`persistent_approach`'s state entry), with decisions 2026-10-17-m19 152 (a) and
+153 (b) 2 · Found: 2026-10-19, REVIEW-20 (blocker 1), recorded by mission 21 U0 (decision 169).
+
+Symptom. Decision 152 (a) says the dashboard reads the rules' figures from the alert state and never recomputes
+them (SPEC §13). Decision 153 (b) 2 asks the alert-rules panel to show, for `persistent_approach`, the base
+percentile, `p(N)` and the threshold at the current `N`. No state entry holds `N` or `p(N)`; the rule keeps them
+only in its payload (`alerts.py`). So the page computes `p(N)` itself from the trial count and the thresholds in
+force when it renders. If `alerts.persistent_base_percentile` or `alerts.false_alerts_per_year` gains a history
+entry after `D`, the page rendered later for `D` shows a `p(N)` the rule did not use on `D` (the defect class of
+D-018). Two decisions disagree, so this is a finding, not a choice made in the code.
+
+Direction (for the architect). Say which item gives way.
+
+Status: open
+D-022 status (appended 2026-10-19, mission 21 U0): Status: answered meta/decisions/decisions-2026-10-19-m21.md (item 169)
+HF-015 status (appended 2026-10-19, mission 21 U0): REVIEW-20 (note 8) saw the reviewer's sub-agents refused the lone `sleep 240` that decision 2026-10-18-m20 159 (d) prescribes; each waited with a foreground poll loop instead. Decision 2026-10-19-m21 176 now makes that poll call the wait. Status: open (meta/decisions/decisions-2026-10-19-m21.md item 175 (b))
+HF-012 status (appended 2026-10-19, mission 21 U0): REVIEW-20 (note 9) saw five sub-agents run at once on four cores push every check run past the 20-minute cap; the review protocol does not say how many run at once. Status: open (meta/decisions/decisions-2026-10-19-m21.md item 175 (b))
+HF-010 status (appended 2026-10-19, mission 21 U0): REVIEW-20 (note 10) still found `/tmp/rv13-8b9f9be` and `/tmp/u5/parent` registered as worktrees. Status: open (meta/decisions/decisions-2026-10-19-m21.md item 175 (b))
+D-013 times (appended 2026-10-19, mission 21 U0, from REVIEW-20 note 1): with five reviewer sub-agents running at once on 4 cores, four of the five `./scripts/check` runs passed the 20-minute cap and were killed in the background. One whole run at 9269ad7 gave `check: green`, `2513 passed, 204 deselected in 1119.24s`; the run at e8d31bb, re-run alone, gave `check: green`, `2504 passed, 204 deselected in 969.53s`, 973 s wall; at 431a82e, becb570 and 6833101 the suite was seen green only in two parts (a prefix of pytest with no F, E or s, then the rest in the foreground: 1182, 1077 and 345 passed, plus the smoke steps). Status: open (decision 121 (c); decision 140; HF-006)
