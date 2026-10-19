@@ -179,3 +179,62 @@ def test_the_cache_holds_one_store_and_clear_caches_empties_it(tmp_path):
         assert held and all(Path(p).is_relative_to(tmp_path / name) for p in held)
     assert "discotrade.bars.gaps._MONTH_MISSING" in state.clear_caches()
     assert gaps.cached_months() == []
+
+
+@pytest.mark.parametrize("second", [(4, 11, 18), (6, 13)], ids=["same-rows", "other-rows"])
+def test_a_rewritten_complete_month_gives_its_new_missing_bars(tmp_path, second):
+    """Decision 173 of meta/decisions/decisions-2026-10-19-m21.md (REVIEW-20
+    should-fix 4; decision 157 (a)): the key of ``_MONTH_MISSING`` changes with
+    the month file's content.
+
+    The writers cannot replace a complete month in place: ``BarStore.append``
+    refuses a bar not later than the last stored one (I-5), and ``recover``
+    only completes an interrupted append, also later than the indexed last bar.
+    So the test removes the track's store (its index and month files) and
+    writes the new content through ``BarStore.append`` again, under the same
+    store root: the month file and its index entry are both the writer's, at
+    the same path, with other bars missing from 2019-06 and, in the
+    ``same-rows`` case, the same row count and another hash; in the
+    ``other-rows`` case, another row count. No cache is cleared between the
+    two reads. The expected missing bars are computed here from the times
+    written. Nothing reads a clock; no random draw is made.
+    """
+    state.clear_caches()
+    cal = calendar("synth_week")
+    inst = SimpleNamespace(symbol="S", trusted_from=date(2019, 5, 1))
+    root = tmp_path / "state"
+    store = BarStore(root, "t", BAR)
+    every = tradingcal.expected_bars(cal, datetime(2019, 5, 20, tzinfo=UTC),
+                                     datetime(2019, 8, 10, tzinfo=UTC), BAR)
+    june = [t for t in every if (t.year, t.month) == (2019, 6)]
+
+    def write(dropped):
+        drop = {june[k] for k in dropped}
+        times = [t for t in every if t not in drop]
+        store.append("S", bars_at(times), FAR)
+        have = set(times)
+        return [t for t in tradingcal.expected_bars(cal, times[0], times[-1] + timedelta(seconds=1),
+                                                    BAR) if t not in have]
+
+    def june_entry():
+        return dict(store.index()["S"]["months"]["2019-06"])
+
+    want = write((3, 10, 17))
+    before = june_entry()
+    with day_run():
+        assert gaps.find_missing(store, inst, cal, BAR) == want
+    path = str(store.month_path("S", "2019-06"))
+    assert path in gaps.cached_months()                  # June is complete and kept
+
+    store_dir = root / "bars" / "t"
+    for f in sorted(store_dir.rglob("*.parquet")):
+        f.unlink()
+    store.index_path.unlink()
+    want_again = write(second)
+    after = june_entry()
+    assert after["hash"] != before["hash"]
+    assert (after["rows"] == before["rows"]) == (len(second) == 3)
+    assert [t for t in want_again if t.month == 6] != [t for t in want if t.month == 6]
+    assert path in gaps.cached_months()                  # nothing was cleared
+    with day_run():
+        assert gaps.find_missing(store, inst, cal, BAR) == want_again
