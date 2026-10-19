@@ -29,5 +29,5 @@ Left items:
 - [x] U3 Step 7 and the rest without growth; the ratio at most 1.25 (O-26 items 2, 4; decisions 157, 158; DESIGN §15.5, §16.1). `dashboard:` commit (or the area that took most). G1.3 and the four figures. — e8d31bb (`bars:`; G1.3 PASS 625 s; ratio commit 1.234/1.246 at low load, above 1.25 under load >=2.6; D-021 filed; check 3/3 1459, 1356, 1198 s; 157 (d)/(e) equal)
 - [x] U4 REVIEW-19 should-fix 1 and 2 (decisions 160, 161; D-018; DESIGN §15.3, §15.5). `alerts:` commit. G1.3 and the four figures. — 9269ad7 (G1.3 PASS 534 s; ratio 1.177; check 3/3 1044, 1128, 1101 s)
 - [x] U5 The Claude Code coordinator, its budget, the process group, `config/protected_paths.toml` and the deny rules (decisions 163-166; DESIGN §14.1-§14.4, §16.3, §19.3 L4; SPEC §17). `coordinator:` commit. G1.3 and the four figures. — 6833101 (G1.3 PASS 462 s; ratio 1.190; check 3/3 1111, 1073, 989 s)
-- [ ] U6 The regression gates at the pushed tip (O-2, O-25, O-27; decision 155 (a); DESIGN §18.2). `meta:` commit (one D-013 times line).
+- [x] U6 The regression gates at the pushed tip (O-2, O-25, O-27; decision 155 (a); DESIGN §18.2). `meta:` commit (one D-013 times line). — 2a614bd (all gates PASS at 78b5535; G1.3 458 s; ratio 1.166; check 990, 988, 982 s)
 - [ ] U7 The final report (decisions 155-167; O-26, O-27; DESIGN §18.2). `meta/FINAL-REPORT-20.md`.

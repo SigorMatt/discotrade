@@ -34,9 +34,12 @@ process-group kill; 48 tests; fixture run.toml [coordinator] table only (163 (b)
 PASS 462 s; speed 0.027775/0.033040/1.190/5.784 s, load 1.1-1.3; no finding. Report: test_cli_provider's unknown
 coordinator test passes only with ANTHROPIC_API_KEY unset; token count omits cache fields).
 
-In progress: U6 — the regression gates at the pushed tip 6833101 (decision 155 (a)). Done means: check 3x green with
-wall times; sandbox build tag; gate M1 G1.1-G1.4 each PASS within 15 min, gate M3/M2/M0 PASS; speed at the tip; all
-outputs verbatim with wall times and HEAD saved under meta/drafts/; `meta:` commit with one D-013 times line.
+U6 2a614bd (gates at tip 78b5535: check 3/3 990, 988, 982 s; sandbox discotrade-sandbox:3b7d75c39621; G1.1 PASS 279 s,
+G1.2 PASS 170 s, G1.3 PASS 458 s, G1.4 PASS 1 s, M3 PASS 506 s, M2 PASS 130 s, M0 PASS 244 s; speed
+0.027561/0.032145/1.166/5.493 s, load 1.1-1.5; outputs meta/drafts/m20-*.txt; D-013 times line; no finding).
+
+In progress: U7 — meta/FINAL-REPORT-20.md (drafted under meta/drafts/, moved in by its commit). Done means: report
+with every section the brief's U7 lists, committed and pushed; plan and checkpoint closed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-26, O-27 win, then O-25 and earlier owner
 items, then decisions 155-167, then 1-154 where not replaced. Speed units U1-U3 change no test's assertion, nothing

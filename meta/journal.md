@@ -189,3 +189,4 @@
 - 2026-10-19 mission 20 U3 done e8d31bb (bars:): G1.3 PASS 625 s; ratio 1.234 and 1.246 at low load, above 1.25 under load; D-021 filed; check 3/3 1459, 1356, 1198 s; U4 started.
 - 2026-10-19 mission 20 U4 done 9269ad7: p in the rank_persistence entry, page reads it, fail_window; G1.3 PASS 534 s; ratio 1.177; check 3/3 1044, 1128, 1101 s; U5 started.
 - 2026-10-19 mission 20 U5 done 6833101: ClaudeCodeCoordinator (claude 2.1.303), deny rules, protected_paths.toml, process-group kill; G1.3 PASS 462 s; ratio 1.190; check 3/3 1111, 1073, 989 s; U6 started.
+- 2026-10-19 mission 20 U6 done 2a614bd: at 78b5535 check 3/3, G1.1-G1.4 PASS (G1.3 458 s), gate M3, M2, M0 PASS; ratio 1.166; U7 started.
