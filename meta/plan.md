@@ -26,7 +26,7 @@ Left items:
 - [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (D-013 times, HF-010, HF-012 lines; decision 187 (b)).
 - [x] U1 (41accb7) The digest module and the issue sinks (decision 178; decision 179 (a), (b) as functions; DESIGN 15.4, 19.3 L6; I-8, I-11, I-13). `digest:` commit.
 - [x] U2 (b614465) The digest, the run log and step 8 in the day (decisions 179, 180; DESIGN 15.4, 16.1 steps 7 and 8, 16.2, 14.3). `daily:` commit. G1.3 and decision 170's three measurements at the commit.
-- [ ] U3 Step 1 staged (decision 181; DESIGN 16.2, 5.2, 5.4, 5.6). `daily:` commit. G1.3 and the three measurements.
+- [x] U3 (2ae5c04) Step 1 staged (decision 181; DESIGN 16.2, 5.2, 5.4, 5.6). `daily:` commit. G1.3 and the three measurements.
 - [ ] U4 The retry, `run_failed` and the catch-up (decisions 182, 183; DESIGN 16.1, 16.2, 15.2; SPEC §11). `daily:` commit. G1.3 and the three measurements.
 - [ ] U5 The weekly recomputation, the `no_finding` call and the live defaults of `run-day` (decisions 184, 185, 186; DESIGN 9.4, 15.2, 16.1 step 6). `daily:` commit. G1.3 and the three measurements.
 - [ ] U6 The regression gates at the pushed tip (O-2, O-25, O-27; decisions 177 (a), 170; DESIGN §18.2). `meta:` commit (one D-013 times line).
