@@ -44,6 +44,12 @@ fixture copies it with :func:`copy_template` into its own temporary directory,
 so that a test writing into its module's state never reaches the template or
 another module's copy.
 
+No test sees a secret of the environment it runs in (I-11, I-13; decision 171
+(c) of meta/decisions/decisions-2026-10-19-m21.md): an autouse fixture removes,
+for every test, each variable :func:`secret_env` names, which it finds by the
+constants of the modules under ``src/discotrade/`` that read a secret. A test
+that needs a key sets a dummy one itself with ``monkeypatch``.
+
 The synthetic source keeps what it generates for the life of the process
 (decision 121 of meta/decisions/decisions-2026-10-16-m15.md); an autouse fixture
 clears it before every test, so that a test starts as a new process would.
@@ -260,6 +266,26 @@ RAN_AS_OF = "2019-06-26T00:00:00+00:00"
 RAN_ADMITTED = date(2019, 6, 7)
 RAN_DAYS = tuple(date(2019, 6, 8 + k) for k in range(5))
 RAN_FILES = ("trend_ma.py", "hour_of_day.py")
+
+
+def secret_env() -> tuple[str, ...]:
+    """Every environment variable from which a module under ``src/discotrade/`` reads
+    a secret, by the constants that name them: ``coordinator.KEY_ENV``,
+    ``workers.providers.KEY_ENV`` (and ``WITHHELD_ENV``, the keys a child is not
+    given) and ``sources.vendor.KEY_ENV``."""
+    from discotrade import coordinator
+    from discotrade.sources import vendor
+    from discotrade.workers import providers
+
+    return tuple(sorted({coordinator.KEY_ENV, providers.KEY_ENV, *providers.WITHHELD_ENV,
+                         vendor.KEY_ENV}))
+
+
+@pytest.fixture(autouse=True)
+def _no_secret_env(monkeypatch):
+    """Every test runs without the environment's secrets (decision 171 (c))."""
+    for name in secret_env():
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(autouse=True)

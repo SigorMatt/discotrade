@@ -369,9 +369,53 @@ def test_an_unknown_provider_is_a_usage_error(state, config, value):
     assert files(state) == before
 
 
-def test_an_unknown_coordinator_is_a_usage_error(state, config):
+@pytest.mark.parametrize("value", ["bogus", "Claude", "scripted:"])
+def test_an_unknown_coordinator_is_a_usage_error(state, config, value):
+    """Each value is really unknown (decision 2026-10-19-m21 171 (a)): ``claude`` is a
+    known coordinator since step S4.2, so it is not one of them."""
     before = files(state)
-    for command, (got, _, err) in both(state, config, "--coordinator", "claude").items():
+    for command, (got, _, err) in both(state, config, "--coordinator", value).items():
         assert got == 2, (command, err)
         assert "--coordinator" in err
     assert files(state) == before
+
+
+def test_coordinator_claude_with_no_claude_on_path_resolves_none(state, config, monkeypatch,
+                                                                 tmp_path):
+    """Decision 2026-10-18-m20 163 (e), held whatever the environment holds (decision
+    2026-10-19-m21 171 (b)): a dummy key set here, the fixture's ``binary = "claude"``
+    and ``PATH`` an empty temporary directory. Each command is refused before any day
+    with one line and exit 1, no file changes, every ``shutil.which`` made returns
+    None, and no ``ClaudeCodeCoordinator`` is built."""
+    from discotrade import coordinator as coord
+
+    empty = tmp_path / "empty-path"
+    empty.mkdir()
+    monkeypatch.setenv(coord.KEY_ENV, "sk-test-not-a-key")
+    monkeypatch.setenv("PATH", str(empty))
+    real_which = shutil.which
+    resolved = []
+
+    def which(name, *args, **kw):
+        got = real_which(name, *args, **kw)
+        resolved.append((name, got))
+        return got
+
+    def built(*args, **kw):
+        pytest.fail("a ClaudeCodeCoordinator was built")
+
+    monkeypatch.setattr(shutil, "which", which)
+    monkeypatch.setattr(coord, "ClaudeCodeCoordinator", built)
+    assert load_run_binary(config) == "claude"
+    before = files(state)
+    results = both(state, config, "--coordinator", "claude")
+    assert_refused(results, state, before, 1, "not found on PATH")
+    for command, (_, _, err) in results.items():
+        assert "sk-test-not-a-key" not in err, command
+    assert resolved == [("claude", None)] * 2
+
+
+def load_run_binary(config) -> str:
+    from discotrade.config import load_run
+
+    return load_run(Path(config)).coordinator.binary
