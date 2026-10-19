@@ -333,7 +333,9 @@ def adjusted_deflated(state_dir: Path, setup: Any, subject: str, days: Sequence[
     ``hbar_i`` the summed ``position`` of its position rows dated in ``days``,
     in frame order, over their summed ``rows`` (0 with none), as ``paper.hbar``;
     the unit records of those days; and O-4's one subtraction,
-    ``paper.less_exposure``. Its Sharpe and the moments are those of
+    ``paper.less_exposure``, taken for every slot holding one row per day at
+    once, element by element (``paper.less_exposure_rows``). Its Sharpe and the
+    moments are those of
     ``stats.control_moments`` (``stats.moments``). The same numbers in the same
     order go through the same operations, so every figure is the same."""
     span = sorted(set(days))
@@ -366,7 +368,7 @@ def adjusted_deflated(state_dir: Path, setup: Any, subject: str, days: Sequence[
         symbols = sorted(inst.symbol for inst in setup.instruments)
         width = len(setup.instruments)
         returns: dict[tuple[str, date], float] | None = None
-        sharpes = []
+        chosen: list[tuple[pd.DataFrame, dict[str, float]]] = []
         slots = near[near["kind"] == stats.CONTROL_RANDOM]
         for slot, mine in slots.groupby("subject", sort=True):
             if not span or set(mine["date"]) != wanted:
@@ -387,9 +389,30 @@ def adjusted_deflated(state_dir: Path, setup: Any, subject: str, days: Sequence[
                 rows, held = leg.get(symbol, _NO_ROWS)
                 count, total = int(rows.sum()), float(held.sum())
                 average[symbol] = total / count if count else 0.0
-            values = paper.less_exposure(zip(mine["date"], mine["net_1x"], strict=True),
-                                         symbols, average, returns, width)
-            figure = sharpe(pd.Series(values, dtype=np.float64))
+            chosen.append((mine, average))
+        # O-4's subtraction for every slot holding one row per day of ``span`` at
+        # once (paper.less_exposure_rows, element by element as the scalar loop);
+        # a slot holding two rows of one date takes paper.less_exposure itself.
+        batch = [k for k, (mine, _) in enumerate(chosen) if len(mine) == len(span)]
+        whole: dict[int, np.ndarray] = {}
+        if batch and returns is not None:
+            unit_returns = np.array([[returns.get((s, d), 0.0) for d in span] for s in symbols],
+                                    dtype=np.float64).reshape(len(symbols), len(span))
+            values_of = np.vstack([chosen[k][0]["net_1x"].to_numpy(dtype=np.float64)
+                                   for k in batch])
+            averages = np.array([[chosen[k][1][s] for s in symbols] for k in batch],
+                                dtype=np.float64).reshape(len(batch), len(symbols))
+            adjusted = paper.less_exposure_rows(values_of, averages, unit_returns, width)
+            whole = {k: adjusted[i].copy() for i, k in enumerate(batch)}
+        sharpes = []
+        for k, (mine, average) in enumerate(chosen):
+            if k in whole:
+                series = pd.Series(whole[k], dtype=np.float64)
+            else:
+                series = pd.Series(paper.less_exposure(
+                    zip(mine["date"], mine["net_1x"], strict=True), symbols, average,
+                    returns or {}, width), dtype=np.float64)
+            figure = sharpe(series)
             if not math.isnan(figure):
                 sharpes.append(figure)
         mu_c, sd_c = stats.moments(sharpes)

@@ -994,3 +994,23 @@ growth above, or say what tolerance or change to their arithmetic would allow a 
 same question as D-019).
 
 Status: open
+
+### D-021 — the table's `adjusted_E_N` with exposure differs from the plain recompute for a slot holding two paper rows of one date
+
+Severity: low · Component: `src/discotrade/table.py` (`adjusted_deflated`, mission 20 U1) against
+`stats.control_moments` · Found: 2026-10-18, mission 20 U3.
+
+Symptom. With `exposure` passed (the day loop's path since U1), `adjusted_deflated` takes each random
+slot's Sharpe over every paper row of the slot dated in the approach's days. Without it (the code before
+U1), the slots' adjusted series go through `stats.control_moments`, which keys each slot's rows by date
+(`dict(zip(date, value))`) and so keeps only the last row of a date. For a slot holding two rows of one
+date the two give different `adjusted_E_N` and `adjusted_excess`: on `tests/test_alerts_cache.py`'s
+records with `twice="rc:5"`, `adjusted_E_N` 5.633798887810674 with exposure against 5.728584698177056
+without (N 2), at d67f708 already. With one row per slot and date, as every record the day loop writes
+holds and as the full G1.3 replay shows (157 (d), (e) of U1 to U3), the two are equal bit for bit
+(`tests/test_table_slots.py`).
+
+Direction (for the owner or the role). Say which reading holds for a subject with two rows of one date,
+or that such records are refused by `paper.write`. U3 keeps U1's behaviour unchanged and asserts it.
+
+Status: open

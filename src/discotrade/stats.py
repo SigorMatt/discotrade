@@ -13,7 +13,9 @@ Rank persistence (11.1, decision 59):
 - ``trading_dates(calendars, bar_seconds, first, last)``: the union of the
   trading dates in ``[first, last]`` of the given calendars (one per
   instrument of the subject), a date counting for a calendar when it expects
-  a bar in it, as the daily run's ``is_trading_day`` counts it.
+  a bar in it, as the daily run's ``is_trading_day`` counts it. A calendar's
+  verdict on a date is kept per calendar record and bar size in the process
+  (``_OPEN_DAYS``, registered with ``state.clear_caches``).
 - ``rank_persistence(paper, subjects, *, epoch, block_days, bar_seconds, k,
   min_population, column="net_1x")``: decision 59's row for block ``k >= 1``. ``subjects``
   maps each candidate subject to its own instruments' calendars; a candidate
@@ -97,6 +99,7 @@ from discotrade.bars.gaps import day_end
 from discotrade.bars.store import write_atomic
 from discotrade.config import Calendar
 from discotrade.metrics import sharpe
+from discotrade.state import register_cache
 from discotrade.tradingcal import expected_bars
 
 #: The Euler-Mascheroni constant of the E(N) formula (decision 60).
@@ -118,17 +121,47 @@ def block_dates(epoch: date, block_days: int, k: int) -> tuple[date, date]:
     return first, first + timedelta(days=block_days - 1)
 
 
+#: Per (calendar record, bar size): each date already decided, to whether the
+#: calendar expects a bar in it (decision 2026-10-18-m20 157 (a)). The key is
+#: the whole record, closures included, so a changed record is decided again.
+_OPEN_DAYS: dict[tuple[Calendar, int], dict[date, bool]] = {}
+#: The most calendar records ``_OPEN_DAYS`` holds; one more empties it first.
+OPEN_DAYS_CALENDARS = 16
+
+
+def _clear_open_days() -> None:
+    _OPEN_DAYS.clear()
+
+
+register_cache("discotrade.stats._OPEN_DAYS", _clear_open_days)
+
+
+def _opens(cal: Calendar, bar_seconds: int) -> dict[date, bool]:
+    key = (cal, bar_seconds)
+    held = _OPEN_DAYS.get(key)
+    if held is None:
+        if len(_OPEN_DAYS) >= OPEN_DAYS_CALENDARS:
+            _OPEN_DAYS.clear()
+        held = _OPEN_DAYS[key] = {}
+    return held
+
+
 def trading_dates(calendars: Iterable[Calendar], bar_seconds: int, first: date,
                   last: date) -> list[date]:
-    """The sorted union of the calendars' trading dates in ``[first, last]``."""
+    """The sorted union of the calendars' trading dates in ``[first, last]``.
+    Each calendar's verdict on a date is decided once per process and kept in
+    ``_OPEN_DAYS``."""
     cals = {cal.name: cal for cal in calendars}
+    opens = [(cals[name], _opens(cals[name], bar_seconds)) for name in sorted(cals)]
     out = []
     d = first
     while d <= last:
-        for name in sorted(cals):
-            cal = cals[name]
-            if expected_bars(cal, day_end(cal, d - timedelta(days=1)), day_end(cal, d),
-                             bar_seconds):
+        for cal, held in opens:
+            verdict = held.get(d)
+            if verdict is None:
+                verdict = held[d] = bool(expected_bars(
+                    cal, day_end(cal, d - timedelta(days=1)), day_end(cal, d), bar_seconds))
+            if verdict:
                 out.append(d)
                 break
         d += timedelta(days=1)

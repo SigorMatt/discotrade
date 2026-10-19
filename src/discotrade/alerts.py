@@ -443,19 +443,6 @@ def _within(values: np.ndarray, sorted_unique: np.ndarray) -> np.ndarray:
     return sorted_unique[at] == values
 
 
-def _less_exposure_rows(values: np.ndarray, average: np.ndarray, unit: np.ndarray,
-                        n: int) -> np.ndarray:
-    """``paper.less_exposure`` of every row of ``values`` at once: row ``r``, day
-    ``t`` is ``values[r, t]`` less the sum over the symbols, in their order,
-    starting from 0.0, of ``average[r, s] * unit[s, t]`` (``unit`` 0.0 where the
-    records hold none), divided by ``n``. Each element goes through the same
-    IEEE operations in the same order as the scalar loop, so each is the same."""
-    total = np.zeros(values.shape, dtype=np.float64)
-    for s in range(unit.shape[0]):
-        total = total + average[:, s:s + 1] * unit[s:s + 1, :]
-    return values - total / n
-
-
 def slot_series(state_dir: Path, setup: journal.Setup, days: Iterable[date],
                 records: pd.DataFrame, *, overlay: Path | None = None,
                 exposure: tuple[pd.DataFrame, pd.DataFrame] | None = None,
@@ -474,7 +461,7 @@ def slot_series(state_dir: Path, setup: journal.Setup, days: Iterable[date],
     their summed ``rows`` (0 with none), as ``paper.hbar``; the unit return of
     each instrument and day the unit records hold; and O-4's one subtraction,
     ``paper.less_exposure``'s, taken for every slot and day at once element by
-    element (``_less_exposure_rows``). The same numbers go through the same
+    element (``paper.less_exposure_rows``). The same numbers go through the same
     operations in the same order, so each series is the same. Where a frame holds a value of
     another type than its records hold (a ``date`` column with a value that is
     not a ``datetime.date``, a text column with one that is not a ``str``), or a
@@ -526,7 +513,7 @@ def slot_series(state_dir: Path, setup: journal.Setup, days: Iterable[date],
                     count, summed = int(rows[inside].sum()), float(held[inside].sum())
                     average[i, j] = summed / count if count else 0.0
             values = np.vstack([v for _, v in chosen]).astype(np.float64)
-            adjusted = _less_exposure_rows(values, average, unit, width)
+            adjusted = paper.less_exposure_rows(values, average, unit, width)
             out: dict[str, pd.Series] = {}
             index: Any = list(span)
             for i, (slot, _) in enumerate(chosen):

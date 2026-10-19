@@ -33,7 +33,9 @@ D1, D2 = date(2019, 6, 3), date(2019, 6, 4)
 CACHES = {"discotrade.sources.synth._SERIES", "discotrade.journal._DIGESTS",
           "discotrade.bars.store._RUN", "discotrade.table._DAY_SUMS",
           "discotrade.table._EXPOSURE", "discotrade.dashboard._t_critical",
-          "discotrade.alerts._SPLITS"}
+          "discotrade.alerts._SPLITS", "discotrade.bars.store._CARRIED",
+          "discotrade.stats._OPEN_DAYS", "discotrade.bars.gaps._MONTH_MISSING",
+          "discotrade.rolls._MONTH_CONTRACTS"}
 
 
 def write_exposure(root: Path, position: float) -> tuple[Path, Path]:

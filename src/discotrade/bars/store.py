@@ -61,11 +61,22 @@ appended file is read and checked again. The kept frames are dropped when the
 day run ends, so a file changed after it was verified is refused by the next
 day run's first read of it. Nothing is written for this; outside a day run
 every read checks its file as before.
+
+Across the day runs of one process (decision 2026-10-18-m20 157 (a), O-26),
+a frame that matched its index entry is also kept in ``_CARRIED`` with the
+length and sha256 of the bytes it was parsed from, for one store at a time.
+A later day run's first read of the file reads its bytes again: the same bytes
+under the same entry are served the kept frame, whose content hash matched
+that entry, without parsing and hashing the content again; any other bytes
+are parsed from what was read and checked against the index as above, so a
+changed file, of any length, is still refused (80 (b)).
 """
 
 from __future__ import annotations
 
 import contextlib
+import hashlib
+import io
 import json
 import os
 from collections.abc import Callable, Iterator
@@ -116,9 +127,57 @@ def _clear_run() -> None:
 
 register_cache("discotrade.bars.store._RUN", _clear_run)
 
+#: The month frames that matched their index entry in an earlier day run of the
+#: process, keyed as ``_RUN`` is, each with the length and sha256 of the bytes
+#: it was parsed from (decision 2026-10-18-m20 157 (a)); for one store (state
+#: directory and track) at a time, whose root ``_CARRIED_ROOT`` holds. A day
+#: run reads the file's bytes again and is served the frame only when they are
+#: the same bytes (decision 2026-10-14 80 (b)).
+_CARRIED: dict[tuple[str, int, str], tuple[tuple[int, str], pd.DataFrame]] = {}
+_CARRIED_ROOT: list[str] = []
+
+
+def _clear_carried() -> None:
+    _CARRIED.clear()
+    _CARRIED_ROOT.clear()
+
+
+register_cache("discotrade.bars.store._CARRIED", _clear_carried)
+
+
+def carried_files() -> list[str]:
+    """The paths of the month files ``_CARRIED`` holds, sorted."""
+    return sorted({key[0] for key in _CARRIED})
+
 
 def _run_key(path: Path, entry: dict[str, Any]) -> tuple[str, int, str]:
     return (os.path.abspath(path), int(entry["rows"]), str(entry["hash"]))
+
+
+def _carried_read(root: Path, path: Path, key: tuple[str, int, str]
+                  ) -> tuple[pd.DataFrame, tuple[int, str] | None]:
+    """Inside a day run, the month file at ``path`` under the index entry of
+    ``key``: its frame parsed from its bytes, or the frame kept in ``_CARRIED``
+    when the bytes are those it was parsed from, with the identity of the
+    bytes when it is not the kept frame (None when it is: it matched
+    before)."""
+    data = path.read_bytes()
+    ident = (len(data), hashlib.sha256(data).hexdigest())
+    mine = os.path.abspath(root)
+    if _CARRIED_ROOT != [mine]:
+        _clear_carried()
+        _CARRIED_ROOT.append(mine)
+    held = _CARRIED.get(key)
+    if held is not None and held[0] == ident:
+        return held[1], None
+    return pd.read_parquet(io.BytesIO(data)), ident
+
+
+def _carry(key: tuple[str, int, str], ident: tuple[int, str] | None,
+           frame: pd.DataFrame) -> None:
+    """Keep ``frame``, which has just matched its index entry, for later day runs."""
+    if ident is not None:
+        _CARRIED[key] = (ident, frame)
 
 
 def _iso(ts: pd.Timestamp) -> str:
@@ -300,11 +359,17 @@ class BarStore:
             if run is not None and key in run:
                 verified[month] = (listed["hash"], run[key])  # verified in this day run
                 continue
-            frame = pd.read_parquet(path)
-            if listed is not None and self._matches(frame, listed):
+            ident: tuple[int, str] | None = None
+            if key is not None:
+                frame, ident = _carried_read(self.root, path, key)
+            else:
+                frame = pd.read_parquet(path)
+            if listed is not None and (key is not None and ident is None
+                                       or self._matches(frame, listed)):
                 verified[month] = (listed["hash"], frame)
                 if run is not None and key is not None:
                     run[key] = frame
+                    _carry(key, ident, frame)
                 continue
             if not self._interrupted(frame, listed, last):
                 raise BarStoreError(self._revised(symbol, month))
@@ -369,7 +434,14 @@ class BarStore:
             return run[key]                   # verified in this day run
         if not path.exists():
             raise BarStoreError(f"{symbol} {month}: month file missing, listed in the index")
-        frame = pd.read_parquet(path)
+        ident: tuple[int, str] | None = None
+        if run is not None:
+            frame, ident = _carried_read(self.root, path, key)
+            if ident is None:                 # the bytes verified in an earlier day run
+                run[key] = frame
+                return frame
+        else:
+            frame = pd.read_parquet(path)
         if not self._matches(frame, entry):
             last = self._indexed_last_ts(symbol)
             if self._interrupted(frame, entry, last):
@@ -380,6 +452,7 @@ class BarStore:
             raise BarStoreError(self._revised(symbol, month))
         if run is not None:
             run[key] = frame
+            _carry(key, ident, frame)
         return frame
 
     def _months(self, symbol: str) -> dict[str, Any]:
@@ -534,3 +607,19 @@ class BarStore:
         index[symbol] = entry
         self._write_index(index)
         return len(new)
+
+
+def month_frames(store: BarStore, symbol: str, start: datetime | pd.Timestamp,
+                 end: datetime | pd.Timestamp
+                 ) -> list[tuple[str, dict[str, Any], pd.DataFrame]]:
+    """Each month file of ``symbol`` that ``store.read_range(symbol, start, end)``
+    reads, in month order: its month, index entry and whole frame, each read
+    and verified as ``read_range`` reads and verifies it (refusing an unlisted
+    or mismatched file)."""
+    lo, hi = _utc(start, "start"), _utc(end, "end")
+    out = []
+    for month, entry in sorted(store._months(symbol).items()):
+        if pd.Timestamp(entry["last_ts"]) < lo or pd.Timestamp(entry["first_ts"]) >= hi:
+            continue
+        out.append((month, entry, store._read_month(symbol, month, entry)))
+    return out

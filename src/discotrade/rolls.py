@@ -42,11 +42,20 @@ later of ``start`` and it.
 entry to have no stored bar only when its directory holds no month file;
 otherwise they refuse with the reader's error, interrupted append or revised
 data point (decision 2026-10-12 35).
+
+``update_rolls`` reads the scan's month files through the store first, each
+verified as ``read_range`` verifies it; when every bar of the scan holds one
+contract it finds no roll without building the scan's frame. The distinct
+contracts of each month file lying wholly inside a scan are kept in
+``_MONTH_CONTRACTS`` for the process (decision 2026-10-18-m20 157 (a), O-26),
+keyed by the file's path and index entry (row count and content hash), for one
+store at a time; otherwise the scan runs as before.
 """
 
 from __future__ import annotations
 
 import json
+import os
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, time
@@ -56,10 +65,10 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from discotrade.bars.store import BarStore, BarStoreError, write_atomic
+from discotrade.bars.store import BarStore, BarStoreError, month_frames, write_atomic
 from discotrade.config import Instrument
 from discotrade.sources.base import BarSource
-from discotrade.state import HealthEvent
+from discotrade.state import HealthEvent, register_cache
 
 ROLLS_DIR = "rolls"
 ROLL_GAP_ESTIMATED = "roll_gap_estimated"
@@ -149,6 +158,51 @@ def _measure(source: BarSource, instrument: Instrument, old: str, new: str,
     return float(last["close_new"] - last["close_old"]), _stamp(last["ts"])
 
 
+#: The distinct contracts of each month file that lay wholly inside a roll scan,
+#: keyed by (path, index rows, index hash).
+_MONTH_CONTRACTS: dict[tuple[str, int, str], frozenset[str]] = {}
+_MONTH_CONTRACTS_ROOT: list[str] = []
+
+
+def _clear_month_contracts() -> None:
+    _MONTH_CONTRACTS.clear()
+    _MONTH_CONTRACTS_ROOT.clear()
+
+
+register_cache("discotrade.rolls._MONTH_CONTRACTS", _clear_month_contracts)
+
+
+def cached_months() -> list[str]:
+    """The month file paths ``_MONTH_CONTRACTS`` holds, sorted."""
+    return sorted({key[0] for key in _MONTH_CONTRACTS})
+
+
+def _one_contract(store: BarStore, symbol: str, first: pd.Timestamp,
+                  end: pd.Timestamp) -> bool:
+    """Whether the stored bars of ``symbol`` in [first, end), which
+    ``store.read_range`` would give, hold at most one contract; each month
+    file read and verified as ``read_range`` reads it."""
+    root = os.path.abspath(store.root)
+    if _MONTH_CONTRACTS_ROOT != [root]:
+        _clear_month_contracts()
+        _MONTH_CONTRACTS_ROOT.append(root)
+    seen: set[str] = set()
+    for month, entry, frame in month_frames(store, symbol, first, end):
+        if pd.Timestamp(entry["first_ts"]) >= first and pd.Timestamp(entry["last_ts"]) < end:
+            key = (os.path.abspath(store.month_path(symbol, month)), int(entry["rows"]),
+                   str(entry["hash"]))
+            held = _MONTH_CONTRACTS.get(key)
+            if held is None:
+                held = _MONTH_CONTRACTS[key] = frozenset(frame["contract"].tolist())
+        else:
+            ts = frame["ts"]
+            held = frozenset(frame["contract"][(ts >= first) & (ts < end)].tolist())
+        seen |= held
+        if len(seen) > 1:
+            return False
+    return True
+
+
 def update_rolls(state_dir: Path, track: str, bar_seconds: int, instrument: Instrument,
                  source: BarSource, day: date) -> tuple[tuple[Roll, ...], tuple[HealthEvent, ...]]:
     """Record the rolls of ``instrument`` found in its stored bars since the
@@ -165,6 +219,8 @@ def update_rolls(state_dir: Path, track: str, bar_seconds: int, instrument: Inst
     first = max(_stamp(entry["first_ts"]) if not recorded else recorded[-1].ts, trusted)
     last = _stamp(entry["last_ts"])
     if last < first:
+        return (), ()
+    if _one_contract(store, symbol, first, last + pd.Timedelta(seconds=bar_seconds)):
         return (), ()
     bars = store.read_range(symbol, first, last + pd.Timedelta(seconds=bar_seconds))
     contracts = bars["contract"].tolist()

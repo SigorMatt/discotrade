@@ -518,7 +518,18 @@ def clear_caches() -> list[str]:
       dashboard's rank panel;
     - ``discotrade.alerts._SPLITS``: step 6's paper, unit and position records
       split per subject, per role keyed by the content of the columns it reads
-      (decision 157 (a)).
+      (decision 157 (a));
+    - ``discotrade.bars.store._CARRIED``: the bar month frames verified in an
+      earlier day run, keyed by path and index entry, served only to the same
+      bytes (length and sha256; decision 157 (a));
+    - ``discotrade.stats._OPEN_DAYS``: per calendar record and bar size, whether
+      the calendar expects a bar on each date already decided;
+    - ``discotrade.bars.gaps._MONTH_MISSING``: the gap check's missing bars of
+      each complete month, keyed by the month file's path and index entry, the
+      calendar record, the bar size and the lower bound;
+    - ``discotrade.rolls._MONTH_CONTRACTS``: the distinct contracts of each
+      month file that lay wholly inside a roll scan, keyed by its path and index
+      entry.
     """
     for name in sorted(_CACHES):
         _CACHES[name]()

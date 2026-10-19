@@ -676,6 +676,21 @@ def less_exposure(values: Iterable[tuple[date, Any]], symbols: Sequence[str],
     return _less_exposure(values, symbols, average, unit, n)
 
 
+def less_exposure_rows(values: np.ndarray, average: np.ndarray, unit: np.ndarray,
+                       n: int) -> np.ndarray:
+    """``less_exposure`` of every row of ``values`` at once, for a caller holding
+    many series over the same days (the random slots of step 6 and of the
+    table; decision 2026-10-18-m20 158): row ``r``, day ``t`` is ``values[r, t]``
+    less the sum over the symbols, in their order, starting from 0.0, of
+    ``average[r, s] * unit[s, t]`` (``unit`` 0.0 where the records hold none),
+    divided by ``n``. Each element goes through the same IEEE operations in the
+    same order as ``_less_exposure``'s scalar loop, so each is the same."""
+    total = np.zeros(values.shape, dtype=np.float64)
+    for s in range(unit.shape[0]):
+        total = total + average[:, s:s + 1] * unit[s:s + 1, :]
+    return values - total / n
+
+
 def window_positions(evaluations: Sequence[backtest.Evaluation]) -> dict[str, float]:
     """``hbar_i(W)`` of each evaluation's instrument: the mean of its rows' ``h``
     over its window bars, 0 with none (decision 2026-10-14-m12 97 (b))."""
