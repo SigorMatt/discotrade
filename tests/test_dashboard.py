@@ -24,7 +24,7 @@ from datetime import date
 import pytest
 from conftest import RAN_AS_OF, RAN_DAYS, copy_template
 
-from discotrade import alerts, dashboard, journal, paper
+from discotrade import alerts, dashboard, journal, ledger, paper
 from discotrade import state as state_mod
 from discotrade.cli import REPO_ROOT, main
 from discotrade.config import load_gates, load_thresholds
@@ -358,3 +358,126 @@ def test_a_state_with_no_journaled_day_has_no_page(tmp_path, config):
 
 def test_the_day_is_the_states_last_journaled_day(ran):
     assert dashboard.last_day(ran, TRACK) == D == date(2019, 6, 12)
+
+
+# ------------------------------- the rank rule's p (decision 2026-10-18-m20 160)
+
+
+T_CRIT_11 = 1.795884819               # the one-sided 5% critical value of t at 11 df
+
+
+def own_t_sf(t, df, steps=4000):
+    """The one-sided upper tail of Student's t at ``df`` degrees of freedom, by
+    Simpson's rule on the density after ``x = sqrt(df) tan(theta)``."""
+    c = math.gamma((df + 1) / 2) / (math.sqrt(df * math.pi) * math.gamma(df / 2))
+    a, b = math.atan(t / math.sqrt(df)), math.pi / 2
+    h = (b - a) / steps
+    total = 0.0
+    for k in range(steps + 1):
+        w = 1 if k in (0, steps) else (4 if k % 2 else 2)
+        total += w * math.cos(a + k * h) ** (df - 1)
+    return c * math.sqrt(df) * total * h / 3
+
+
+def with_rank_entry(state, entry):
+    """The stored alert state with its ``rank_persistence`` entry replaced by ``entry``."""
+    path = state / "alerts" / TRACK / "state.json"
+    held = json.loads(path.read_text(encoding="utf-8"))
+    held["alerts"][f"rank_persistence|{TRACK}"] = entry
+    path.write_text(json.dumps(held, sort_keys=True, separators=(",", ":")) + "\n",
+                    encoding="utf-8")
+
+
+def gate_shown(page, name):
+    m = re.search(rf'data-gate="{re.escape(name)}" data-exact="[^"]*">([^<]*)<', page)
+    assert m, name
+    return m.group(1)
+
+
+def rank_alert_p(page):
+    section = page.split("<h2>Alert rules</h2>", 1)[1].split("<h2>", 1)[0]
+    section = section.split("<h3>rank_persistence</h3>", 1)[1].split("<h3>", 1)[0]
+    m = re.search(r">p ([^<]*)<", section)
+    assert m
+    return m.group(1)
+
+
+def test_the_page_shows_the_rank_rules_p_as_the_state_holds_it(ran, config, tmp_path):
+    state = copy_template(ran, tmp_path / "state")
+    mean, critical, held_p = 0.5, 0.25, 0.0123456789
+    # The thresholds in force (12 blocks, level 0.05) would give another p from
+    # the entry's value and threshold: t = t_crit * mean / critical.
+    derived = own_t_sf(T_CRIT_11 * mean / critical, 11)
+    assert abs(derived - held_p) > 0.005
+    with_rank_entry(state, {"active": True, "since": D.isoformat(), "value": mean,
+                            "threshold": critical, "p": held_p})
+    got = render(state, config)
+    assert gate_value(got, "rank_p") == repr(held_p)
+    assert gate_shown(got, "rank_p") == f"{held_p:.6g}"
+    assert rank_alert_p(got) == f"{held_p:.6g}"
+    assert gate_value(got, "rank_persistence") == repr(mean)
+    assert gate_verdict(got, "rank_persistence") == "pass"
+
+
+def test_a_rank_entry_without_p_shows_a_dash_and_not_yet(ran, config, tmp_path):
+    state = copy_template(ran, tmp_path / "state")
+    with_rank_entry(state, {"active": True, "since": D.isoformat(), "value": 0.5,
+                            "threshold": 0.25})
+    got = render(state, config)
+    assert gate_shown(got, "rank_p") == "—"
+    assert rank_alert_p(got) == "—"
+    assert gate_verdict(got, "rank_persistence") == "not yet"
+
+
+def test_the_stored_rank_entry_holds_p_and_the_page_shows_it(ran, page):
+    held = json.loads((ran / "alerts" / TRACK / "state.json").read_text(encoding="utf-8"))
+    rank = held["alerts"][f"rank_persistence|{TRACK}"]
+    assert "p" in rank
+    assert gate_value(page, "rank_p") == ("-" if rank["p"] is None else repr(rank["p"]))
+
+
+# ------------------------- the health panel's failures (decision 2026-10-18-m20 161)
+
+
+FAIL_OUTCOMES = {"model-a": ["invalid:parse"] * 4 + ["trial", "provider_error", "duplicate",
+                                                     "trial", "budget", "invalid:run", "trial",
+                                                     "trial"],
+                 "model-b": ["trial", "invalid:parse", "trial", "trial", "invalid:test",
+                             "provider_error", "invalid:parse", "duplicate", "trial"]}
+
+
+def failure_rows(page):
+    section = page.split("<h2>Health</h2>", 1)[1].split("<h2>", 1)[0]
+    cell = r'<td style="[^"]*">([^<]*)</td>'
+    return {m.group(1): (int(m.group(2)), int(m.group(3)))
+            for m in re.finditer(f"<tr>{cell}{cell}{cell}</tr>", section)
+            if m.group(1) in FAIL_OUTCOMES}
+
+
+def test_the_health_panel_counts_each_models_failures_over_pool_fail_window(
+        ran, config, tmp_path):
+    state = copy_template(ran, tmp_path / "state")
+    rows, k = [], 0
+    for model, outcomes in FAIL_OUTCOMES.items():
+        for j, outcome in enumerate(outcomes):
+            day = RAN_DAYS[min(j // 3, len(RAN_DAYS) - 1)]
+            rows.append({"date": day.isoformat(), "call": f"c{k}", "attempt": 1,
+                         "cell": "trend/short", "model": model, "outcome": outcome,
+                         "response": None, "tokens_in": 0, "tokens_out": 0})
+            k += 1
+    rows.sort(key=lambda r: r["date"])
+    ledger.append(state, TRACK, ledger.CALLS, rows)
+    copied = tmp_path / "config"
+    shutil.copytree(config, copied)
+    window = 5
+    assert load_thresholds(copied / "thresholds.toml")["pool.fail_window"] != window
+    rewrite(copied / "thresholds.toml", {"pool.fail_window": window})
+    got = failure_rows(render(state, copied))
+    want = {}
+    for model in FAIL_OUTCOMES:
+        mine = [r["outcome"] for r in rows if r["model"] == model
+                and (r["outcome"] in ("trial", "duplicate") or r["outcome"].startswith("invalid:"))]
+        last = mine[-window:]
+        want[model] = (len(last), sum(o.startswith("invalid:") for o in last))
+    assert want == {"model-a": (5, 1), "model-b": (5, 2)}
+    assert got == want

@@ -114,7 +114,8 @@ from ``setup.thresholds`` only.
   of a mean tested by ``p``; this is the mean the test compares it with, and
   the dashboard's significance band). The payload: ``mean``, ``sd``, ``n``,
   ``t``, ``p``, ``critical_mean``, ``blocks`` (the block numbers) and
-  ``thresholds``.
+  ``thresholds``. The entry also holds ``p`` (``RANK_P``), null where the rule
+  was not evaluated, which the state keeps (decision 2026-10-18-m20 160).
 - ``revival``: one entry per lifecycle row dated ``D`` from ``dormant`` to
   ``live``, subject the approach id; ``value`` its dormant trading days,
   counted as lifecycle step 3 counts them for
@@ -139,7 +140,9 @@ from ``setup.thresholds`` only.
   holds the thresholds it read.
 - ``transition(previous, D, entries)``: the state of ``D``, ``{"date", "alerts"}``,
   ``alerts`` keyed ``<kind>|<subject>`` with ``active``, ``since`` (the date it
-  last turned true, or null), ``value`` and ``threshold``; and the entries that
+  last turned true, or null), ``value`` and ``threshold`` (``ENTRY_KEYS``), the
+  ``rank_persistence`` entry also ``p`` (``RANK_P``, decision 2026-10-18-m20
+  160, null where the rule was not evaluated); and the entries that
   fire: active on ``D`` and not active, or absent, in ``previous`` (DESIGN
   15.3).
 - ``write(into, state_dir, track, D, state, fired)``: ``alerts/<track>/state.json``
@@ -698,6 +701,10 @@ FINDING_KINDS = (PERSISTENT, GROUP, RANK, REVIVAL)
 ALERTS_DIR, STATE_FILE, PAYLOADS = "alerts", "state.json", "payloads"
 #: The keys of an entry of the state (decision 152 (a)).
 ENTRY_KEYS = ("active", "since", "value", "threshold")
+#: The one key the ``rank_persistence`` entry holds beside ``ENTRY_KEYS``: the
+#: rule's own ``p`` on ``D``, null where it was not evaluated (decision
+#: 2026-10-18-m20 160).
+RANK_P = "p"
 
 
 def _entry(kind: str, subject: str) -> dict[str, Any]:
@@ -736,6 +743,7 @@ def rank_persistence(state_dir: Path, setup: journal.Setup, day: date, *,
     blocks = int(force["alerts.rank_blocks"])
     level = float(force["alerts.rank_level"])
     entry = _entry(RANK, track)
+    entry["p"] = None
     rows = [r for r in stats.read_rank_rows(state_dir, track, into=overlay)
             if r.get(TIMING) is not None]
     if blocks < 2 or len(rows) < blocks:
@@ -752,7 +760,7 @@ def rank_persistence(state_dir: Path, setup: journal.Setup, day: date, *,
     p = stats.t_sf(t, n - 1)
     critical = _t_critical(level, n - 1) * se
     entry.update(active=bool(p < level), value=_real(mean), threshold=_real(critical),
-                 payload={"mean": _real(mean), "sd": _real(sd), "n": n, "t": _real(t),
+                 p=_real(p), payload={"mean": _real(mean), "sd": _real(sd), "n": n, "t": _real(t),
                           "p": _real(p), "critical_mean": _real(critical),
                           "blocks": [int(r["block"]) for r in last], "thresholds": force})
     return entry
@@ -958,6 +966,8 @@ def transition(previous: Mapping[str, Any] | None, day: date,
             since = None if before is None else before["since"]
         out[key] = {"active": bool(e["active"]), "since": since, "value": e["value"],
                     "threshold": e["threshold"]}
+        if e["kind"] == RANK:
+            out[key][RANK_P] = e.get(RANK_P)
     return {"date": day.isoformat(), "alerts": dict(sorted(out.items()))}, fired
 
 

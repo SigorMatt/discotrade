@@ -33,12 +33,11 @@ The panels, in SPEC 13's order, each under its ``<h2>`` heading (``HEADINGS``):
    each live approach's ``adjusted_excess`` from the table below it, for
    information. "Rank persistence statistically above zero" is the
    ``rank_persistence`` entry (its mean, and ``p``) against
-   ``alerts.rank_level``. The state's entry holds the mean (``value``) and the
-   critical mean (``threshold``, ``t_crit * s / sqrt(n)``), not ``p``; ``p`` is
-   ``stats.t_sf(t, n - 1)`` with ``t = t_crit * value / threshold`` (that is,
-   ``mean / (s / sqrt(n))``), ``n`` ``alerts.rank_blocks`` (the design is
-   silent on where ``p`` is kept; deriving it from the entry is the simplest
-   reading that recomputes no figure from the rows). "Journal recomputation has
+   ``alerts.rank_level``. The state's entry holds the mean (``value``), the
+   critical mean (``threshold``) and the rule's own ``p`` (``alerts.RANK_P``),
+   which the page reads and never recomputes (decision 2026-10-18-m20 160); an
+   entry without ``p`` (a state written before that decision) shows ``p`` as
+   ``NO_P`` and the condition as ``not yet``. "Journal recomputation has
    shown no mismatch" is the count of ``journal_mismatch`` events of the health
    log, passing at 0. The two owner flags are ``gates.toml``'s. Each value is
    marked ``data-gate="<name>" data-exact="<repr>"`` and each verdict
@@ -47,7 +46,7 @@ The panels, in SPEC 13's order, each under its ``<h2>`` heading (``HEADINGS``):
    alert state (subject, value, threshold, active, since); for
    ``persistent_approach`` also the base percentile, ``N`` (the trials ledger's
    rows) and ``p(N)`` (``stats.tightened_percentile``), so the tightening shows;
-   for ``rank_persistence`` also ``p`` as above.
+   for ``rank_persistence`` also the entry's ``p`` as above.
 3. The combined paper portfolio: ``portfolio``'s cumulative ``net_1x`` and
    ``net_2x`` against the band of the random control slots' cumulative plain
    ``net_1x``, its 5% and 95% quantiles (``numpy.quantile``) per day
@@ -395,16 +394,19 @@ def _entries(held: Mapping[str, Any] | None, kind: str) -> list[tuple[str, dict[
             if key.startswith(prefix)]
 
 
-def _rank_p(setup: journal.Setup, entry: Mapping[str, Any] | None) -> float | None:
-    """``p`` of the ``rank_persistence`` entry, from its mean and critical mean."""
-    if entry is None:
-        return None
-    mean, critical = _real(entry.get("value")), _real(entry.get("threshold"))
-    n = int(setup.thresholds["alerts.rank_blocks"])
-    if mean is None or critical is None or critical == 0 or n < 2:
-        return None
-    t = _t_critical(float(setup.thresholds["alerts.rank_level"]), n - 1) * mean / critical
-    return stats.t_sf(t, n - 1)
+#: How the page shows the ``p`` of a ``rank_persistence`` entry that holds none
+#: (a state written before decision 2026-10-18-m20 160).
+NO_P = "\u2014"
+
+
+def _has_p(entry: Mapping[str, Any] | None) -> bool:
+    return entry is not None and alerts.RANK_P in entry
+
+
+def _p_shown(entry: Mapping[str, Any] | None) -> str:
+    """The ``rank_persistence`` entry's own ``p`` as the page shows it, read from
+    the alert state and never recomputed (decision 2026-10-18-m20 160)."""
+    return _n(entry[alerts.RANK_P]) if entry is not None and _has_p(entry) else NO_P
 
 
 def _gates_panel(setup: journal.Setup, records: pd.DataFrame, held: Mapping[str, Any] | None,
@@ -417,7 +419,6 @@ def _gates_panel(setup: journal.Setup, records: pd.DataFrame, held: Mapping[str,
     rank = alerts_held.get(alerts.key_of(alerts.RANK, track))
     mismatches = sum(1 for e in events if e["kind"] == JOURNAL_MISMATCH)
     owner = load_gates(_config_dir(setup))
-    p = _rank_p(setup, rank)
     out = [_table(("condition", "current value", "threshold", ""), [
         ("positive net of 2x costs: <code>portfolio_clean</code> net 2x, summed over its days",
          f"{_gate('money', money['sum'])} over {_gate('money_days', money['days'])} days",
@@ -432,9 +433,10 @@ def _gates_panel(setup: journal.Setup, records: pd.DataFrame, held: Mapping[str,
         ("rank persistence statistically above zero: <code>rank_persistence</code>, "
          "mean timing statistic",
          f"{_gate('rank_persistence', None if rank is None else rank['value'])}, "
-         f"p {_gate('rank_p', p)}",
+         f"p {_gate('rank_p', rank[alerts.RANK_P] if _has_p(rank) else None, _p_shown(rank))}",
          f"p below {_th(setup, 'alerts.rank_level')}",
-         _verdict("rank_persistence", bool(rank is not None and rank["active"]))),
+         _verdict("rank_persistence", bool(rank is not None and _has_p(rank)
+                                           and rank["active"]))),
         ("journal recomputation has shown no mismatch: <code>journal_mismatch</code> events",
          _gate("journal_mismatch", mismatches), "0",
          _verdict("journal_mismatch", mismatches == 0)),
@@ -476,7 +478,7 @@ def _alerts_panel(setup: journal.Setup, held: Mapping[str, Any] | None,
                           f"current N"))
         if kind == alerts.RANK:
             entry = None if held is None else held["alerts"].get(alerts.key_of(kind, track))
-            out.append(_p(f"p {_e(_n(_rank_p(setup, entry)))}"))
+            out.append(_p(f"p {_e(_p_shown(entry))}"))
         entries = _entries(held, kind)
         out.append(_table(("subject", "value", "threshold", "active", "since"),
                           [(_e(subject), _e(_n(e["value"])), _e(_n(e["threshold"])),

@@ -903,7 +903,54 @@ def test_rank_persistence_is_not_evaluated_with_eleven_blocks(tmp_path, setup):
     write_rank_state(tmp_path, timing_values(3.0)[:11], extra_null=True)
     entry = alerts.rank_persistence(tmp_path, setup, date(2019, 9, 2))
     assert entry == {"kind": alerts.RANK, "subject": TRACK, "active": False, "value": None,
-                     "threshold": None, "payload": None}
+                     "threshold": None, "p": None, "payload": None}
+
+
+def own_t_sf(t, df, steps=4000):
+    """The one-sided upper tail of Student's t at ``df`` degrees of freedom, by
+    Simpson's rule on the density after ``x = sqrt(df) tan(theta)``:
+    ``c * sqrt(df) * cos(theta) ** (df - 1)`` over ``(atan(t / sqrt(df)), pi / 2)``."""
+    c = math.gamma((df + 1) / 2) / (math.sqrt(df * math.pi) * math.gamma(df / 2))
+    a, b = math.atan(t / math.sqrt(df)), math.pi / 2
+    h = (b - a) / steps
+    total = 0.0
+    for k in range(steps + 1):
+        w = 1 if k in (0, steps) else (4 if k % 2 else 2)
+        total += w * math.cos(a + k * h) ** (df - 1)
+    return c * math.sqrt(df) * total * h / 3
+
+
+def test_own_t_sf_gives_the_written_critical_value():
+    assert abs(own_t_sf(T_CRIT_11, 11) - 0.05) < 1e-9
+
+
+@pytest.mark.parametrize("shift", [0.05, -0.05, 0.8])
+def test_the_alert_step_writes_the_rank_rules_p_into_its_state_entry(tmp_path, setup, shift):
+    # decision 2026-10-18-m20 160: the state's rank_persistence entry holds the
+    # rule's own p on D, computed here from the rows this test writes.
+    values = timing_values(shift)
+    write_rank_state(tmp_path, values)
+    want = own_t_sf(own_t(values)[2], 11)
+    d = date(2019, 9, 2)
+    records = pd.DataFrame(columns=list(paper.COLUMNS))
+    new, _ = alerts.step(tmp_path, setup, d, records, into=tmp_path / "staging")
+    held = alerts.read_state(tmp_path / "staging", TRACK)
+    assert held == new
+    got = held["alerts"][f"rank_persistence|{TRACK}"]
+    assert set(got) == {*alerts.ENTRY_KEYS, "p"}
+    assert close(got["p"], want, 1e-8)
+    assert got["active"] is (want < 0.05)
+    others = [k for k in held["alerts"] if not k.startswith("rank_persistence|")]
+    assert all(set(held["alerts"][k]) == set(alerts.ENTRY_KEYS) for k in others)
+
+
+def test_the_rank_entry_holds_p_null_where_the_rule_was_not_evaluated(tmp_path, setup):
+    write_rank_state(tmp_path, timing_values(3.0)[:11], extra_null=True)
+    records = pd.DataFrame(columns=list(paper.COLUMNS))
+    new, _ = alerts.step(tmp_path, setup, date(2019, 9, 2), records,
+                         into=tmp_path / "staging")
+    assert new["alerts"][f"rank_persistence|{TRACK}"] == {
+        "active": False, "since": None, "value": None, "threshold": None, "p": None}
 
 
 # ------------------------------------------------------------------- revival
@@ -1013,7 +1060,7 @@ def test_an_entry_absent_the_day_before_fires_and_an_inactive_one_has_no_since()
     assert [(e["kind"], e["subject"]) for e in fired] == [(alerts.REVIVAL, "new")]
     assert new == {"date": "2019-09-03", "alerts": {
         "rank_persistence|test_synth": {"active": False, "since": None, "value": None,
-                                        "threshold": None},
+                                        "threshold": None, "p": None},
         "revival|new": {"active": True, "since": "2019-09-03", "value": 70, "threshold": 60}}}
 
 
