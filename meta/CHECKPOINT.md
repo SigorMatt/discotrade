@@ -38,8 +38,7 @@ U6 2a614bd (gates at tip 78b5535: check 3/3 990, 988, 982 s; sandbox discotrade-
 G1.2 PASS 170 s, G1.3 PASS 458 s, G1.4 PASS 1 s, M3 PASS 506 s, M2 PASS 130 s, M0 PASS 244 s; speed
 0.027561/0.032145/1.166/5.493 s, load 1.1-1.5; outputs meta/drafts/m20-*.txt; D-013 times line; no finding).
 
-In progress: U7 — meta/FINAL-REPORT-20.md (drafted under meta/drafts/, moved in by its commit). Done means: report
-with every section the brief's U7 lists, committed and pushed; plan and checkpoint closed.
+U7 8dacfe7 (meta/FINAL-REPORT-20.md). Mission 20 finished; nothing in progress.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-26, O-27 win, then O-25 and earlier owner
 items, then decisions 155-167, then 1-154 where not replaced. Speed units U1-U3 change no test's assertion, nothing
