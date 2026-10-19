@@ -15,11 +15,13 @@ held by test_cli::test_coordinator_claude_is_refused_before_any_day); autouse _n
 tests/test_secret_env.py 4 tests; dummy-key run 201 passed; check 3/3 987, 997, 985 s; no finding. Not proven:
 module/session-scoped fixtures still see the env).
 
-In progress: U3 — fix_session_command passes --tools Read,Glob,Grep,Edit,Write (help syntax) and the generated
-settings deny Bash, WebFetch, WebSearch beside the Edit path rules; config/protected_paths.toml code list gains
-decision 172 (b)'s entries. Done means: a `coordinator:` commit pushed, check 3/3 green, tests of 172 (a) and 164 (c)
-pass, wrong changes (--tools dropped; Bash dropped from deny) seen red, body quotes claude --help --tools line and
-claude --version.
+U3 50341fc (coordinator: fix session --tools Read,Glob,Grep,Edit,Write; session_settings deny Bash, WebFetch, WebSearch
+then Edit(//path) rules; protected_paths code list + config.py, workers/providers.py, CLAUDE.md, DESIGN.md, SPEC.md,
+PLAYBOOK.toml, meta/, .claude/, docs/ARCHITECT-HANDBOOK.md, templates/; 2 tests added, 2 exact-equality tests extended
+by the three whole-tool rules (172 (a)); claude 2.1.303; check 3/3 994, 990, 994 s; no finding).
+
+In progress: U4 — a test pinning gaps._MONTH_MISSING's content identity (decision 173). Done means: a `tests:` commit
+pushed, no src/ change, check 3/3 green, the wrong change (rows and hash dropped from the key) seen red.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-26, O-27 win, then O-25 and earlier owner items,
 then decisions 168-176, then 1-167 where not replaced. No file under tests/gates/, tests/fixtures/rejected/, no record
