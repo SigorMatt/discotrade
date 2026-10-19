@@ -202,3 +202,4 @@
 2026-10-19T16:27:28.784Z  consult 0mvfgfdk2-hv9m (architect done) on aux.done of aux job 0mvfdbvwr-0pr8: VERDICT: next kit mission-22-kit
 - 2026-10-19 mission 22 U0: plan written (base 72400d7, step S4.2b, closes no milestone); D-013 times, HF-010, HF-012 lines appended; U1 started.
 - 2026-10-19 mission 22 U1 done 41accb7 (digest:): resumed under §R; sinks, render, --issues, doctor --live issues; test_offline listing extended (decision 47); check 3/3 green (1014 s), sandbox 3b7d75c39621; U2 started.
+- 2026-10-19 mission 22 U2 done b614465 (daily:): digest page, run log line with mode, push after commit, one issue per fired alert; test_replay equality and claude replay test changed under 177 (d)/179 (c); G1.3 PASS 522 s; median ratio 1.223 (1.223, 2.466, 0.603; other sessions loading the machine); check 3/3 1218, 1142, 1214 s; U3 started.

@@ -3,17 +3,16 @@
 Mission: 22 (`meta/BUILDER-22-PROMPT.md`), roadmap step S4.2b. The rest of the daily run; closes no milestone. Base 72400d7.
 Container runtime: docker. Image at mission 21's tip: discotrade-sandbox:3b7d75c39621.
 
-In progress: U2 The digest, the run log and step 8 in the day (decisions 179, 180; DESIGN 15.4, 16.1 steps 7 and 8,
-16.2, 14.3; I-6, I-8). Done means: `daily:` commit pushed; step 7 writes digests/<track>/<D>.md (harness tables +
-coordinator prose from kinds and subjects only) or the coordinator's run log sentence; every new day appends one run
-log line with its `mode` (179 (c)); a re-run writes neither; step 8 commits, pushes when the state repo has `origin`
-(push_failed on failure), opens one issue per fired alert via the sink (issue_failed on failure); [state] table in
-run.toml; replay --issues default none; tests of 179 (f), 180 (d) pass; wrong changes (payload number in the digest
-prompt; run log line skipped on a digest day; push before commit) seen red; G1.3 at the commit and decision 170's three
-measurements, median ratio <= 1.25; check 3/3 green with container tests.
+In progress: U3 Step 1 staged (decision 181; DESIGN 16.2, 5.2, 5.4, 5.6; decisions 2026-10-12 4, 5, 50, 54; I-5).
+Done means: `daily:` commit pushed; step 1's bar appends, gaps file and rolls written to the staging directory and moved
+with the day; typed error of 181 (c); a day that fails leaves bars/, rolls/ and the gaps file as they were; tests of
+181 (d) pass; wrong change (bar append in place instead of staged) seen red; body names 181 (a)'s means; existing
+interrupted-append, gaps, rolls, revised_data tests unchanged and green; G1.3 and three measurements (median <= 1.25);
+check 3/3 green with container tests.
 
 Done: U0 (plan; D-013 times, HF-010, HF-012 lines; decision 187 (b)). U1 41accb7 (digest.py, sinks, render, --issues,
-doctor --live issues; check 3/3, 1014 s).
+doctor --live issues; check 3/3, 1014 s). U2 b614465 (digest page, run log line with mode, push,
+issues; test_replay equality adapted to 179 (c)'s mode field; G1.3 522 s; median 1.223; check 1218/1142/1214 s).
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-26, O-27 win, then O-25 and earlier owner items,
 then decisions 177-188, then 1-176 where not replaced. No file under tests/gates/, tests/fixtures/rejected/, no record
