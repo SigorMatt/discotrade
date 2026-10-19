@@ -27,6 +27,6 @@ Left items:
 - [x] U1 `persistent_approach`'s `N` and `p(N)` from the alert state (REVIEW-20 blocker 1, D-022; decisions 169, 170; DESIGN §15.1, §15.3, §15.5, §11.4). `alerts:` commit. G1.3 and decision 170's three measurements at the commit. — 558e02a (G1.3 PASS 462 s; median ratio 1.116; check 976, 981, 995 s)
 - [x] U2 The unknown-coordinator test and a secret-free test environment (REVIEW-20 should-fix 2; decision 171; DESIGN §14.2, §19.3 L4). `tests:` commit. — 943a18c (check 987, 997, 985 s)
 - [x] U3 The fix session's tools and the protected paths (REVIEW-20 should-fix 3, note 5; decision 172; DESIGN §14.4). `coordinator:` commit. — 50341fc (check 994, 990, 994 s)
-- [ ] U4 `gaps._MONTH_MISSING`'s content identity (REVIEW-20 should-fix 4; decision 173; DESIGN §5.4). `tests:` commit.
+- [x] U4 `gaps._MONTH_MISSING`'s content identity (REVIEW-20 should-fix 4; decision 173; DESIGN §5.4). `tests:` commit. — d679adc (check 986, 978, 997 s)
 - [ ] U5 The regression gates at the pushed tip (O-2, O-25, O-27; decisions 168 (a), 170; DESIGN §18.2). `meta:` commit (one D-013 times line).
 - [ ] U6 The final report (decisions 168-176; O-26, O-27; DESIGN §18.2). `meta/FINAL-REPORT-21.md`.

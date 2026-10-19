@@ -196,3 +196,4 @@
 - 2026-10-19 mission 21 U1 done 558e02a: N and p_N in persistent_approach entries, page reads them; G1.3 PASS 462 s; median ratio 1.116 (1.202, 1.116, 1.097); check 3/3 976, 981, 995 s; U2 started.
 - 2026-10-19 mission 21 U2 done 943a18c: unknown coordinators parametrized, claude-off-PATH test, autouse secret-free env (3 vars); check 3/3 987, 997, 985 s; U3 started.
 - 2026-10-19 mission 21 U3 done 50341fc: fix session --tools file tools only, deny Bash/WebFetch/WebSearch, protected paths extended; check 3/3 994, 990, 994 s; U4 started.
+- 2026-10-19 mission 21 U4 done d679adc: _MONTH_MISSING content identity pinned (deletion then append; writers cannot replace a complete month); check 3/3 986, 978, 997 s; U5 started.

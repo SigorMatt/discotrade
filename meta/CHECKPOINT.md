@@ -20,8 +20,13 @@ then Edit(//path) rules; protected_paths code list + config.py, workers/provider
 PLAYBOOK.toml, meta/, .claude/, docs/ARCHITECT-HANDBOOK.md, templates/; 2 tests added, 2 exact-equality tests extended
 by the three whole-tool rules (172 (a)); claude 2.1.303; check 3/3 994, 990, 994 s; no finding).
 
-In progress: U4 — a test pinning gaps._MONTH_MISSING's content identity (decision 173). Done means: a `tests:` commit
-pushed, no src/ change, check 3/3 green, the wrong change (rows and hash dropped from the key) seen red.
+U4 d679adc (tests: test_a_rewritten_complete_month_gives_its_new_missing_bars, same-rows and other-rows cases; month
+replaced through BarStore.append after the test deletes index.json and the month files (append and recover cannot
+replace a complete month; docstring says so); wrong change seen red; check 3/3 986, 978, 997 s; no finding).
+
+In progress: U5 — regression gates at the pushed tip: check 3x, sandbox build, G1.1-G1.4, M3, M2, M0, decision
+170's three measurements. Done means: all PASS, every M1 item within 15 minutes, median ratio <= 1.25, outputs kept
+under meta/drafts/, a `meta:` commit with one D-013 times line pushed.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-26, O-27 win, then O-25 and earlier owner items,
 then decisions 168-176, then 1-167 where not replaced. No file under tests/gates/, tests/fixtures/rejected/, no record
