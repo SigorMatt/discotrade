@@ -15,7 +15,9 @@ JSON line ``{"symbol", "ts"}`` (``ts`` ISO 8601 UTC, keys sorted), in the
 track's instrument order and then in time order; a bar already in the file is
 not written again, so re-running the check writes nothing new. The append is
 atomic (decision 4): the whole file is written beside the old one with every
-earlier line byte-identical, ``fsync``-ed and renamed into place. Missing
+earlier line byte-identical, ``fsync``-ed and renamed into place. Inside a
+staged day (``bars.store.staged``, decision 2026-10-19-m22 181) the file is read
+from and written to the staging directory, as the bar store's files are. Missing
 bars are never filled in. An instrument with no index entry has no stored
 bar only when its directory holds no month file; otherwise the check refuses
 with the reader's error, interrupted append or revised data point (decision
@@ -55,7 +57,7 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
-from discotrade.bars.store import BarStore, month_frames, write_atomic
+from discotrade.bars.store import BarStore, month_frames, read_place, write_atomic, write_place
 from discotrade.config import Calendar, DateRange, Instrument, TrackConfig
 from discotrade.state import HealthEvent, register_cache
 from discotrade.tradingcal import expected_bars, trading_date
@@ -231,8 +233,11 @@ def _window(store: BarStore, inst: Instrument, cal: Calendar, bar_seconds: int,
 
 
 def _record(path: Path, missing: Mapping[str, tuple[datetime, ...]]) -> int:
+    """Append the newly missing bars to ``gaps.jsonl`` at ``path``, read from and
+    written to its staged place inside a staged day (decision 2026-10-19-m22 181)."""
     seen: set[tuple[str, str]] = set()
-    old = path.read_bytes() if path.exists() else b""
+    held = read_place(path)
+    old = held.read_bytes() if held.exists() else b""
     for line in old.decode("utf-8").splitlines():
         if line.strip():
             row = json.loads(line)
@@ -246,7 +251,7 @@ def _record(path: Path, missing: Mapping[str, tuple[datetime, ...]]) -> int:
                 lines.append(json.dumps({"symbol": symbol, "ts": key[1]}, sort_keys=True))
     if lines:
         data = old + "".join(line + "\n" for line in lines).encode("utf-8")
-        write_atomic(path, lambda p: p.write_bytes(data))
+        write_atomic(write_place(path), lambda p: p.write_bytes(data))
     return len(lines)
 
 

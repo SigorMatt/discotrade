@@ -62,6 +62,17 @@ day run ends, so a file changed after it was verified is refused by the next
 day run's first read of it. Nothing is written for this; outside a day run
 every read checks its file as before.
 
+Inside a staged day (``staged(state_dir, staging)``, which ``daily.run_day``
+holds around steps 1 to 7; decision 2026-10-19-m22 181 (a), DESIGN 16.2), the
+writer writes each month file and the index to their places under the staging
+directory (``write_place``), and every read takes a file from there when it
+exists and from the state directory otherwise (``read_place``); the day's move
+puts them in place. A store's ``root``, ``month_path`` and ``index_path`` stay
+the state directory's paths, and the frames kept below are keyed by them, so a
+staged file and the file it becomes after the move share their key (the bytes
+are still compared). A refusal of a revised data point raises
+``RevisedDataError``, a ``BarStoreError`` (decision 181 (c)).
+
 Across the day runs of one process (decision 2026-10-18-m20 157 (a), O-26),
 a frame that matched its index entry is also kept in ``_CARRIED`` with the
 length and sha256 of the bytes it was parsed from, for one store at a time.
@@ -99,6 +110,13 @@ class BarStoreError(ValueError):
     """A refused write or read."""
 
 
+class RevisedDataError(BarStoreError):
+    """A stored month file that no longer matches the index, or that is listed and
+    missing or unlisted and not an interrupted append: a revised data point
+    (DESIGN 5.2; decision 2026-10-19-m22 181 (c)). The day loop raises
+    ``revised_data`` on this type."""
+
+
 #: The month frames verified in the current day run, keyed by the file's path
 #: and the index entry's row count and hash; None outside a day run.
 _RUN: dict[tuple[str, int, str], pd.DataFrame] | None = None
@@ -117,6 +135,51 @@ def day_run() -> Iterator[None]:
         yield
     finally:
         _RUN = outer
+
+
+#: The staging directory of the day in progress, per state directory (absolute
+#: path), while ``staged`` holds it (decision 2026-10-19-m22 181 (a)).
+_STAGED: dict[str, Path] = {}
+
+
+@contextlib.contextmanager
+def staged(state_dir: Path, staging: Path) -> Iterator[None]:
+    """The scope of a staged day (DESIGN 16.2; decision 2026-10-19-m22 181 (a)):
+    inside it, every write of a file under ``state_dir`` through ``write_place``
+    (the bar store's month files and index, ``gaps.jsonl``, the roll records) goes
+    to its place under ``staging``, and every read through ``read_place`` is served
+    from there when the staged file exists, else from the state directory. On
+    exit, success or failure, writes go to the state directory again."""
+    key = os.path.abspath(state_dir)
+    outer = _STAGED.get(key)
+    _STAGED[key] = Path(staging)
+    try:
+        yield
+    finally:
+        if outer is None:
+            _STAGED.pop(key, None)
+        else:
+            _STAGED[key] = outer
+
+
+def write_place(path: Path) -> Path:
+    """Where a write of the state file ``path`` goes: its place under the staging
+    directory of its state directory while ``staged`` holds one, else ``path``."""
+    full = os.path.abspath(path)
+    for root, staging in _STAGED.items():
+        stage = os.path.abspath(staging)
+        if full == stage or full.startswith(stage + os.sep):
+            return Path(path)                 # already a staged path
+        if full.startswith(root + os.sep):
+            return Path(stage) / os.path.relpath(full, root)
+    return Path(path)
+
+
+def read_place(path: Path) -> Path:
+    """Where a read of the state file ``path`` is served from: its staged copy
+    while ``staged`` holds one and the copy exists, else ``path``."""
+    place = write_place(path)
+    return place if place.exists() else Path(path)
 
 
 def _clear_run() -> None:
@@ -260,9 +323,16 @@ class BarStore:
         return self.root / symbol / f"{month}.parquet"
 
     def index(self) -> dict[str, Any]:
-        if not self.index_path.exists():
+        path = read_place(self.index_path)
+        if not path.exists():
             return {}
-        return json.loads(self.index_path.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def _stems(self, symbol: str) -> set[str]:
+        """The months of ``symbol``'s month files, stored or staged."""
+        folder = self.month_path(symbol, "x").parent
+        return {p.stem for where in {folder, write_place(folder)} if where.is_dir()
+                for p in where.glob("*.parquet")}
 
     def index_entry(self, symbol: str) -> dict[str, Any] | None:
         """The index entry of ``symbol``, or None when nothing is stored.
@@ -295,7 +365,8 @@ class BarStore:
 
     def _write_index(self, index: dict[str, Any]) -> None:
         text = json.dumps(index, indent=2, sort_keys=True) + "\n"
-        write_atomic(self.index_path, lambda p: p.write_text(text, encoding="utf-8"))
+        write_atomic(write_place(self.index_path),
+                     lambda p: p.write_text(text, encoding="utf-8"))
 
     # --- matching a month file against the index ---------------------------------
 
@@ -336,12 +407,11 @@ class BarStore:
         to complete. A listed earlier file that no longer matches the index is
         left to the reader, which refuses it (decisions 18, 31).
         """
-        folder = self.month_path(symbol, "x").parent
         index = self.index()
         entry = index.get(symbol)
         months: dict[str, Any] = {} if entry is None else entry["months"]
         last = None if entry is None else pd.Timestamp(entry["last_ts"]).tz_convert("UTC")
-        on_disk = sorted(p.stem for p in folder.glob("*.parquet")) if folder.is_dir() else []
+        on_disk = sorted(self._stems(symbol))
         candidates = {m for m in on_disk if m not in months}
         if months:
             candidates.add(max(months))          # the file holding the indexed last bar
@@ -351,9 +421,10 @@ class BarStore:
         for month in sorted(candidates):
             listed = months.get(month)
             path = self.month_path(symbol, month)
-            if not path.exists():
-                raise BarStoreError(f"{symbol} {month}: month file missing, listed in the "
-                                    f"index (a revised data point); refused")
+            source = read_place(path)
+            if not source.exists():
+                raise RevisedDataError(f"{symbol} {month}: month file missing, listed in the "
+                                       f"index (a revised data point); refused")
             run = _RUN
             key = None if listed is None or run is None else _run_key(path, listed)
             if run is not None and key in run:
@@ -361,9 +432,9 @@ class BarStore:
                 continue
             ident: tuple[int, str] | None = None
             if key is not None:
-                frame, ident = _carried_read(self.root, path, key)
+                frame, ident = _carried_read(self.root, source, key)
             else:
-                frame = pd.read_parquet(path)
+                frame = pd.read_parquet(source)
             if listed is not None and (key is not None and ident is None
                                        or self._matches(frame, listed)):
                 verified[month] = (listed["hash"], frame)
@@ -372,7 +443,7 @@ class BarStore:
                     _carry(key, ident, frame)
                 continue
             if not self._interrupted(frame, listed, last):
-                raise BarStoreError(self._revised(symbol, month))
+                raise RevisedDataError(self._revised(symbol, month))
             completed[month] = {
                 "first_ts": _iso(frame["ts"].iloc[0]),
                 "last_ts": _iso(frame["ts"].iloc[-1]),
@@ -432,16 +503,17 @@ class BarStore:
         key = _run_key(path, entry)
         if run is not None and key in run:
             return run[key]                   # verified in this day run
-        if not path.exists():
+        source = read_place(path)
+        if not source.exists():
             raise BarStoreError(f"{symbol} {month}: month file missing, listed in the index")
         ident: tuple[int, str] | None = None
         if run is not None:
-            frame, ident = _carried_read(self.root, path, key)
+            frame, ident = _carried_read(self.root, source, key)
             if ident is None:                 # the bytes verified in an earlier day run
                 run[key] = frame
                 return frame
         else:
-            frame = pd.read_parquet(path)
+            frame = pd.read_parquet(source)
         if not self._matches(frame, entry):
             last = self._indexed_last_ts(symbol)
             if self._interrupted(frame, entry, last):
@@ -449,7 +521,7 @@ class BarStore:
                     f"{symbol} {month}: file holds an interrupted append not yet in the "
                     f"index; refused until the next append or bars fetch completes it"
                 )
-            raise BarStoreError(self._revised(symbol, month))
+            raise RevisedDataError(self._revised(symbol, month))
         if run is not None:
             run[key] = frame
             _carry(key, ident, frame)
@@ -460,15 +532,13 @@ class BarStore:
         (decision 2026-10-12 18). Every reader entry point goes through here."""
         entry = self.index().get(symbol)
         months: dict[str, Any] = {} if entry is None else entry["months"]
-        folder = self.month_path(symbol, "x").parent
-        unlisted = (sorted(p.stem for p in folder.glob("*.parquet") if p.stem not in months)
-                    if folder.is_dir() else [])
+        unlisted = sorted(m for m in self._stems(symbol) if m not in months)
         if unlisted:
             last = None if entry is None else pd.Timestamp(entry["last_ts"]).tz_convert("UTC")
             for month in unlisted:
-                frame = pd.read_parquet(self.month_path(symbol, month))
+                frame = pd.read_parquet(read_place(self.month_path(symbol, month)))
                 if not self._interrupted(frame, None, last):
-                    raise BarStoreError(
+                    raise RevisedDataError(
                         f"{symbol} {month}: month file not listed in the index "
                         f"(a revised data point); refused")
             raise BarStoreError(
@@ -586,7 +656,7 @@ class BarStore:
                 seen = self._verified.get((symbol, month))
                 old[month] = (seen[1] if seen is not None and seen[0] == listed["hash"]
                               else self._read_month(symbol, month, listed))
-            elif path.exists():   # recover() has just listed every completable file
+            elif read_place(path).exists():   # recover() has just listed every completable file
                 raise BarStoreError(f"{symbol} {month}: month file exists but is not in the "
                                     f"index; refused")
 
@@ -594,7 +664,7 @@ class BarStore:
             frame = rows if month not in old else pd.concat([old[month], rows])
             frame = frame.reset_index(drop=True)
             write_atomic(
-                self.month_path(symbol, month),
+                write_place(self.month_path(symbol, month)),
                 lambda p, f=frame: f.to_parquet(p, index=False, engine="pyarrow"),
             )
             entry["months"][month] = {

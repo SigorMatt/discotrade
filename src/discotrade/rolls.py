@@ -23,7 +23,10 @@ gap is ``open(u) - close(u-1)`` of the stored series, ``estimated`` is true,
 a recorded roll is never measured again: re-running a fetch with no new bar
 appends nothing (I-6). An append writes the whole file beside the old one
 with every earlier line byte-identical, ``fsync``-s it and renames it into
-place, as the bar store does (I-5).
+place, as the bar store does (I-5). Inside a staged day
+(``bars.store.staged``, decision 2026-10-19-m22 181) the records are read from
+and written to the staging directory, and ``roll_path`` names the staged file
+when one was written, so that the day's readers see the day's rolls.
 
 The adjusted series as of bar ``t`` is the stored series up to ``t`` with,
 for every bar ``s``, the sum of the gaps of the rolls after ``s`` and not
@@ -65,7 +68,14 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from discotrade.bars.store import BarStore, BarStoreError, month_frames, write_atomic
+from discotrade.bars.store import (
+    BarStore,
+    BarStoreError,
+    month_frames,
+    read_place,
+    write_atomic,
+    write_place,
+)
 from discotrade.config import Instrument
 from discotrade.sources.base import BarSource
 from discotrade.state import HealthEvent, register_cache
@@ -118,10 +128,17 @@ def trusted_start(instrument: Instrument) -> pd.Timestamp:
     return pd.Timestamp(datetime.combine(instrument.trusted_from, time(), tzinfo=UTC))
 
 
-def roll_path(state_dir: Path, track: str, symbol: str) -> Path:
+def _stored_path(state_dir: Path, track: str, symbol: str) -> Path:
     if not symbol or "/" in symbol or "\\" in symbol or symbol.startswith("."):
         raise ValueError(f"bad symbol {symbol!r}")
     return Path(state_dir) / ROLLS_DIR / track / f"{symbol}.jsonl"
+
+
+def roll_path(state_dir: Path, track: str, symbol: str) -> Path:
+    """The roll records of ``symbol``: ``rolls/<track>/<symbol>.jsonl`` of the state
+    directory, or its staged copy inside a staged day that wrote one (decision
+    2026-10-19-m22 181 (a))."""
+    return read_place(_stored_path(state_dir, track, symbol))
 
 
 def read_rolls(path: Path) -> list[Roll]:
@@ -213,7 +230,8 @@ def update_rolls(state_dir: Path, track: str, bar_seconds: int, instrument: Inst
     entry = store.index_entry(symbol)   # refuses an unlisted file (decision 35)
     if entry is None:
         return (), ()
-    path = roll_path(state_dir, track, symbol)
+    stored = _stored_path(state_dir, track, symbol)
+    path = read_place(stored)
     recorded = read_rolls(path)
     trusted = trusted_start(instrument)
     first = max(_stamp(entry["first_ts"]) if not recorded else recorded[-1].ts, trusted)
@@ -246,7 +264,7 @@ def update_rolls(state_dir: Path, track: str, bar_seconds: int, instrument: Inst
     if rolls:
         old_bytes = path.read_bytes() if path.exists() else b""
         data = old_bytes + "".join(r.to_json() + "\n" for r in rolls).encode("utf-8")
-        write_atomic(path, lambda p: p.write_bytes(data))
+        write_atomic(write_place(stored), lambda p: p.write_bytes(data))
     return tuple(rolls), tuple(events)
 
 

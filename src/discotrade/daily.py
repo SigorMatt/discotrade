@@ -25,8 +25,14 @@ releasing it on success and on failure:
   step S4.2's). A ``D`` before the last journaled day that the journal does
   not hold is refused likewise (it cannot be journaled in order).
 - Step 1, written as ``bars fetch`` writes (each append atomic, decisions 4,
-  5; not staged in step S1.1, decision 50): an interrupted append is
-  completed (a ``store_recovered`` notice), each instrument's bars are asked
+  5) but into the staging directory (decision 2026-10-19-m22 181 (a)): the
+  whole day runs inside ``bars.store.staged``, so the bar store's month files
+  and index, ``gaps.jsonl`` and the roll records are written under
+  ``state.STAGING``, read from there first by every later step, and moved
+  into place with the day's other staged files; a day that fails leaves the
+  stored bars, rolls and gaps file as they were. An interrupted append is
+  completed (a ``store_recovered`` notice; its index completed in the staging
+  directory), each instrument's bars are asked
   for from its last stored bar to the earlier of its source's
   ``available_until`` and the end of ``D`` by its own calendar
   (``gaps.day_end``), bars with a value that is not finite are dropped
@@ -114,9 +120,10 @@ releasing it on success and on failure:
   health log on a day that is written, and on one that fails (DESIGN 16.2
   exempts the health log there); a re-run of a journaled day whose rows are
   unchanged writes none (decision 112 of 2026-10-15-m14, I-6).
-- A failure in either step discards the staging directory and moves nothing.
-  A reader that refuses a revised data point appends a ``revised_data`` alert
-  (subject the track, the reader's message as detail) and the day fails.
+- A failure in any step discards the staging directory and moves nothing.
+  A reader that refuses a revised data point (``bars.store.RevisedDataError``,
+  caught by type, decision 181 (c)) appends a ``revised_data`` alert (subject
+  the track, the reader's message as detail) and the day fails.
 
 Sources are looked up through ``discotrade.sources.source_for`` at call
 time, as ``bars fetch`` and ``bars gaps`` look them up, so that decision 19's
@@ -217,7 +224,14 @@ from discotrade import (
 )
 from discotrade import coordinator as coord
 from discotrade.bars.gaps import check_gaps, day_end, latest_closed_day
-from discotrade.bars.store import BarStore, BarStoreError, day_run, finite_rows, write_atomic
+from discotrade.bars.store import (
+    BarStore,
+    RevisedDataError,
+    day_run,
+    finite_rows,
+    staged,
+    write_atomic,
+)
 from discotrade.clock import Clock
 from discotrade.config import (
     Calendar,
@@ -241,8 +255,6 @@ from discotrade.workers import pool as worker_pool
 REVISED_DATA = "revised_data"
 #: The notice of a fork server started again after one died (O-20 of 2026-10-15).
 SANDBOX_RESTARTED = "sandbox_restarted"
-#: The phrase by which the bar store's errors name a revised data point.
-_REVISED = "a revised data point"
 #: The ``mode`` of a run log line: a day ``run-day`` runs, or one ``replay`` runs
 #: (decision 2026-10-19-m22 179 (c)).
 MODE_LIVE, MODE_REPLAY = "live", "replay"
@@ -351,7 +363,10 @@ def _fetch(state_dir: Path, tc: TrackConfig, calendars: Mapping[str, Calendar], 
     for inst in tc.instruments:
         source = used[inst.symbol]
         until = min(source.available_until(now), day_end(calendars[inst.calendar], day))
-        last = store._indexed_last_ts(inst.symbol)   # after recover() (decision 31)
+        # After recover(), every month file is listed: the public reader of the
+        # index (decision 35) gives the indexed last bar (181 (c): no private call).
+        entry = store.index_entry(inst.symbol)
+        last = None if entry is None else pd.Timestamp(entry["last_ts"]).tz_convert("UTC")
         start = (datetime.combine(inst.trusted_from, time(), tzinfo=UTC) if last is None
                  else last.to_pydatetime() + timedelta(seconds=bar))
         bars = source.fetch(inst, start, until) if start < until else None
@@ -667,72 +682,74 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
         begin(d)
     appended: list[HealthEvent] = []
     staging = state_dir / state.STAGING
+    shutil.rmtree(staging, ignore_errors=True)
+    staging.mkdir()
     try:
-        events, skip = _step_1(state_dir, tc, calendars, d, now,
-                               float(setup.thresholds["gaps.max_fraction"]), used)
-        appended += state.append_health(state_dir, track, events)
-        shutil.rmtree(staging, ignore_errors=True)
-        staging.mkdir()
-        before = process.restarts()
-        result = None
-        try:
-            result = journal.journal_day(state_dir, setup, d, into=staging, sandbox=sandbox)
-        finally:
-            restarted = process.restarts() - before
-            # Decision 112 of 2026-10-15-m14 (I-6): a re-run whose rows equal the
-            # journal's writes nothing, this notice included.
-            if restarted and (result is None or result.status != journal.UNCHANGED):
-                appended += state.append_health(state_dir, track, [HealthEvent(
-                    d, "notice", SANDBOX_RESTARTED, track,
-                    {"backend": "process", "restarts": restarted})])
-        if result.status == journal.MISMATCH:
-            appended += state.append_health(state_dir, track, result.events)
-            raise DailyError(f"{d.isoformat()}: the recomputed rows differ from the journal "
-                             f"(journal_mismatch for "
-                             f"{', '.join(e.subject for e in result.events)}); the journal "
-                             f"is left untouched")
-        if result.status == journal.WRITTEN:
-            records = paper.update(state_dir, track, len(setup.instruments), d, overlay=staging)
-            paper.write(staging, track, records)
-            unit, positions = paper.update_exposure(state_dir, setup, d, overlay=staging)
-            paper.write_exposure(staging, track, unit, positions)
-        else:
-            records = paper.read(state_dir, track)
-        changes = list(lifecycle.run_steps(state_dir, setup, d, records,
-                                           dict(result.failures), into=staging))
-        admission = None
-        generated = _Generated()
-        fired: list[Mapping[str, Any]] = []
-        if result.status == journal.WRITTEN and candidate is not None:
-            admission = lifecycle.admit(state_dir, setup, candidate, d, into=staging)
-            changes += admission.lifecycle
-        if result.status == journal.WRITTEN and provider is not None and not skip:
-            generated = _steps_3_to_5(state_dir, config_dir, setup, tc, calendars, d,
-                                      provider, coordinator, sandbox, staging)
-            appended += generated.events
-            admission = generated.admission
-            if admission is not None:
+        # Step 1 to 7 write to the staging directory and read from it first
+        # (decision 2026-10-19-m22 181 (a)); the move puts them in place together.
+        with staged(state_dir, staging):
+            events, skip = _step_1(state_dir, tc, calendars, d, now,
+                                   float(setup.thresholds["gaps.max_fraction"]), used)
+            appended += state.append_health(state_dir, track, events)
+            before = process.restarts()
+            result = None
+            try:
+                result = journal.journal_day(state_dir, setup, d, into=staging, sandbox=sandbox)
+            finally:
+                restarted = process.restarts() - before
+                # Decision 112 of 2026-10-15-m14 (I-6): a re-run whose rows equal the
+                # journal's writes nothing, this notice included.
+                if restarted and (result is None or result.status != journal.UNCHANGED):
+                    appended += state.append_health(state_dir, track, [HealthEvent(
+                        d, "notice", SANDBOX_RESTARTED, track,
+                        {"backend": "process", "restarts": restarted})])
+            if result.status == journal.MISMATCH:
+                appended += state.append_health(state_dir, track, result.events)
+                raise DailyError(f"{d.isoformat()}: the recomputed rows differ from the journal "
+                                 f"(journal_mismatch for "
+                                 f"{', '.join(e.subject for e in result.events)}); the journal "
+                                 f"is left untouched")
+            if result.status == journal.WRITTEN:
+                records = paper.update(state_dir, track, len(setup.instruments), d, overlay=staging)
+                paper.write(staging, track, records)
+                unit, positions = paper.update_exposure(state_dir, setup, d, overlay=staging)
+                paper.write_exposure(staging, track, unit, positions)
+            else:
+                records = paper.read(state_dir, track)
+            changes = list(lifecycle.run_steps(state_dir, setup, d, records,
+                                               dict(result.failures), into=staging))
+            admission = None
+            generated = _Generated()
+            fired: list[Mapping[str, Any]] = []
+            if result.status == journal.WRITTEN and candidate is not None:
+                admission = lifecycle.admit(state_dir, setup, candidate, d, into=staging)
                 changes += admission.lifecycle
-        if result.status == journal.WRITTEN:
-            _rank_persistence(state_dir, setup, d, min(journaled | {d}), records, staging,
-                              (unit, positions))
-            appended += state.append_health(state_dir, track, alerts.detectors(
-                state_dir, setup, d, reached_step_5=generated.brief is not None,
-                models=_models(config_dir), overlay=staging))
-            _, fired = alerts.step(state_dir, setup, d, records, into=staging,
-                                   exposure=(unit, positions))
-            table.write(staging, track, table.build(state_dir, setup, d, records,
-                                                    into=staging))
-            dashboard.write(staging, track, dashboard.render(
-                state_dir, setup, d, overlay=staging, records=records,
-                exposure=(unit, positions)))
-            appended += _step_7(state_dir, setup, d, fired, coordinator, generated.brief,
-                                mode, staging)
-        moved = _move(staging, state_dir)
-    except BarStoreError as exc:
-        if _REVISED in str(exc):
-            state.append_health(state_dir, track, [HealthEvent(
-                d, "alert", REVISED_DATA, track, {"error": str(exc)})])
+            if result.status == journal.WRITTEN and provider is not None and not skip:
+                generated = _steps_3_to_5(state_dir, config_dir, setup, tc, calendars, d,
+                                          provider, coordinator, sandbox, staging)
+                appended += generated.events
+                admission = generated.admission
+                if admission is not None:
+                    changes += admission.lifecycle
+            if result.status == journal.WRITTEN:
+                _rank_persistence(state_dir, setup, d, min(journaled | {d}), records, staging,
+                                  (unit, positions))
+                appended += state.append_health(state_dir, track, alerts.detectors(
+                    state_dir, setup, d, reached_step_5=generated.brief is not None,
+                    models=_models(config_dir), overlay=staging))
+                _, fired = alerts.step(state_dir, setup, d, records, into=staging,
+                                       exposure=(unit, positions))
+                table.write(staging, track, table.build(state_dir, setup, d, records,
+                                                        into=staging))
+                dashboard.write(staging, track, dashboard.render(
+                    state_dir, setup, d, overlay=staging, records=records,
+                    exposure=(unit, positions)))
+                appended += _step_7(state_dir, setup, d, fired, coordinator, generated.brief,
+                                    mode, staging)
+            moved = _move(staging, state_dir)
+    except RevisedDataError as exc:     # the store's refusal, by type (181 (c))
+        state.append_health(state_dir, track, [HealthEvent(
+            d, "alert", REVISED_DATA, track, {"error": str(exc)})])
         raise
     finally:
         shutil.rmtree(staging, ignore_errors=True)
