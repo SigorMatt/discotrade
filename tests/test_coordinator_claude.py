@@ -426,6 +426,14 @@ REQUIRED_STATE = ["bars/", "rolls/", "approaches/", "trials/", "journal/", "pape
 #: The editing tools, as the installed Claude Code's permissions page gives them: "Edit
 #: rules apply to all built-in tools that edit files".
 EDIT_TOOLS = ["Edit"]
+#: Decision 2026-10-19-m21 172 (b)'s entries, added to the ``code`` list.
+REQUIRED_CODE_172 = ["src/discotrade/config.py", "src/discotrade/workers/providers.py",
+                     "CLAUDE.md", "DESIGN.md", "SPEC.md", "PLAYBOOK.toml", "meta/", ".claude/",
+                     "docs/ARCHITECT-HANDBOOK.md", "templates/"]
+#: Decision 172 (a): the tools a fix session is offered, and the tools its settings deny
+#: whole.
+FIX_TOOLS = ["Read", "Glob", "Grep", "Edit", "Write"]
+WHOLE_TOOL_DENIES = ["Bash", "WebFetch", "WebSearch"]
 
 
 def protected_file() -> dict:
@@ -462,7 +470,7 @@ def test_every_path_is_denied_for_every_editing_tool(tmp_path):
     assert len(expected) == len(protected_file()["code"]) + len(protected_file()["state"])
     assert sorted(rules) == sorted(expected)
     assert co.session_settings(protected, REPO_ROOT, state_dir) == \
-        {"permissions": {"deny": rules}}
+        {"permissions": {"deny": WHOLE_TOOL_DENIES + rules}}
 
 
 def test_a_fix_session_started_through_the_builder_receives_exactly_those_rules(tmp_path):
@@ -478,9 +486,38 @@ def test_a_fix_session_started_through_the_builder_receives_exactly_those_rules(
     (seen,) = records(script)
     received = json.loads(seen["settings"])
     assert sorted(received) == ["permissions"] and sorted(received["permissions"]) == ["deny"]
-    assert sorted(received["permissions"]["deny"]) == sorted(expected_rules(REPO_ROOT,
-                                                                            state_dir))
+    assert sorted(received["permissions"]["deny"]) == sorted(
+        WHOLE_TOOL_DENIES + expected_rules(REPO_ROOT, state_dir))
     assert seen["args"][seen["args"].index("--settings") + 1] == str(work / "settings.json")
+
+
+def test_the_protected_paths_file_holds_decision_172s_entries():
+    raw = protected_file()
+    assert set(REQUIRED_CODE_172) <= set(raw["code"])
+    loaded = load_protected_paths(CONFIG / "protected_paths.toml")
+    assert set(REQUIRED_CODE_172) <= set(loaded.code)
+
+
+def test_a_fix_session_is_offered_the_file_tools_only(tmp_path):
+    """Decision 172 (a): ``--tools`` once, naming exactly the five file tools in the
+    installed help's comma-separated form ("Bash,Edit,Read"), and no flag that allows
+    another tool; the fake receives that argument list and settings that deny Bash,
+    WebFetch and WebSearch whole."""
+    protected = load_protected_paths(CONFIG / "protected_paths.toml")
+    work = tmp_path / "work"
+    work.mkdir()
+    script = fake_claude(tmp_path, reply=output("no fix"))
+    argv = co.fix_session_command(settings_for(script), protected, REPO_ROOT,
+                                  tmp_path / "state", work)
+    env = {k: v for k, v in os.environ.items() if k not in pv.WITHHELD_ENV}
+    assert pv.run_claude(argv, "propose a fix", env, 60.0).returncode == 0
+    (seen,) = records(script)
+    args = seen["args"]
+    assert args.count("--tools") == 1
+    assert args[args.index("--tools") + 1] == ",".join(FIX_TOOLS)
+    assert not {"--allowedTools", "--allowed-tools"} & set(args)
+    deny = json.loads(seen["settings"])["permissions"]["deny"]
+    assert set(WHOLE_TOOL_DENIES) <= set(deny)
 
 
 def test_nothing_calls_the_fix_session_builder():

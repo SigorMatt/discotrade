@@ -24,6 +24,20 @@ code = [
     "config/",
     "reference/",
     "tests/gates/",
+    # Decision 2026-10-19-m21 172 (b): the module that loads this file, the module that
+    # filters a child's environment, and CLAUDE.md with the documents it says no builder
+    # edits (meta/ holds the roadmap, backlog, architect and review documents, the
+    # briefs and the decisions).
+    "src/discotrade/config.py",
+    "src/discotrade/workers/providers.py",
+    "CLAUDE.md",
+    "DESIGN.md",
+    "SPEC.md",
+    "PLAYBOOK.toml",
+    "meta/",
+    ".claude/",
+    "docs/ARCHITECT-HANDBOOK.md",
+    "templates/",
 ]
 state = [
     "bars/",

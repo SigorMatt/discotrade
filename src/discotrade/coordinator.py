@@ -53,11 +53,12 @@ decision 2026-10-16-m15 125; I-8, I-10).
   tokens are summed and a task started at or above
   ``budgets.coordinator_tokens_per_day`` is the scripted form's, with one
   ``token_budget`` alert for the day.
-- The deny rules (14.4; decision 164): :func:`deny_rules` and
+- The deny rules (14.4; decisions 164, 2026-10-19-m21 172): :func:`deny_rules` and
   :func:`session_settings` from ``config/protected_paths.toml``, an ``Edit`` rule on
-  each protected path as an absolute ``//`` pattern; :func:`fix_session_command`, the
-  argument list of a fix session with those settings, called by nothing while
-  ``coordinator.propose_fixes`` is false.
+  each protected path as an absolute ``//`` pattern, beside whole-tool deny rules for
+  ``Bash``, ``WebFetch`` and ``WebSearch``; :func:`fix_session_command`, the argument
+  list of a fix session with those settings and ``--tools`` naming the file tools
+  only, called by nothing while ``coordinator.propose_fixes`` is false.
 
 Nothing here reads a clock or the network. The only secret is the coordinator's key:
 :func:`key_present` tests whether it is set, and the harness's environment that holds
@@ -489,6 +490,15 @@ class ClaudeCodeCoordinator:
 #: accepts ... but never consults".
 EDIT_TOOLS = ("Edit",)
 
+#: The tools a fix session is offered (decision 172 (a)), in the installed help's
+#: (Claude Code 2.1.303) form: ``--tools <tools...>`` "Specify the list of available
+#: tools from the built-in set. ... or specify tool names (e.g. "Bash,Edit,Read")".
+FIX_SESSION_TOOLS = ("Read", "Glob", "Grep", "Edit", "Write")
+
+#: The tools a coordinator session's settings deny whole (decision 172 (a)), beside the
+#: ``Edit`` path rules.
+DENIED_TOOLS = ("Bash", "WebFetch", "WebSearch")
+
 
 def _absolute_pattern(root: Path, relative: str) -> str:
     """``//<absolute path>``, with ``/**`` for a directory (a path ending in ``/``): the
@@ -507,14 +517,17 @@ def deny_rules(protected: ProtectedPaths, code_root: Path, state_dir: Path) -> l
 
 def session_settings(protected: ProtectedPaths, code_root: Path,
                      state_dir: Path) -> dict[str, Any]:
-    """The Claude Code settings of a coordinator session (decision 164 (b))."""
-    return {"permissions": {"deny": deny_rules(protected, code_root, state_dir)}}
+    """The Claude Code settings of a coordinator session (decisions 164 (b), 172 (a)):
+    the whole-tool deny rules, then the path rules."""
+    return {"permissions": {"deny": [*DENIED_TOOLS,
+                                     *deny_rules(protected, code_root, state_dir)]}}
 
 
 def fix_session_command(settings: CoordinatorSettings, protected: ProtectedPaths,
                         code_root: Path, state_dir: Path, work_dir: Path) -> list[str]:
     """The argument list of a fix-proposal session (DESIGN 14.4): its settings, written
-    to ``<work_dir>/settings.json``, passed by ``--settings``. Nothing calls it while
+    to ``<work_dir>/settings.json``, passed by ``--settings``, and ``--tools`` offering
+    the file tools only (decision 172 (a)). Nothing calls it while
     ``coordinator.propose_fixes`` is false (v1). Its permission mode is
     ``acceptEdits`` (a session that proposes a fix edits files; the design is silent),
     under which the deny rules still hold."""
@@ -524,4 +537,4 @@ def fix_session_command(settings: CoordinatorSettings, protected: ProtectedPaths
     return [settings.binary, "--bare", "-p", "--output-format", "json",
             "--max-budget-usd", _usd(settings.max_budget_usd),
             "--permission-mode", "acceptEdits", "--model", settings.model,
-            "--settings", str(path)]
+            "--tools", ",".join(FIX_SESSION_TOOLS), "--settings", str(path)]
