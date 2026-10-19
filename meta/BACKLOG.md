@@ -107,6 +107,17 @@ paths) by U3 (item 172), and should-fix 4 (`_MONTH_MISSING`'s key
 untested) by U4 (item 173). Note 6 is taken by items 169 (e) and 170 (d),
 the corrections of FINAL-REPORT-20 by mission 21's report (item 174), and
 notes 1 and 8 to 10 are recorded by mission 21 U0 (item 175 (b)).
+REVIEW-21 has no blocker and no should-fix; S4.2a is ticked (missions 20
+and 21). Its notes 1, 10 and 11 are recorded by mission 22 U0
+(decisions-2026-10-19-m22 item 187 (b)), and its note 2 is corrected by
+mission 22's report (item 188 (a)). Step S4.2b is mission 22: the items
+left to it below are taken by its units U1 to U5 (items 178 to 186).
+
+- REVIEW-21 notes, not carried as work unless named (decision 187 (a)):
+  notes 3 to 9 stand as the review accepts them (note 4: `_MONTH_MISSING`'s
+  `rows` is guarded through the hash; note 6: `persistent_approach`'s
+  zero-clean-days branch holds by reading the code; notes 7 and 8: the
+  tests' style); note 1's check times go to finding D-013, open.
 
 - REVIEW-20 notes, not carried as work unless named (decision 175 (a)):
   notes 1 to 4 stand as the review accepts them; note 1's check times go
@@ -125,7 +136,10 @@ notes 1 and 8 to 10 are recorded by mission 21 U0 (item 175 (b)).
   `paper.clean_members` disagree, which fails the day rather than skipping
   the rule (note 4); the detectors' events appended to the health log
   before staging is moved, appended again on a failed day's retry (note 6,
-  with REVIEW-17 note 4).
+  with REVIEW-17 note 4). Taken by mission 22 (step S4.2b, unit U4;
+  decisions-2026-10-19-m22 item 182 (d), (e)): the `ValueError` stays a
+  failure of the day, now retried and ended in `run_failed`; an event the
+  log holds is not appended again.
 
 - REVIEW-18 notes, not carried as work (decision 154 (a)): note 1 (the
   cell line's integers allowed anywhere in the brief part), note 2 (the
@@ -141,12 +155,16 @@ notes 1 and 8 to 10 are recorded by mission 21 U0 (item 175 (b)).
   (note 3's second half); a failed day's health events of steps 3 to 5
   appended again on its re-run (note 4); `replay.scripted_start`'s uncaught
   `KeyError` on a stored response without `model`, and `WORKERS_TRANSPORT`
-  as a module-level test hook (note 5).
+  as a module-level test hook (note 5). Taken by mission 22 (units U4 and
+  U5; decisions-2026-10-19-m22 items 182 (d), (e) and 186 (c));
+  `WORKERS_TRANSPORT` stays as built.
 - Left by step S4.1 to step S4.2, now step S4.2b (decision 152 (e), (f);
   decisions-2026-10-18-m20 item 155): the day loop's
   call of the `no_finding` detector, which needs the full daily run's
   records to tell months of live running from a replay; the digest and the
-  issues for the alerts mission 19 fires.
+  issues for the alerts mission 19 fires. Taken by mission 22 (units U1,
+  U2 and U5; decisions-2026-10-19-m22 items 178 to 180 and 185: the run log
+  line of every day, with its `mode`, tells live running from a replay).
 - Left by step S4.1 to step S4.3: G4.5, the dashboard's gate test, over
   the replay's state (decision 153 (d) builds its unit tests only).
 - REVIEW-11 note 8 (`paper.portfolio` and `paper._series` registered
@@ -166,7 +184,8 @@ notes 1 and 8 to 10 are recorded by mission 21 U0 (item 175 (b)).
   `run-day --provider` and `--coordinator`, chosen with the full daily run;
   `--coordinator` gains the Claude Code form there. The Claude Code form is
   taken by mission 20 (step S4.2a, unit U5; decisions-2026-10-18-m20 item
-  163); the live defaults go to step S4.2b.
+  163); the live defaults go to step S4.2b, taken by mission 22 (unit U5;
+  decisions-2026-10-19-m22 item 186).
 - For step S4.3: the fixture models of `tests/fixtures/config/models.toml`
   have cutoffs in 2024 and 2026, so every approach observation of a replay
   over 2019 is exposed (DESIGN §11.3), and no finding alert can read a
@@ -268,7 +287,10 @@ notes 1 and 8 to 10 are recorded by mission 21 U0 (item 175 (b)).
   step that next touches `state.py` may use `column.array`); the paper
   heal compares dates only, and a death between the `journal/` and
   `ledger/` moves of `_move` still loses that day's lifecycle and rank
-  rows (step S4.2b, which builds staging and retry, takes it); the
+  rows (left by step S4.2b, whose retry covers a day that raises, not a
+  process that dies mid-move, to step S5.1: its offline doctor may name a
+  state tree changed since its last commit; decisions-2026-10-19-m22 item
+  187 (d)); the
   Saturday test of decision 79 (a) does not assert SYNX's bars had
   closed, and the mission 8 equivalence test shares `latest_closed_day`
   with the code under test.
@@ -300,8 +322,9 @@ notes 1 and 8 to 10 are recorded by mission 21 U0 (item 175 (b)).
   where trusted sources live in an installed package, decisions-2026-10-14-m13
   item 107); `revised_data` is
   detected by matching the bar store's error text, and `daily.py` calls
-  the private `store._indexed_last_ts` (a typed error is sturdier; step
-  S4.2b, which stages step 1, may take it); `journal recompute` leaves its
+  the private `store._indexed_last_ts` (a typed error is sturdier; taken
+  by mission 22, step S4.2b, unit U3; decisions-2026-10-19-m22 item 181
+  (c)); `journal recompute` leaves its
   `journal_mismatch` health line uncommitted until the next `run-day`.
 
 - Finding D-006 (decision 44): each instrument's evaluation gets a
@@ -353,13 +376,15 @@ notes 1 and 8 to 10 are recorded by mission 21 U0 (item 175 (b)).
   items 50, 51, 54): staging of step 1's writes (bars, rolls, `gaps.jsonl`), the retry
   from a clean staging directory, `run_failed`, the push to a remote, the
   catch-up of missed days with `day_caught_up`, and the weekly journal
-  recomputation as step 6 of §16.1. Left to step S2.2 (item 48): running
+  recomputation as step 6 of §16.1. Taken by mission 22 (units U2 to U5;
+  decisions-2026-10-19-m22 items 180 to 184). Left to step S2.2 (item 48): running
   approaches through the sandbox instead of the in-process loader; taken
   by mission 13 (unit U5; decisions-2026-10-14-m13 item 105).
 - REVIEW-2 note (U4): when `update_rolls` fails after `bars fetch` wrote
   the bars, the command exits 1 and the next fetch records the roll,
   measuring its gap from a later source state. The daily run's staging and
-  retry (step S4.2b) take it.
+  retry (step S4.2b) take it: mission 22 (unit U3; decisions-2026-10-19-m22
+  item 181 (d)).
 - REVIEW-2 notes (U5, U6), for step S5.1, which builds the doctor and
   runs a day through the vendor adapter (G5.2): `vendor.py` passes the key
   to the client unstripped while its presence check strips it;

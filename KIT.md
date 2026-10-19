@@ -1,1 +1,1 @@
-plan: mission 21 kit (S4.2a, closes REVIEW-20 blocker and should-fix)
+plan: mission 22 kit (S4.2b, the full daily run, digest and issue sinks)
