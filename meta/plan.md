@@ -25,7 +25,7 @@ Left items:
 
 - [x] U0 Plan (`plan:` commit): this file, `meta/CHECKPOINT.md`, `meta/journal.md`, `meta/findings/FINDINGS.md` (D-022 and its status; HF-015, HF-012, HF-010 lines; D-013 times line; decision 175 (b)).
 - [x] U1 `persistent_approach`'s `N` and `p(N)` from the alert state (REVIEW-20 blocker 1, D-022; decisions 169, 170; DESIGN §15.1, §15.3, §15.5, §11.4). `alerts:` commit. G1.3 and decision 170's three measurements at the commit. — 558e02a (G1.3 PASS 462 s; median ratio 1.116; check 976, 981, 995 s)
-- [ ] U2 The unknown-coordinator test and a secret-free test environment (REVIEW-20 should-fix 2; decision 171; DESIGN §14.2, §19.3 L4). `tests:` commit.
+- [x] U2 The unknown-coordinator test and a secret-free test environment (REVIEW-20 should-fix 2; decision 171; DESIGN §14.2, §19.3 L4). `tests:` commit. — 943a18c (check 987, 997, 985 s)
 - [ ] U3 The fix session's tools and the protected paths (REVIEW-20 should-fix 3, note 5; decision 172; DESIGN §14.4). `coordinator:` commit.
 - [ ] U4 `gaps._MONTH_MISSING`'s content identity (REVIEW-20 should-fix 4; decision 173; DESIGN §5.4). `tests:` commit.
 - [ ] U5 The regression gates at the pushed tip (O-2, O-25, O-27; decisions 168 (a), 170; DESIGN §18.2). `meta:` commit (one D-013 times line).

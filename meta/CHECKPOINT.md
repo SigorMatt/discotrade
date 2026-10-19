@@ -9,11 +9,17 @@ removed from dashboard.py, RANK_P; 5 tests; no key-set test changed; register no
 sandbox discotrade-sandbox:3b7d75c39621; G1.3 PASS 462 s (460.18 s); speed ratios 1.202, 1.116, 1.097, median 1.116,
 load 1.0-1.4; no finding).
 
-In progress: U2 — the unknown-coordinator test parametrized over bogus, Claude, scripted: (171 (a)); the two claude
-paths before any day held by env-independent tests (171 (b)); autouse fixture in tests/conftest.py removing every
-secret env var named by a src/discotrade constant, with its test (171 (c)); 171 (d)'s list. Done means: a `tests:`
-commit pushed, no src/ change, check 3/3 green, the fixture-dropped wrong change seen red under a dummy
-ANTHROPIC_API_KEY, the item's tests green under a dummy key.
+U2 943a18c (tests: unknown-coordinator test over bogus/Claude/scripted:; claude off PATH test (no-key path already
+held by test_cli::test_coordinator_claude_is_refused_before_any_day); autouse _no_secret_env removing ANTHROPIC_API_KEY
+(coordinator.KEY_ENV), NEBIUS_API_KEY (workers.providers.KEY_ENV), DATABENTO_API_KEY (sources.vendor.KEY_ENV);
+tests/test_secret_env.py 4 tests; dummy-key run 201 passed; check 3/3 987, 997, 985 s; no finding. Not proven:
+module/session-scoped fixtures still see the env).
+
+In progress: U3 — fix_session_command passes --tools Read,Glob,Grep,Edit,Write (help syntax) and the generated
+settings deny Bash, WebFetch, WebSearch beside the Edit path rules; config/protected_paths.toml code list gains
+decision 172 (b)'s entries. Done means: a `coordinator:` commit pushed, check 3/3 green, tests of 172 (a) and 164 (c)
+pass, wrong changes (--tools dropped; Bash dropped from deny) seen red, body quotes claude --help --tools line and
+claude --version.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-26, O-27 win, then O-25 and earlier owner items,
 then decisions 168-176, then 1-167 where not replaced. No file under tests/gates/, tests/fixtures/rejected/, no record
