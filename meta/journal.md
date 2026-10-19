@@ -193,3 +193,4 @@
 - 2026-10-19 mission 20 U7 done 8dacfe7: FINAL-REPORT-20.md; HF-016 status line (owner's cause); mission 20 finished.
 2026-10-19T08:50:35.454Z  consult 0mvf0bksl-cdyq (architect done) on aux.done of aux job 0mvexex4u-ir8u: VERDICT: next kit mission-21-kit
 - 2026-10-19 mission 21 U0: plan, checkpoint, D-022 filed and answered (169), HF-015/HF-012/HF-010 lines, D-013 times line (175 (b)); U1 started.
+- 2026-10-19 mission 21 U1 done 558e02a: N and p_N in persistent_approach entries, page reads them; G1.3 PASS 462 s; median ratio 1.116 (1.202, 1.116, 1.097); check 3/3 976, 981, 995 s; U2 started.

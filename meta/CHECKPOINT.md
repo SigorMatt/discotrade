@@ -3,13 +3,17 @@
 Mission: 21 (`meta/BUILDER-21-PROMPT.md`), roadmap step S4.2a. Closes REVIEW-20's items; closes no milestone. Base e477f67.
 Container runtime: docker. Image at mission 20's tip: discotrade-sandbox:3b7d75c39621.
 
-Done: U0 (plan; D-022 and its status; HF-015, HF-012, HF-010 lines; D-013 times line).
+Done: U0 e43c77c (plan; D-022 and its status; HF-015, HF-012, HF-010 lines; D-013 times line).
+U1 558e02a (alerts: persistent_approach entry holds N and p_N, page reads them, tightened_percentile and in_force
+removed from dashboard.py, RANK_P; 5 tests; no key-set test changed; register none; check 3/3 976, 981, 995 s;
+sandbox discotrade-sandbox:3b7d75c39621; G1.3 PASS 462 s (460.18 s); speed ratios 1.202, 1.116, 1.097, median 1.116,
+load 1.0-1.4; no finding).
 
-In progress: U1 — `persistent_approach`'s `N` and `p_N` in the alert state, the dashboard reads them (decision 169;
-D-022), `RANK_P` in place of the literal "p" (169 (e)). Done means: an `alerts:` commit pushed, check 3/3 green with
-the container tests run, the tests of 169 (d) pass, the wrong change (page calling stats.tightened_percentile) seen
-red, the body lists every dashboard.py call into stats/alerts/table/paper (169 (c)), G1.3 time at the commit (beside
-458 s), decision 170's three measurements with median ratio <= 1.25.
+In progress: U2 — the unknown-coordinator test parametrized over bogus, Claude, scripted: (171 (a)); the two claude
+paths before any day held by env-independent tests (171 (b)); autouse fixture in tests/conftest.py removing every
+secret env var named by a src/discotrade constant, with its test (171 (c)); 171 (d)'s list. Done means: a `tests:`
+commit pushed, no src/ change, check 3/3 green, the fixture-dropped wrong change seen red under a dummy
+ANTHROPIC_API_KEY, the item's tests green under a dummy key.
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-26, O-27 win, then O-25 and earlier owner items,
 then decisions 168-176, then 1-167 where not replaced. No file under tests/gates/, tests/fixtures/rejected/, no record
