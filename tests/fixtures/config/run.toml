@@ -31,3 +31,10 @@ max_turns = 1              # read, not passed: the installed `claude --help` has
 max_budget_usd = 0.10      # --max-budget-usd of one call
 timeout_seconds = 300.0    # after it the call's whole process group is killed
 propose_fixes = false      # DESIGN 14.4: fix sessions are off in v1
+
+# The issue sinks (DESIGN 15.4, 19.3 L6; decision 2026-10-19-m22 178 (c)). Every value is
+# the project's own choice, not a fact from outside it; the same values in both run.toml files.
+[issues]
+binary = "gh"              # the gh executable, found on PATH
+timeout_seconds = 60       # after it the gh call's whole process group is killed
+labels = ["discotrade"]    # an issue's first labels; then finding or health, then its kind

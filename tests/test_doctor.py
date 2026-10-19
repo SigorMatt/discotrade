@@ -59,7 +59,8 @@ def test_plain_doctor_is_a_usage_error_naming_s5_1(capsys):
 # "sandbox" (L5) left this list: decision 2026-10-14-m13 103 (d) builds it in step S2.2.
 # "workers" (L3) left it: decision 2026-10-16-m15 122 (e) builds its offline behaviour.
 # "coordinator" (L4) left it: decision 2026-10-18-m20 163 (f) builds its refusal.
-@pytest.mark.parametrize("name", ["issues", "costs", "planted", "nonsense"])
+# "issues" (L6) left it: decision 2026-10-19-m22 178 (e) builds its refusals.
+@pytest.mark.parametrize("name", ["costs", "planted", "nonsense"])
 def test_another_check_is_a_usage_error_naming_s5_1(monkeypatch, capsys, name):
     monkeypatch.delenv(KEY_ENV, raising=False)
     assert doctor("--live", name) == 2
@@ -436,4 +437,85 @@ def test_live_coordinator_without_the_key_prints_one_line_exits_1_no_call(
     assert len(lines) == 1, lines
     assert "doctor --live coordinator: FAIL" in lines[0]
     assert "ANTHROPIC_API_KEY" in lines[0] and "no call was made" in lines[0]
+    assert not marker.exists()
+
+
+# --- L6 issues (decision 2026-10-19-m22 178 (e)): the refusals only ----------------------
+
+
+def _issues_world(tmp_path, monkeypatch, origin: bool):
+    """A fake ``gh`` written here, which records any start, named by a copied
+    run.toml's ``[issues] binary``; a state repository made by ``git init`` under tmp,
+    with a bare ``origin`` beside it when ``origin``. Git runs on local paths with
+    ``GIT_ALLOW_PROTOCOL=file``."""
+    import shutil
+    import stat
+    import subprocess
+    import sys
+
+    from conftest import FIXTURE_CONFIG
+
+    monkeypatch.setenv("GIT_ALLOW_PROTOCOL", "file")
+    monkeypatch.delenv("DISCOTRADE_STATE", raising=False)
+    marker = tmp_path / "started"
+    fake = tmp_path / "bin" / "gh"
+    fake.parent.mkdir()
+    fake.write_text(f"#!{sys.executable}\nopen({str(marker)!r}, 'w').close()\n",
+                    encoding="utf-8")
+    fake.chmod(fake.stat().st_mode | stat.S_IXUSR)
+    config = tmp_path / "config"
+    shutil.copytree(FIXTURE_CONFIG, config)
+    run = config / "run.toml"
+    run.write_text(run.read_text(encoding="utf-8").replace('binary = "gh"',
+                                                           f'binary = "{fake}"'),
+                   encoding="utf-8")
+    state = tmp_path / "state"
+    subprocess.run(["git", "init", "-q", str(state)], check=True)
+    if origin:
+        subprocess.run(["git", "init", "-q", "--bare", str(tmp_path / "origin.git")],
+                       check=True)
+        subprocess.run(["git", "-C", str(state), "remote", "add", "origin",
+                        str(tmp_path / "origin.git")], check=True)
+    return config, state, marker
+
+
+def _one_refusal(capsys, needle):
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    lines = captured.err.splitlines()
+    assert len(lines) == 1, lines
+    assert "doctor --live issues: FAIL" in lines[0] and needle in lines[0]
+    assert "no call was made" in lines[0]
+
+
+def test_live_issues_with_no_gh_on_path_prints_one_line_exits_1_no_call(
+        monkeypatch, capsys, tmp_path):
+    """The fixture's own ``binary = "gh"`` and ``PATH`` an empty temporary directory."""
+    from conftest import FIXTURE_CONFIG
+
+    _, state, marker = _issues_world(tmp_path, monkeypatch, origin=True)
+    empty = tmp_path / "empty-path"
+    empty.mkdir()
+    monkeypatch.setenv("PATH", str(empty))
+    assert main(["--config", str(FIXTURE_CONFIG), "--state", str(state), "--as-of", AS_OF,
+                 "doctor", "--live", "issues"]) == 1
+    _one_refusal(capsys, "'gh' is not found on PATH")
+    assert not marker.exists()
+
+
+def test_live_issues_with_a_state_without_origin_prints_one_line_exits_1_no_call(
+        monkeypatch, capsys, tmp_path):
+    config, state, marker = _issues_world(tmp_path, monkeypatch, origin=False)
+    assert main(["--config", str(config), "--state", str(state), "--as-of", AS_OF,
+                 "doctor", "--live", "issues"]) == 1
+    _one_refusal(capsys, "no remote named origin")
+    assert not marker.exists()
+
+
+def test_live_issues_without_a_state_prints_one_line_exits_1_no_call(
+        monkeypatch, capsys, tmp_path):
+    config, _, marker = _issues_world(tmp_path, monkeypatch, origin=True)
+    assert main(["--config", str(config), "--as-of", AS_OF,
+                 "doctor", "--live", "issues"]) == 1
+    _one_refusal(capsys, "--state")
     assert not marker.exists()

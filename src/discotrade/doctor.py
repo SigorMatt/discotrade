@@ -40,6 +40,13 @@ flags (the Claude Code form, ``run.toml``'s ``[coordinator]``) and prints what c
 back. Without ``ANTHROPIC_API_KEY`` it prints one line naming it, exits 1 and makes
 no call; only that refusal is tested (DESIGN 19.3).
 
+L6, ``--live issues`` (decision 2026-10-19-m22 178 (e)), opens one test issue in the
+state repository's remote with ``gh`` (``run.toml``'s ``[issues]``) and closes it,
+printing what came back. With no ``gh`` on ``PATH`` (its ``binary``), without
+``--state``, or with a ``--state`` whose repository has no remote named ``origin``, it
+prints one line naming what is missing, exits 1 and makes no call; only those refusals
+are tested (DESIGN 19.3).
+
 L5, ``--live sandbox``, runs the container self-test of ``discotrade sandbox
 selftest`` (:func:`discotrade.sandbox.container.selftest`). Without a container
 runtime it refuses, naming that none was found, exits 1 and starts nothing.
@@ -76,12 +83,13 @@ def run(ctx: Any, args: argparse.Namespace) -> int:
     if name is None:
         return usage_error(f"plain 'doctor' (the offline checks) is built by step "
                            f"{LATER_STEP}; in this step give --live vendor, --live spreads, "
-                           f"--live workers, --live coordinator or --live sandbox")
+                           f"--live workers, --live coordinator, --live sandbox or "
+                           f"--live issues")
     check = LIVE.get(name)
     if check is None:
         return usage_error(f"no live check {name!r} in this step; the live checks other than "
-                           f"vendor, spreads, workers, coordinator and sandbox are built by step "
-                           f"{LATER_STEP} (DESIGN 19.3)")
+                           f"vendor, spreads, workers, coordinator, sandbox and issues are "
+                           f"built by step {LATER_STEP} (DESIGN 19.3)")
     return check(ctx, out=sys.stdout, err=sys.stderr, args=args)
 
 
@@ -321,3 +329,50 @@ def live_coordinator(ctx: Any, out: TextIO, err: TextIO, args: Any = None) -> in
 
 
 LIVE["coordinator"] = live_coordinator
+
+
+def live_issues(ctx: Any, out: TextIO, err: TextIO, args: Any = None) -> int:
+    """Live check L6 (DESIGN 19.3; decision 2026-10-19-m22 178 (e)): one test issue
+    opened in the state repository's remote and closed. Without ``gh`` on ``PATH``,
+    ``--state`` or its ``origin`` it prints one line naming what is missing, exits 1
+    and makes no call."""
+    import shutil
+
+    from discotrade import digest
+
+    head = "doctor --live issues: FAIL:"
+    try:
+        settings = load_run(ctx.config).issues
+    except ConfigError as exc:
+        print(f"{head} {exc}; no call was made", file=err)
+        return 1
+    if settings is None:
+        missing = f"{ctx.config / 'run.toml'} has no [issues] table"
+    elif shutil.which(settings.binary) is None:
+        missing = f"the binary {settings.binary!r} is not found on PATH"
+    elif ctx.state is None:
+        missing = "no state directory (--state or $DISCOTRADE_STATE)"
+    elif not digest.has_origin(ctx.state):
+        missing = f"the state repository {ctx.state} has no remote named {digest.ORIGIN}"
+    else:
+        missing = ""
+    if missing:
+        print(f"{head} {missing}; no call was made", file=err)
+        return 1
+    sink = digest.GhIssueSink(settings, ctx.state)
+    title = f"discotrade live check L6 {ctx.clock.now().date().isoformat()}"
+    labels = digest.issue_labels(settings.labels, "live_check")
+    try:
+        address = sink.open(title, "A test issue of `discotrade doctor --live issues`; "
+                            "it is closed at once.\n", labels)
+        print(f"L6 issues: opened {address} with labels {', '.join(labels)}", file=out)
+        closed = sink.close(address)
+    except digest.IssueError as exc:
+        print(f"{head} {exc}", file=err)
+        return 1
+    print(f"closed: {closed}", file=out)
+    print("doctor --live issues: ok", file=out)
+    return 0
+
+
+LIVE["issues"] = live_issues

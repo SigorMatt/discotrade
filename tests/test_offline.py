@@ -390,6 +390,15 @@ SUBPROCESS_FILES = {
         "the claude executable it is given (a fake written by the test in tests), print "
         "mode with every tool denied, without NEBIUS_API_KEY (decision 2026-10-16-m15 122 (d))",
     "src/discotrade/state.py": "git on the local state directory, GIT_ALLOW_PROTOCOL=file",
+    "src/discotrade/digest.py":
+        "the gh executable it is given (a fake written by the test in tests), without the "
+        "withheld keys; git remote get-url on the local state directory "
+        "(decision 2026-10-19-m22 178 (b), (d))",
+    "tests/test_digest.py":
+        "git on local paths, GIT_ALLOW_PROTOCOL=file; a fake gh, a Python program the test "
+        "writes that opens no connection",
+    "tests/test_doctor.py":
+        "git on local paths, GIT_ALLOW_PROTOCOL=file; a fake gh the test writes, never started",
     "tests/test_cli.py": "the discotrade command; a scratch pytest run of tests/conftest.py",
     "tests/test_config_check.py": "the discotrade command",
     "tests/test_costs.py": "a python -c snippet the test writes",

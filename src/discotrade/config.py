@@ -818,6 +818,7 @@ _SANDBOX_KEYS = ("wall_seconds", "cpu_seconds", "memory_bytes", "output_bytes", 
 _WORKERS_KEYS = ("claude_fallback", "request_timeout_seconds")
 _COORDINATOR_KEYS = ("binary", "model", "max_turns", "max_budget_usd", "timeout_seconds",
                      "propose_fixes")
+_ISSUES_KEYS = ("binary", "timeout_seconds", "labels")
 #: The container runtimes ``sandbox.runtime`` may name (DESIGN 12.4; decision 102 (a)).
 RUNTIMES = ("docker", "podman")
 #: An image repository name without a tag or digest (decision 102 (d), (e): the tag
@@ -876,6 +877,19 @@ class CoordinatorSettings:
 
 
 @dataclass(frozen=True)
+class IssueSettings:
+    """``[issues]`` of ``run.toml`` (DESIGN 15.4, 19.3 L6; decision 2026-10-19-m22 178
+    (c)): ``binary``, the ``gh`` executable (default ``gh``, found on ``PATH``);
+    ``timeout_seconds``, after which a ``gh`` call's process group is killed; ``labels``,
+    every issue's first labels (then its class, ``finding`` or ``health``, then its
+    kind)."""
+
+    binary: str
+    timeout_seconds: float
+    labels: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class RunConfig:
     sandbox: SandboxSettings
     #: None when ``run.toml`` has no ``[workers]`` table: only the code that builds a
@@ -884,6 +898,9 @@ class RunConfig:
     #: None when ``run.toml`` has no ``[coordinator]`` table: only ``--coordinator
     #: claude`` and ``doctor --live coordinator`` need it (decision 163 (e), (f)).
     coordinator: CoordinatorSettings | None = None
+    #: None when ``run.toml`` has no ``[issues]`` table: only ``--issues gh`` and
+    #: ``doctor --live issues`` need it (decision 178 (d), (e)).
+    issues: IssueSettings | None = None
 
 
 def load_run(config_dir: Path) -> RunConfig:
@@ -893,7 +910,7 @@ def load_run(config_dir: Path) -> RunConfig:
     if not path.is_file():
         raise ConfigError(f"{path}: no such file; a sandbox job takes its limits from "
                           f"{RUN_FILE} (DESIGN 3, 12.4)")
-    top = _Table(path, read_toml(path), "", ("sandbox", "workers", "coordinator"))
+    top = _Table(path, read_toml(path), "", ("sandbox", "workers", "coordinator", "issues"))
     s = _Table(path, top.raw("sandbox"), "sandbox.", _SANDBOX_KEYS)
     workers = None
     if top.has("workers"):
@@ -913,7 +930,16 @@ def load_run(config_dir: Path) -> RunConfig:
             timeout_seconds=c.number("timeout_seconds", positive=True),
             propose_fixes=c.boolean("propose_fixes"),
         )
-    return RunConfig(workers=workers, coordinator=coordinator, sandbox=SandboxSettings(
+    issues = None
+    if top.has("issues"):
+        i = _Table(path, top.raw("issues"), "issues.", _ISSUES_KEYS)
+        issues = IssueSettings(
+            binary=i.text("binary", "gh"),
+            timeout_seconds=i.number("timeout_seconds", positive=True),
+            labels=i.names("labels"),
+        )
+    return RunConfig(workers=workers, coordinator=coordinator, issues=issues,
+                     sandbox=SandboxSettings(
         wall_seconds=s.number("wall_seconds", positive=True),
         cpu_seconds=s.number("cpu_seconds", positive=True),
         memory_bytes=s.integer("memory_bytes", low=1),

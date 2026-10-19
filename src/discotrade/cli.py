@@ -467,7 +467,8 @@ def _add_doctor(subparsers: argparse._SubParsersAction, common: argparse.Argumen
         "doctor", parents=[common],
         help="live checks against the real services (DESIGN 19.3); in this step only "
         "--live vendor (L1), --live spreads (L2), --live workers (L3, the pool against "
-        "the provider's model list), --live coordinator (L4) and --live sandbox (L5)",
+        "the provider's model list), --live coordinator (L4), --live sandbox (L5) and "
+        "--live issues (L6)",
     )
     doctor.add_argument(
         "--live", metavar="NAME", default=None,
@@ -475,7 +476,9 @@ def _add_doctor(subparsers: argparse._SubParsersAction, common: argparse.Argumen
         "and refuse, exit 1, without it; workers (L3) needs the worker key and "
         "config/models.toml and refuses, exit 1, without either; coordinator (L4) needs "
         "ANTHROPIC_API_KEY and refuses, exit 1, without it; sandbox (L5) runs the "
-        "container self-test and refuses, exit 1, without a container runtime; plain "
+        "container self-test and refuses, exit 1, without a container runtime; issues (L6) "
+        "opens and closes one test issue with gh and refuses, exit 1, without gh on PATH, "
+        "--state or its origin; plain "
         "doctor and the other checks are built by step S5.1",
     )
     doctor.add_argument(
@@ -617,6 +620,74 @@ def _roles(ctx: Context, args: argparse.Namespace, command: str
     return None, provider, coordinator
 
 
+_ISSUES_HELP = (
+    "where an issue is opened for each fired alert: none (the default in this step), gh "
+    "(gh issue create against the state repository's origin, with run.toml's [issues]; "
+    "refused, exit 1, when its binary is not found on PATH or the state repository has "
+    "no remote named origin) or file:<directory> (one file per issue; a directory inside "
+    "the code repository or the state directory is a usage error); checked before any "
+    "day (DESIGN 15.4; decision 2026-10-19-m22 178 (d))")
+
+
+def _issues_spec(value: str) -> str:
+    from discotrade.digest import FILE_PREFIX, ISSUES_GH, ISSUES_NONE
+
+    if value in (ISSUES_NONE, ISSUES_GH) or (
+            value.startswith(FILE_PREFIX) and len(value) > len(FILE_PREFIX)):
+        return value
+    raise argparse.ArgumentTypeError(f"{value!r} is not none, gh or file:<directory>")
+
+
+def _add_issues_option(parser: argparse.ArgumentParser) -> None:
+    from discotrade.digest import ISSUES_NONE
+
+    parser.add_argument("--issues", metavar="SINK", type=_issues_spec, default=ISSUES_NONE,
+                        help=_ISSUES_HELP)
+
+
+def _issue_sink(ctx: Context, args: argparse.Namespace, command: str
+                ) -> tuple[int | None, Any]:
+    """The issue sink of ``--issues``, built once before any day; a refusal prints one
+    line and gives its exit status (decision 178 (d)): 2 for a ``file:`` directory
+    inside the code repository or the state directory, 1 for ``gh`` without its
+    ``[issues]`` table, its binary on ``PATH`` or the state repository's ``origin``."""
+    import shutil
+
+    from discotrade import digest
+    from discotrade.config import ConfigError, load_run
+
+    assert ctx.state is not None
+    spec = args.issues
+    if spec == digest.ISSUES_NONE:
+        return None, None
+    if spec.startswith(digest.FILE_PREFIX):
+        directory = Path(spec[len(digest.FILE_PREFIX):]).expanduser().resolve()
+        repository = REPO_ROOT if _inside(directory, REPO_ROOT) else _code_repository(directory)
+        where = (f"the code repository {repository}" if repository is not None else
+                 f"the state directory {ctx.state}" if _inside(directory, ctx.state) else None)
+        if where is not None:
+            print(f"discotrade {command}: error: --issues file:{directory} is inside {where}; "
+                  "issue files are not state files, give a directory outside both",
+                  file=sys.stderr)
+            return 2, None
+        return None, digest.FileIssueSink(directory, ctx.track)
+    try:
+        settings = load_run(ctx.config).issues
+    except ConfigError as exc:
+        print(f"{command}: FAIL: {exc}", file=sys.stderr)
+        return 1, None
+    if settings is None:
+        why = f"{ctx.config / 'run.toml'} has no [issues] table"
+    elif shutil.which(settings.binary) is None:
+        why = f"the binary {settings.binary!r} is not found on PATH"
+    elif not digest.has_origin(ctx.state):
+        why = f"the state repository {ctx.state} has no remote named {digest.ORIGIN}"
+    else:
+        return None, digest.GhIssueSink(settings, ctx.state)
+    print(f"{command}: FAIL: --issues gh: {why}; no issue was opened", file=sys.stderr)
+    return 1, None
+
+
 def _run_day(ctx: Context, args: argparse.Namespace) -> int:
     from discotrade.backtest import EvaluationError
     from discotrade.bars.store import BarStoreError
@@ -634,6 +705,9 @@ def _run_day(ctx: Context, args: argparse.Namespace) -> int:
     if refused is not None:
         return refused
     refused, provider, coordinator = _roles(ctx, args, "run-day")
+    if refused is not None:
+        return refused
+    refused, _sink = _issue_sink(ctx, args, "run-day")  # passed to the day by step S4.2b U2
     if refused is not None:
         return refused
     try:
@@ -668,6 +742,7 @@ def _add_run_day(subparsers: argparse._SubParsersAction,
     )
     _add_sandbox_option(run)
     _add_role_options(run)
+    _add_issues_option(run)
     run.set_defaults(handler=_run_day)
 
 
@@ -726,6 +801,9 @@ def _replay(ctx: Context, args: argparse.Namespace) -> int:
     refused, provider, coordinator = _roles(ctx, args, "replay")
     if refused is not None:
         return refused
+    refused, _sink = _issue_sink(ctx, args, "replay")  # passed to the day by step S4.2b U2
+    if refused is not None:
+        return refused
 
     def line(run: Any, instant: datetime) -> None:
         if run.status == WRITTEN:
@@ -775,6 +853,7 @@ def _add_replay(subparsers: argparse._SubParsersAction, common: argparse.Argumen
                         type=date.fromisoformat, help="last day of the span, included")
     _add_sandbox_option(replay)
     _add_role_options(replay)
+    _add_issues_option(replay)
     replay.set_defaults(handler=_replay)
 
 
