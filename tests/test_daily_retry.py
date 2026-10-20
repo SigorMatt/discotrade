@@ -350,3 +350,63 @@ def test_a_failing_issue_sink_appends_issue_failed_and_still_exits_1(
         {"title": f"run_failed {TRACK} {NEXT.isoformat()}",
          "error": "injected: the sink refused"}]
 
+
+
+# ------------------------------------------------------------- 179 (d): the day's tokens
+
+
+class Spending:
+    """A coordinator with ``begin_day`` whose every write call spends tokens, a different
+    count per call, recorded so that the test computes the day's sum itself; the text is
+    the scripted form's."""
+
+    def __init__(self, track, spends):
+        from discotrade.coordinator import ScriptedCoordinator
+
+        self.scripted = ScriptedCoordinator(track)
+        self.spends = list(spends)
+        self.days: list[date] = []
+        self.spent: list[int] = []
+        self.used = 0
+
+    def begin_day(self, day):
+        self.days.append(day)
+        self.used = 0
+
+    def _spend(self):
+        n = self.spends[len(self.spent)]
+        self.spent.append(n)
+        self.used += n
+
+    def choose_cell(self, cells, registry):
+        self._spend()
+        return self.scripted.choose_cell(cells, registry)
+
+    def write_digest(self, alerts):
+        self._spend()
+        return self.scripted.write_digest(alerts)
+
+    def write_runlog_line(self, summary):
+        self._spend()
+        return self.scripted.write_runlog_line(summary)
+
+
+def test_begin_day_is_called_once_for_a_retried_day_and_its_tokens_cover_both_attempts(
+        state, config, monkeypatch):
+    """Decision 179 (d): the day's token sum covers every coordinator call of the run of
+    the day, both attempts of item 182 included; ``begin_day`` is called once per day,
+    not per attempt. The first attempt fails at the move, after step 7's call spent."""
+    from discotrade.journal import Setup
+
+    track = Setup.load(config, TRACK).track
+    spender = Spending(track, [300, 500, 700])
+    calls = fail(monkeypatch, daily, "_move", times=1)
+    clock = FixedClock(datetime.fromisoformat(RAN_AS_OF))
+    done = daily.run_day(state, config, TRACK, clock, NEXT, coordinator=spender)
+    assert len(calls) == 2 and done.commit is not None
+    assert spender.days == [NEXT]
+    assert len(spender.spent) == 2                 # one step 7 call per attempt
+    rows = [json.loads(x) for x in daily.runlog_path(state, TRACK).read_text(
+        encoding="utf-8").splitlines()]
+    [row] = [r for r in rows if r["date"] == NEXT.isoformat()]
+    assert row["coordinator_tokens"] == sum(spender.spent) == 800

@@ -30,10 +30,11 @@ releasing it on success and on failure:
   the journal does not hold is refused (it cannot be journaled in order).
 - Inside the run lock, a day whose steps raise (any ``Exception`` after the refusals
   of ``D`` above) is retried once, in the same process, from a clean staging
-  directory, each attempt in its own ``bars.store.day_run()`` and with the
-  coordinator's ``begin_day`` called again, so that the day's token sum is that of
-  the attempt that is committed (decision 182 (a); the design is silent on the
-  tokens of a failed attempt, this is the simplest). A first failure the retry
+  directory, each attempt in its own ``bars.store.day_run()`` (decision 182 (a)).
+  The coordinator's ``begin_day`` is called once per day (each caught-up day its own),
+  before the first attempt and not again for the retry, so that the day's token sum
+  covers every coordinator call of the run of the day, both attempts included
+  (decision 179 (d)). A first failure the retry
   repairs appends one ``run_retried`` notice (subject the track, detail ``day`` and
   ``error``, the first error's type and text) before the commit, so that it is
   committed with the day (182 (b)); the retry replays a stored worker response and
@@ -44,8 +45,11 @@ releasing it on success and on failure:
   ``IssueError`` is an ``issue_failed`` notice), and re-raises the second attempt's
   exception (182 (c)). Events the log already holds, byte for byte, are not appended
   again (``state.append_health``), so a retried day's equal events appear once (182
-  (d)). The commit and step 8 are not retried (the design is silent; they run after
-  the day's files are in place, where a second attempt would find the day journaled).
+  (d)). Step 8's push and issues are not retried: a failed push or issue is a notice
+  and the day succeeds (decision 180 (a), (b)). The commit, which runs after the day's
+  files are in place, is not retried either: 182 (a) and DESIGN 16.2 retry steps 1 to
+  7 from a clean staging directory, and a second attempt after the move would find
+  the day journaled.
 - Step 1, written as ``bars fetch`` writes (each append atomic, decisions 4,
   5) but into the staging directory (decision 2026-10-19-m22 181 (a)): the
   whole day runs inside ``bars.store.staged``, so the bar store's month files
@@ -200,9 +204,10 @@ candidates). In this order:
   empty pool (``pool_empty``) makes no call.
 - Step 4: ``coordinator.choose`` with ``coordinator`` (default
   ``ScriptedCoordinator``) over the offered cells and ``coordinator.registry_lines``.
-  A coordinator with ``begin_day`` (the Claude Code form) is given ``D`` before
-  step 1, so that its token sum is that of one run of the day (decision
-  2026-10-18-m20 165).
+  A coordinator with ``begin_day`` (the Claude Code form) is given ``D`` once,
+  before step 1 of the first attempt, so that its token sum is that of one run of
+  the day, a retry included (decision 2026-10-18-m20 165; decision 2026-10-19-m22
+  179 (d)).
 - Step 5: ``workers.generate.generate`` with the provider, the day's pool, ``D``'s
   trading ordinal and the day's backend, its call rows staged (``into``), its
   responses stored at once under the state directory; a candidate is scored on T
@@ -758,6 +763,9 @@ def _day(run: _Run, d: date, candidate: lifecycle.Candidate | None,
         appended += state.append_health(state_dir, track, [HealthEvent(
             d, "alert", DAY_CAUGHT_UP, track,
             {"day": d.isoformat(), "run_for": caught_up_for.isoformat()})])
+    begin = getattr(run.coordinator, "begin_day", None)
+    if begin is not None:  # once per day, not per attempt: the day's token sum covers
+        begin(d)           # both attempts (decision 165; decision 179 (d))
     errors: list[Exception] = []
     while True:
         try:
@@ -808,9 +816,6 @@ def _attempt(run: _Run, d: date, candidate: lifecycle.Candidate | None) -> _Atte
     state_dir, config_dir, track = run.state_dir, run.config_dir, run.track
     setup, tc, calendars = run.setup, run.tc, run.calendars
     sandbox, provider, coordinator = run.sandbox, run.provider, run.coordinator
-    begin = getattr(coordinator, "begin_day", None)
-    if begin is not None:  # the coordinator's token sum is per run of a day (165)
-        begin(d)
     appended: list[HealthEvent] = []
     staging = state_dir / state.STAGING
     shutil.rmtree(staging, ignore_errors=True)
