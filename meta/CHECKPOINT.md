@@ -3,19 +3,21 @@
 Mission: 22 (`meta/BUILDER-22-PROMPT.md`), roadmap step S4.2b. The rest of the daily run; closes no milestone. Base 72400d7.
 Container runtime: docker. Image at mission 21's tip: discotrade-sandbox:3b7d75c39621.
 
-In progress: U4 The retry, `run_failed` and the catch-up (decisions 182, 183; DESIGN 16.1, 16.2, 15.2; SPEC §11;
-REVIEW-17 notes 3 and 4, REVIEW-19 notes 4 and 6). Done means: `daily:` commit pushed; a day failing once is retried
-inside the lock from a clean staging directory and committed once with `run_retried`; failing twice leaves every state
-file but the health log and stored responses unchanged, records `run_failed`, opens its issue, exits 1, retry makes no
-second provider call; missed trading days run first, oldest first, each its own commit with `day_caught_up`; tests of
-182 (g), 183 (d) and 182 (e)'s call-limit test pass (or body says why the note stays open); wrong changes (retry
-removed; staging not cleared before the retry; missed days newest first) seen red; G1.3 and three measurements (median
-<= 1.25); check 3/3 green with container tests.
+In progress: U5 The weekly recomputation, the `no_finding` call and the live defaults of `run-day` (decisions 184,
+185, 186; DESIGN 9.4, 15.2, 16.1 step 6; decisions 54, 137 (a), 152 (e); REVIEW-17 note 5). Done means: `daily:` commit
+pushed; first trading day of each ISO week recomputes decision 184's sample by the function `journal recompute` uses;
+`no_finding` called per 185, never raised by a replay; `run-day` defaults --provider openai --coordinator claude
+--issues gh, each refused before any day without key/binary/remote; `replay` defaults unchanged; scripted_start's
+refusal; tests of 184 (c), 185, 186 (d) pass; journal recompute's existing tests unchanged; wrong changes (generator
+seeded with the day before; replay lines counted as live; --provider default left none) seen red; G1.3 and three
+measurements (median <= 1.25); check 3/3 green with container tests.
 
 Done: U0 (plan; D-013 times, HF-010, HF-012 lines; decision 187 (b)). U1 41accb7 (digest.py, sinks, render, --issues,
 doctor --live issues; check 3/3, 1014 s). U2 b614465 (digest page, run log line with mode, push,
 issues; test_replay equality adapted to 179 (c)'s mode field; G1.3 522 s; median 1.223; check 1218/1142/1214 s). U3 2ae5c04 (step 1 staged via bars.store.staged;
-RevisedDataError; G1.3 557 s; median 1.143; check 1161/1203/1165 s; body miscounts tests failing on parent: 3, was 4).
+RevisedDataError; G1.3 557 s; median 1.143; check 1161/1203/1165 s; body miscounts tests failing on parent: 3, was 4). U4 7859488 + 91d1497 (retry, run_retried,
+run_failed, catch-up with day_caught_up; D-023 filed; first attempt called begin_day per attempt against 179 (d),
+corrected by the retry 91d1497; G1.3 553 then 467 s; median 1.088 then 1.116; check 1529/1513/1435 then 1414/1357/1119 s).
 
 Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-26, O-27 win, then O-25 and earlier owner items,
 then decisions 177-188, then 1-176 where not replaced. No file under tests/gates/, tests/fixtures/rejected/, no record
