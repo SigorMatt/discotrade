@@ -19,11 +19,33 @@ releasing it on success and on failure:
   not trade on ``D`` needs only its earlier days closed, so that a track whose
   calendars differ runs each of its trading days at decision 72's clock), is
   refused.
-- When the journal holds a day before ``D`` and a trading day of the track
-  between the last journaled day and ``D`` has no journal file, the run fails
-  naming the first such day and writes nothing (decision 51; the catch-up is
-  step S4.2's). A ``D`` before the last journaled day that the journal does
-  not hold is refused likewise (it cannot be journaled in order).
+- When the journal holds a day before ``D`` and trading days of the track between
+  the last journaled day and ``D`` have no journal file, those days are run first,
+  oldest first, one at a time, each as its own day (own staging directory, own retry,
+  own commit ``run <track> <day>``), then ``D`` (decision 2026-10-19-m22 183, which
+  replaces decision 51's refusal). Each appends, at its start, one ``day_caught_up``
+  alert dated that day (subject the track, detail ``day`` and ``run_for``, the ``D``
+  of the run), so that its own step 6 sees it; a caught-up day that fails twice ends
+  the run and the later days are not run. A ``D`` before the last journaled day that
+  the journal does not hold is refused (it cannot be journaled in order).
+- Inside the run lock, a day whose steps raise (any ``Exception`` after the refusals
+  of ``D`` above) is retried once, in the same process, from a clean staging
+  directory, each attempt in its own ``bars.store.day_run()`` and with the
+  coordinator's ``begin_day`` called again, so that the day's token sum is that of
+  the attempt that is committed (decision 182 (a); the design is silent on the
+  tokens of a failed attempt, this is the simplest). A first failure the retry
+  repairs appends one ``run_retried`` notice (subject the track, detail ``day`` and
+  ``error``, the first error's type and text) before the commit, so that it is
+  committed with the day (182 (b)); the retry replays a stored worker response and
+  makes no second provider call. A second failure discards the staging directory,
+  appends one ``run_failed`` alert (subject the track, detail ``day``, ``first`` and
+  ``second``), opens one issue through the command's sink (title ``run_failed
+  <track> <D>``, labels as ``digest.issue_labels``, body the two errors; an
+  ``IssueError`` is an ``issue_failed`` notice), and re-raises the second attempt's
+  exception (182 (c)). Events the log already holds, byte for byte, are not appended
+  again (``state.append_health``), so a retried day's equal events appear once (182
+  (d)). The commit and step 8 are not retried (the design is silent; they run after
+  the day's files are in place, where a second attempt would find the day journaled).
 - Step 1, written as ``bars fetch`` writes (each append atomic, decisions 4,
   5) but into the staging directory (decision 2026-10-19-m22 181 (a)): the
   whole day runs inside ``bars.store.staged``, so the bar store's month files
@@ -120,7 +142,8 @@ releasing it on success and on failure:
   health log on a day that is written, and on one that fails (DESIGN 16.2
   exempts the health log there); a re-run of a journaled day whose rows are
   unchanged writes none (decision 112 of 2026-10-15-m14, I-6).
-- A failure in any step discards the staging directory and moves nothing.
+- A failure in any step of an attempt discards the staging directory and moves
+  nothing.
   A reader that refuses a revised data point (``bars.store.RevisedDataError``,
   caught by type, decision 181 (c)) appends a ``revised_data`` alert (subject
   the track, the reader's message as detail) and the day fails.
@@ -198,6 +221,7 @@ response and makes no ``complete`` call.
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import shutil
 import subprocess
@@ -265,6 +289,9 @@ RUNLOG_DIR, DIGESTS_DIR = "runlog", "digests"
 RUNLOG_KEYS = ("alerts", "coordinator_tokens", "date", "digest", "line", "mode")
 #: Step 8's notices (decision 180) and the kind whose issue its failure opens (182 (c)).
 PUSH_FAILED, ISSUE_FAILED, RUN_FAILED = "push_failed", "issue_failed", "run_failed"
+#: The notice of a day the retry repaired (decision 182 (b)) and the alert of a missed
+#: day run late (decision 183 (b)).
+RUN_RETRIED, DAY_CAUGHT_UP = "run_retried", "day_caught_up"
 
 
 class DailyError(RuntimeError):
@@ -283,6 +310,7 @@ class DayRun:
     statuses: tuple[coord.CellStatus, ...] = ()       # step 3's cell statuses, when it ran
     brief: coord.Brief | None = None                  # step 4's brief, when it ran
     calls: tuple[Mapping[str, object], ...] = ()      # step 5's call rows, when it ran
+    caught_up: tuple[DayRun, ...] = ()                # the missed days run first (183)
 
 
 def _sources(tc: TrackConfig, calendars: Mapping[str, Calendar]) -> dict[str, BarSource]:
@@ -333,21 +361,19 @@ def _unclosed(tc: TrackConfig, calendars: Mapping[str, Calendar], day: date,
     return None
 
 
-def _missing_day(tc: TrackConfig, calendars: Mapping[str, Calendar], journaled: set[date],
-                 day: date) -> date | None:
-    """The first trading day between the last journaled day and ``day`` that
-    the journal does not hold, or None."""
+def _missing_days(tc: TrackConfig, calendars: Mapping[str, Calendar], journaled: set[date],
+                  day: date) -> list[date]:
+    """The trading days between the last journaled day and ``day`` that the journal
+    does not hold, oldest first; none when the journal is empty."""
     if not journaled:
-        return None
-    last = max(journaled)
-    if day <= last:
-        return None
-    d = last + timedelta(days=1)
+        return []
+    out = []
+    d = max(journaled) + timedelta(days=1)
     while d < day:
         if d not in journaled and is_trading_day(tc, calendars, d):
-            return d
+            out.append(d)
         d += timedelta(days=1)
-    return None
+    return out
 
 
 def _fetch(state_dir: Path, tc: TrackConfig, calendars: Mapping[str, Calendar], day: date,
@@ -575,7 +601,7 @@ def run_day(state_dir: Path, config_dir: Path, track: str, clock: Clock,
     if sandbox is None or isinstance(sandbox, str):
         choose_backend(load_track_config(Path(config_dir), track).instruments, sandbox)
     state.require_state_directory(state_dir)
-    with state.lock(state_dir), day_run():
+    with state.lock(state_dir):
         return _locked(state_dir, Path(config_dir), track, clock, day, candidate, sandbox,
                        provider, coordinator, issues, mode)
 
@@ -648,6 +674,41 @@ def _steps_3_to_5(state_dir: Path, config_dir: Path, setup: journal.Setup, tc: T
     return _Generated(tuple(appended), statuses, brief, tuple(out.rows), admission)
 
 
+@dataclass(frozen=True)
+class _Run:
+    """What a run of ``run_day`` holds for every day it runs: the caught-up days and
+    ``D`` (decision 183 (a))."""
+
+    state_dir: Path
+    config_dir: Path
+    track: str
+    clock: Clock
+    setup: journal.Setup
+    tc: TrackConfig
+    calendars: Mapping[str, Calendar]
+    now: datetime
+    used: Mapping[str, BarSource]
+    first: date                          # the first journaled day, or D on a new state
+    sandbox: Sandbox | str | None
+    provider: Any
+    coordinator: coord.Coordinator | None
+    issues: Any
+    mode: str
+
+
+@dataclass(frozen=True)
+class _Attempt:
+    """What one attempt at steps 1 to 7 of a day did, its staged files moved."""
+
+    result: journal.DayResult
+    moved: list[str]
+    fired: list[Mapping[str, Any]]
+    changes: list[Mapping[str, object]]
+    admission: lifecycle.Admission | None
+    generated: _Generated
+    appended: list[HealthEvent]
+
+
 def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
             day: date | None, candidate: lifecycle.Candidate | None,
             sandbox: Sandbox | str | None, provider: Any = None,
@@ -668,15 +729,85 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
     if not is_trading_day(tc, calendars, d):
         raise DailyError(f"{d.isoformat()} is not a trading day of {track}")
     journaled = {date.fromisoformat(e["date"]) for e in journal.read_index(state_dir, track)}
-    gap = _missing_day(tc, calendars, journaled, d)
-    if gap is not None:
-        raise DailyError(f"{gap.isoformat()} is a trading day of {track} with no journal file "
-                         f"between {max(journaled).isoformat()} and {d.isoformat()}; run it "
-                         f"first (the catch-up of missed days is step S4.2's)")
     if journaled and d < max(journaled) and d not in journaled:
         raise DailyError(f"{d.isoformat()} is before the last journaled day "
                          f"{max(journaled).isoformat()} and is not in the journal")
+    run = _Run(state_dir, config_dir, track, clock, setup, tc, calendars, now, used,
+               min(journaled | {d}), sandbox, provider, coordinator, issues, mode)
+    # Decision 183 (a): the missed trading days first, oldest first, each its own day
+    # (own staging, own retry, own commit); a second failure of one ends the run.
+    caught = tuple(_day(run, m, None, caught_up_for=d)
+                   for m in _missing_days(tc, calendars, journaled, d))
+    done = _day(run, d, candidate)
+    return dataclasses.replace(done, caught_up=caught) if caught else done
 
+
+def _error_text(exc: BaseException) -> str:
+    """An error as the health log and the issue name it: its type and its text."""
+    return f"{type(exc).__name__}: {exc}"
+
+
+def _day(run: _Run, d: date, candidate: lifecycle.Candidate | None,
+         caught_up_for: date | None = None) -> DayRun:
+    """One day of the run (decisions 182, 183): its ``day_caught_up`` alert when it is
+    a missed day run before ``caught_up_for``, steps 1 to 7 tried at most twice, each
+    time from a clean staging directory, then the commit and step 8."""
+    state_dir, track = run.state_dir, run.track
+    appended: list[HealthEvent] = []
+    if caught_up_for is not None:  # at its start, so that its own step 6 sees it (183 (b))
+        appended += state.append_health(state_dir, track, [HealthEvent(
+            d, "alert", DAY_CAUGHT_UP, track,
+            {"day": d.isoformat(), "run_for": caught_up_for.isoformat()})])
+    errors: list[Exception] = []
+    while True:
+        try:
+            with day_run():
+                attempt = _attempt(run, d, candidate)
+            break
+        except Exception as exc:  # any failure of the day's steps (182 (a))
+            errors.append(exc)
+            if len(errors) == 1:
+                continue
+            _run_failed(run, d, errors[0], exc)
+            raise
+    appended += attempt.appended
+    if errors:  # the retry repaired the first failure (182 (b)); committed with the day
+        appended += state.append_health(state_dir, track, [HealthEvent(
+            d, "notice", RUN_RETRIED, track,
+            {"day": d.isoformat(), "error": _error_text(errors[0])})])
+    sha = state.commit(state_dir, track, d, run.clock) if attempt.moved else None
+    if sha is not None:  # step 8 (decision 180); a re-run commits, pushes and opens nothing
+        appended += _step_8(state_dir, run.config_dir, track, d, attempt.fired, run.issues)
+    result, generated = attempt.result, attempt.generated
+    return DayRun(d, result.status, result.rows, sha, tuple(appended), tuple(attempt.changes),
+                  attempt.admission, generated.statuses, generated.brief, generated.calls)
+
+
+def _run_failed(run: _Run, d: date, first: Exception, second: Exception) -> None:
+    """A day that failed twice (decision 182 (c)): one ``run_failed`` alert with both
+    errors, and its issue through the command's sink (``issue_failed`` when it raises)."""
+    track = run.track
+    texts = {"first": _error_text(first), "second": _error_text(second)}
+    events = [HealthEvent(d, "alert", RUN_FAILED, track, {"day": d.isoformat(), **texts})]
+    if run.issues is not None:
+        title = f"{RUN_FAILED} {track} {d.isoformat()}"
+        body = (f"{d.isoformat()} of {track} failed twice.\n\n"
+                f"First attempt: {texts['first']}\n\nSecond attempt: {texts['second']}\n")
+        try:
+            run.issues.open(title, body, digest.issue_labels(_labels(run.config_dir),
+                                                             RUN_FAILED))
+        except digest.IssueError as exc:
+            events.append(HealthEvent(d, "notice", ISSUE_FAILED, track,
+                                      {"title": title, "error": str(exc)}))
+    state.append_health(run.state_dir, track, events)
+
+
+def _attempt(run: _Run, d: date, candidate: lifecycle.Candidate | None) -> _Attempt:
+    """Steps 1 to 7 of ``d`` in a clean staging directory, moved into place when all
+    succeeded; the staging directory is removed whatever happens."""
+    state_dir, config_dir, track = run.state_dir, run.config_dir, run.track
+    setup, tc, calendars = run.setup, run.tc, run.calendars
+    sandbox, provider, coordinator = run.sandbox, run.provider, run.coordinator
     begin = getattr(coordinator, "begin_day", None)
     if begin is not None:  # the coordinator's token sum is per run of a day (165)
         begin(d)
@@ -688,8 +819,8 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
         # Step 1 to 7 write to the staging directory and read from it first
         # (decision 2026-10-19-m22 181 (a)); the move puts them in place together.
         with staged(state_dir, staging):
-            events, skip = _step_1(state_dir, tc, calendars, d, now,
-                                   float(setup.thresholds["gaps.max_fraction"]), used)
+            events, skip = _step_1(state_dir, tc, calendars, d, run.now,
+                                   float(setup.thresholds["gaps.max_fraction"]), run.used)
             appended += state.append_health(state_dir, track, events)
             before = process.restarts()
             result = None
@@ -732,7 +863,7 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
                 if admission is not None:
                     changes += admission.lifecycle
             if result.status == journal.WRITTEN:
-                _rank_persistence(state_dir, setup, d, min(journaled | {d}), records, staging,
+                _rank_persistence(state_dir, setup, d, run.first, records, staging,
                                   (unit, positions))
                 appended += state.append_health(state_dir, track, alerts.detectors(
                     state_dir, setup, d, reached_step_5=generated.brief is not None,
@@ -745,7 +876,7 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
                     state_dir, setup, d, overlay=staging, records=records,
                     exposure=(unit, positions)))
                 appended += _step_7(state_dir, setup, d, fired, coordinator, generated.brief,
-                                    mode, staging)
+                                    run.mode, staging)
             moved = _move(staging, state_dir)
     except RevisedDataError as exc:     # the store's refusal, by type (181 (c))
         state.append_health(state_dir, track, [HealthEvent(
@@ -753,11 +884,7 @@ def _locked(state_dir: Path, config_dir: Path, track: str, clock: Clock,
         raise
     finally:
         shutil.rmtree(staging, ignore_errors=True)
-    sha = state.commit(state_dir, track, d, clock) if moved else None
-    if sha is not None:  # step 8 (decision 180); a re-run commits, pushes and opens nothing
-        appended += _step_8(state_dir, config_dir, track, d, fired, issues)
-    return DayRun(d, result.status, result.rows, sha, tuple(appended), tuple(changes),
-                  admission, generated.statuses, generated.brief, generated.calls)
+    return _Attempt(result, moved, fired, changes, admission, generated, appended)
 
 
 @dataclass(frozen=True)
@@ -795,8 +922,10 @@ def score_on_t(state_dir: Path, config_dir: Path, setup: journal.Setup, day: dat
 
 
 def describe(run: DayRun, track: str) -> Sequence[str]:
-    """The lines ``run-day`` prints."""
-    lines = [f"notice {e.to_json()}" if e.level == "notice" else f"alert {e.to_json()}"
+    """The lines ``run-day`` prints: each caught-up day's first, oldest first, then
+    ``D``'s (decision 183 (c))."""
+    lines = [line for caught in run.caught_up for line in describe(caught, track)]
+    lines += [f"notice {e.to_json()}" if e.level == "notice" else f"alert {e.to_json()}"
              for e in run.events]
     lines += [f"lifecycle {ledger.line(row)}" for row in run.changes]
     if run.status == journal.WRITTEN:

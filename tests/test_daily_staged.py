@@ -117,12 +117,13 @@ def test_a_day_failing_after_step_1_leaves_bars_rolls_and_gaps_and_then_writes_a
     with monkeypatch.context() as mp:
         mp.setattr(table, "build", failing)
         assert run(state, config, ROLL_DAY) == 1
-    assert len(seen) == 1
-    staged_names, untouched_meanwhile = seen[0]
-    assert untouched_meanwhile
-    assert INDEX in staged_names and SYNA_ROLLS in staged_names and GAPS in staged_names
-    assert any(n.startswith(f"bars/{TRACK}/SYNA/") and n.endswith(".parquet")
-               for n in staged_names)
+    # Decision 182 (a): the day is tried twice, each attempt from a clean staging directory.
+    assert len(seen) == 2
+    for staged_names, untouched_meanwhile in seen:
+        assert untouched_meanwhile
+        assert INDEX in staged_names and SYNA_ROLLS in staged_names and GAPS in staged_names
+        assert any(n.startswith(f"bars/{TRACK}/SYNA/") and n.endswith(".parquet")
+                   for n in staged_names)
     assert step_1_files(state) == before
     assert not (state / STAGING).exists()
     assert journal.read_day(state, TRACK, ROLL_DAY) is None
@@ -131,6 +132,15 @@ def test_a_day_failing_after_step_1_leaves_bars_rolls_and_gaps_and_then_writes_a
     assert run(state, config, ROLL_DAY) == 0
     straight = tmp_path / "straight"
     shutil.copytree(at_next, straight)
+    # Decision 182 (c), (f): the failed day's run_failed alert, which its later run's step 6
+    # reads, is admitted by giving the never-failed state the same line before its run.
+    log = f"health/{TRACK}.jsonl"
+    failed = [x for x in (state / log).read_text(encoding="utf-8").splitlines()
+              if '"run_failed"' in x]
+    assert len(failed) == 1
+    (straight / log).parent.mkdir(exist_ok=True)
+    with (straight / log).open("a", encoding="utf-8") as f:
+        f.write(failed[0] + "\n")
     assert run(straight, config, ROLL_DAY) == 0
     clean = step_1_files(straight)
     assert clean[SYNA_ROLLS] != before[SYNA_ROLLS] and clean[INDEX] != before[INDEX]

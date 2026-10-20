@@ -1043,3 +1043,23 @@ D-013 times (appended 2026-10-19, mission 21 U5): at the pushed tip c36df23 (U4'
 D-013 times (appended 2026-10-19, mission 22 U0, from REVIEW-21 note 1): the reviewer's per-commit sub-agents ran one at a time (HF-012), and each `./scripts/check` stayed under the 20-minute cap, all green: 1138 s at 558e02a, 1063 s at 943a18c, 1047 s at 50341fc and 1013 s at d679adc; all four are above HF-006's 15 minutes. Status: open (decision 121 (c); decision 140; HF-006)
 HF-010 status (appended 2026-10-19, mission 22 U0): REVIEW-21 (note 10) still found `/tmp/rv13-8b9f9be` and `/tmp/u5/parent` registered as worktrees. Status: open (meta/decisions/decisions-2026-10-19-m22.md item 187 (b))
 HF-012 status (appended 2026-10-19, mission 22 U0): REVIEW-21 (note 11) ran the per-commit sub-agents one at a time, which kept every check under the 20-minute cap at about 20 minutes a sub-agent; the protocol still does not say how many run at once. Status: open (meta/decisions/decisions-2026-10-19-m22.md item 187 (b))
+
+### D-023 — a second consecutive caught-up day's `day_caught_up` does not fire, so its issue is not opened
+
+Severity: low · Component: `src/discotrade/daily.py` (the catch-up) with `src/discotrade/alerts.py` (`health`,
+`transition`), decision 2026-10-19-m22 183 (b) and DESIGN 15.3 · Found: 2026-10-20, mission 22 U4.
+
+Symptom. Decision 183 (b) gives each caught-up day one `day_caught_up` alert, subject the track, "so that its own
+step 6 sees it and its step 8 opens its issue". DESIGN 15.3 identifies an alert by kind and subject and fires it only
+when its condition turns from false to true; `alerts.health` makes the entry active on a day that has an event
+dated that day. With two or more missed days in a row, the first caught-up day's entry fires and opens its issue;
+on the next caught-up day the entry is active again, was active the day before, and does not fire, so that day gets
+no digest section and no issue. Seen in mission 22 U4: `run-day` for 2019-06-15 on a `test_mixed` state journaled to
+2019-06-12 appended two `day_caught_up` alerts (06-13 and 06-14) to the health log and opened one issue, for 06-13.
+U4 built DESIGN 15.3's rule as it stands and did not give the alert another subject. Two texts disagree, so this is
+a finding, not a choice made in the code.
+
+Direction (for the architect). Say which gives way: one issue per run of missed days (as built), or a subject per
+caught-up day (for example the day), which would make each one fire.
+
+Status: open

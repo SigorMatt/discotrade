@@ -334,7 +334,8 @@ def test_a_failing_day_leaves_ledgers_and_approaches_untouched(first_day, config
     status, _, err = replay(path, config, date(2019, 6, 11), date(2019, 6, 11))
     assert status == 1
     assert "2019-06-11" in err and "injected failure" in err
-    assert seen == ([where] if where == "lifecycle_steps" else ["admit", where])
+    # Decision 2026-10-19-m22 182 (a): the day is tried twice in the one command.
+    assert seen == ([where] * 2 if where == "lifecycle_steps" else ["admit", where] * 2)
     assert files(path, *kept) == before
     assert head(path) == sha
     assert not (path / state.STAGING).exists()

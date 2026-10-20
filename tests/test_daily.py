@@ -237,11 +237,18 @@ def test_running_a_finished_day_again_writes_nothing_and_makes_no_commit(state, 
     assert len(journal.read_index(state, TRACK)) == len(DAYS)
 
 
-def test_a_skipped_trading_day_exits_1_naming_it_and_writes_nothing(state, config, capsys):
-    before, head = files(state), commits(state)
-    assert run(state, config, "--day", (NEXT + timedelta(days=2)).isoformat()) == 1
-    assert "2019-06-13" in capsys.readouterr().err
-    assert files(state) == before and commits(state) == head
+def test_a_skipped_trading_day_is_run_first_and_committed_before_d(state, config, capsys):
+    # Decision 2026-10-19-m22 183 (a) replaces decision 51's refusal of a missed day:
+    # 2019-06-13 and 2019-06-14 are run first, oldest first, then 2019-06-15.
+    head = commits(state)
+    later = NEXT + timedelta(days=2)
+    assert run(state, config, "--day", later.isoformat()) == 0
+    assert "2019-06-13" in capsys.readouterr().out
+    caught = [NEXT, NEXT + timedelta(days=1)]
+    assert [e["date"] for e in journal.read_index(state, TRACK)] == \
+        [d.isoformat() for d in (*DAYS, *caught, later)]
+    assert commits(state) == [f"run {TRACK} {d.isoformat()}"
+                              for d in (later, *reversed(caught))] + head
     assert git(state, "status", "--porcelain") == ""
 
 

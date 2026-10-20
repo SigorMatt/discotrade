@@ -409,6 +409,8 @@ SUBPROCESS_FILES = {
     "tests/test_config_check.py": "the discotrade command",
     "tests/test_costs.py": "a python -c snippet the test writes",
     "tests/test_daily.py": "git on local state directories, GIT_ALLOW_PROTOCOL=file",
+    "tests/test_daily_retry.py": "git on local state directories, GIT_ALLOW_PROTOCOL=file",
+    "tests/test_daily_catch_up.py": "git on local state directories, GIT_ALLOW_PROTOCOL=file",
     "tests/gates/m1_harness.py": "git on local state directories, GIT_ALLOW_PROTOCOL=file",
     "tests/test_gate_script.py": "./scripts/gate; scratch pytest runs of tests/conftest.py",
     "tests/test_offline.py": "a scratch pytest run of tests/conftest.py",

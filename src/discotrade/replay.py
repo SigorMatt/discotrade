@@ -8,7 +8,9 @@ dates) from ``first`` to ``last`` in ascending order, the day function of
 among the track's instruments closes. Each day takes and releases the state's
 lock as ``run-day`` does; a day that fails stops the replay, the days before
 it staying committed. A day already journaled is a re-run and writes nothing
-(I-6); a day after a gap in the journal is refused as ``run-day`` refuses it.
+(I-6); before a day after a gap in the journal, ``run_day`` runs the missed days
+first, oldest first, as ``run-day`` does (decision 2026-10-19-m22 183 (a)), and each
+is reported before it.
 
 Scripted candidates (decision 73; DESIGN 10.3, 16.1 step 5; decisions 48, 63):
 ``read_candidates(path, symbols)`` reads a JSON lines file whose lines each
@@ -342,8 +344,9 @@ def replay(state_dir: Path, config_dir: Path, track: str, tc: TrackConfig,
     ``coordinator`` and issue sink ``issues`` of the command passed to every day
     (decision 137; decision 2026-10-19-m22 180 (b)), each day's run log line of mode
     ``replay`` (decision 179 (c)); call
-    ``on_day`` after each success. An exception of a type in ``failures`` stops the replay as
-    ``DayFailed``. Return the number of days run."""
+    ``on_day`` after each success, first for each missed day ``run_day`` caught up before
+    the day (decision 2026-10-19-m22 183 (a), (c)), with the day's clock. An exception of a
+    type in ``failures`` stops the replay as ``DayFailed``. Return the number of days run."""
     count = 0
     for d, instant in replay_days(tc, calendars, first, last):
         candidate = None if candidates is None else candidates.get(d)
@@ -355,6 +358,9 @@ def replay(state_dir: Path, config_dir: Path, track: str, tc: TrackConfig,
                            coordinator=coordinator, issues=issues, mode=MODE_REPLAY)
         except failures as exc:
             raise DayFailed(d, instant, exc) from exc
+        for caught in done.caught_up:  # the missed days run first (decision 183 (c))
+            on_day(caught, instant)
+            count += 1
         on_day(done, instant)
         count += 1
     return count

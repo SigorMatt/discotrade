@@ -332,16 +332,27 @@ def test_as_of_and_unknown_options_are_refused(copied, configs):
     assert files(state) == before and head(state) == sha
 
 
-def test_a_day_after_a_gap_is_refused_as_run_day_refuses_it(copied, configs):
-    """Journal ends 2019-06-11; a replay from 2019-06-13 leaves 06-12 out."""
+def test_a_day_after_a_gap_runs_the_missed_day_first_as_run_day_does(copied, configs):
+    """Journal ends 2019-06-11; a replay from 2019-06-13 leaves 06-12 out, which the
+    day function runs first (decision 2026-10-19-m22 183 (a), (c), replacing decision
+    51's refusal): two lines, 06-12's first, two commits, one day_caught_up."""
     state, track = copied["test_synth"], "test_synth"
-    before, sha = files(state), head(state)
-    status, out, err = replay(state, configs[track], track, date(2019, 6, 13),
-                              date(2019, 6, 13))
-    assert status == 1
-    assert "2019-06-13" in err and "2019-06-12 is a trading day" in err
-    assert out == ""
-    assert files(state) == before and head(state) == sha
+    missed, d = date(2019, 6, 12), date(2019, 6, 13)
+    status, out, err = replay(state, configs[track], track, d, d)
+    assert status == 0, err
+    lines = out.splitlines()
+    assert len(lines) == 2
+    assert lines[0].startswith(f"replay: {track} {missed.isoformat()} at ")
+    assert lines[1].startswith(f"replay: {track} {d.isoformat()} at ")
+    assert [e["date"] for e in journal.read_index(state, track)][-2:] == \
+        [missed.isoformat(), d.isoformat()]
+    assert git(state, "log", "-2", "--format=%s").splitlines() == \
+        [f"run {track} {d.isoformat()}", f"run {track} {missed.isoformat()}"]
+    log = (state / "health" / f"{track}.jsonl").read_text(encoding="utf-8").splitlines()
+    caught = [json.loads(x) for x in log if '"day_caught_up"' in x]
+    assert [(e["date"], e["level"], e["subject"], e["detail"]) for e in caught] == [
+        (missed.isoformat(), "alert", track,
+         {"day": missed.isoformat(), "run_for": d.isoformat()})]
 
 
 def test_run_day_takes_a_day_one_instrument_does_not_trade_at_its_close(tmp_path, configs):

@@ -362,6 +362,9 @@ def test_every_health_event_of_steps_3_to_5_is_logged_on_a_day_that_fails_after_
         (D.isoformat(), "notice", "model_skipped", SKIPPED[1]),
         (D.isoformat(), "notice", "coordinator_fallback", "no_such_family/short"),
         (D.isoformat(), "alert", "token_budget", TRACK),               # the generation's
+        # Decision 2026-10-19-m22 182 (c), (f): the retry's equal events are not appended
+        # again, and its second failure appends run_failed.
+        (D.isoformat(), "alert", "run_failed", TRACK),
     ]
     assert ledger_bytes(state, ledger.CALLS) is None
 

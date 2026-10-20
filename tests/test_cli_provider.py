@@ -245,17 +245,20 @@ def test_a_replay_in_two_calls_equals_one_call(tmp_path, config, scripted, singl
 def test_a_split_replay_after_a_day_failed_with_its_response_stored(tmp_path, config,
                                                                      scripted, single,
                                                                      monkeypatch):
-    """The third day fails once after its responses were stored (a failure of
-    the rank-persistence step injected for that day, here); the second call
-    over the last two days is run again. No corpus file is served twice, and
-    every file but the health log (whose notices of the failed run stay,
-    DESIGN 16.2) equals the one-call replay's."""
+    """The third day fails after its responses were stored (a failure of the
+    rank-persistence step injected for that day, here), on both attempts of its
+    command (decision 2026-10-19-m22 182 (a): a day is retried once in the same
+    command); the second call over the last two days is run again. No corpus file
+    is served twice, and every file but the health log (whose notices of the failed
+    run stay, DESIGN 16.2) equals the one-call replay's, once that replay's health
+    log holds the failed run's ``run_failed`` alert, which the re-run day's step 6
+    reads (decision 182 (c), (f))."""
     bad = DAYS[2][0]
     real = daily._rank_persistence
     hit = []
 
     def failing(state_dir, setup, day, *rest):
-        if day == bad and not hit:
+        if day == bad and len(hit) < 2:
             hit.append(day)
             raise daily.DailyError("injected failure after the generation")
         return real(state_dir, setup, day, *rest)
@@ -266,7 +269,7 @@ def test_a_split_replay_after_a_day_failed_with_its_response_stored(tmp_path, co
     assert status == 0, err
     status, _, err = run_replay(state, config, DAYS[2][0], DAYS[3][0], "--provider", scripted)
     assert status == 1 and "injected failure" in err
-    assert hit == [bad]
+    assert hit == [bad, bad]
     # The failed day's two responses stay stored (DESIGN 16.2); its call rows do not.
     assert served(state)[-2:] == [(MODEL, "0004.md"), (MODEL, "0005.md")]
     assert {r["date"] for r in calls(state)} == {d.isoformat() for d, _ in DAYS[:2]}
@@ -275,7 +278,21 @@ def test_a_split_replay_after_a_day_failed_with_its_response_stored(tmp_path, co
     one = single["state"]
     assert len(set(served(state))) == len(served(state))
     assert served(state) == served(one)
-    assert files(state, skip=("health",)) == files(one, skip=("health",))
+    # The one-call replay's files, given the failed run's run_failed line before the
+    # third day: the one-call replay of the first two days, the line, then the rest
+    # (a split replay equals the one-call replay, as the test above shows).
+    log = f"health/{TRACK}.jsonl"
+    failed = [x for x in (state / log).read_text(encoding="utf-8").splitlines()
+              if '"run_failed"' in x]
+    assert len(failed) == 1
+    ref = fresh(tmp_path / "ref")
+    assert run_replay(ref, config, DAYS[0][0], DAYS[1][0], "--provider", scripted)[0] == 0
+    (ref / log).parent.mkdir(exist_ok=True)
+    with (ref / log).open("a", encoding="utf-8") as f:
+        f.write(failed[0] + "\n")
+    assert run_replay(ref, config, DAYS[2][0], DAYS[3][0], "--provider", scripted)[0] == 0
+    assert served(ref) == served(one)
+    assert files(state, skip=("health",)) == files(ref, skip=("health",))
 
 
 def test_run_day_continues_the_cursor_from_the_stored_responses(tmp_path, config):
