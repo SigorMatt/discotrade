@@ -3,14 +3,13 @@
 Mission: 22 (`meta/BUILDER-22-PROMPT.md`), roadmap step S4.2b. The rest of the daily run; closes no milestone. Base 72400d7.
 Container runtime: docker. Image at mission 21's tip: discotrade-sandbox:3b7d75c39621.
 
-In progress: U5 The weekly recomputation, the `no_finding` call and the live defaults of `run-day` (decisions 184,
-185, 186; DESIGN 9.4, 15.2, 16.1 step 6; decisions 54, 137 (a), 152 (e); REVIEW-17 note 5). Done means: `daily:` commit
-pushed; first trading day of each ISO week recomputes decision 184's sample by the function `journal recompute` uses;
-`no_finding` called per 185, never raised by a replay; `run-day` defaults --provider openai --coordinator claude
---issues gh, each refused before any day without key/binary/remote; `replay` defaults unchanged; scripted_start's
-refusal; tests of 184 (c), 185, 186 (d) pass; journal recompute's existing tests unchanged; wrong changes (generator
-seeded with the day before; replay lines counted as live; --provider default left none) seen red; G1.3 and three
-measurements (median <= 1.25); check 3/3 green with container tests.
+In progress: U5 STOPPED (O-27 item 3). The uncommitted U5 tree (base e4dd5c3) gave G1.3 PASS in 934 s wall (over 15
+minutes) and a median ratio of 2.473 (limit 1.25): decision 184's weekly recomputation recomputes each sampled subject
+from its first journaled day (decision 54), so a Monday's cost grows with history. Finding D-024 filed, committed,
+awaiting the architect. The U5 work is in `git stash` as "wip U5 2026-10-20 (mission 22; D-024: G1.3 934 s, median
+2.473)"; its patch, new test file and every run output are copied under meta/drafts/m22-u5-*. Tree clean. Resume
+U5 only on an answer to D-024 (decisions file); U6 and U7 not started. Correction for the report: U3's body (2ae5c04)
+says three new tests failed on the parent; four did.
 
 Done: U0 (plan; D-013 times, HF-010, HF-012 lines; decision 187 (b)). U1 41accb7 (digest.py, sinks, render, --issues,
 doctor --live issues; check 3/3, 1014 s). U2 b614465 (digest page, run log line with mode, push,
