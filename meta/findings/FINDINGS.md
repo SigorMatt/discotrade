@@ -1063,3 +1063,34 @@ Direction (for the architect). Say which gives way: one issue per run of missed 
 caught-up day (for example the day), which would make each one fire.
 
 Status: open
+
+### D-024 — the weekly recomputation of decision 184 makes a replay day's cost grow with history: G1.3 934 s, median ratio 2.473
+
+Severity: high (stops the mission, O-27 item 3; fails the unit, O-26 item 4) · Component: `src/discotrade/daily.py`
+(step 6) with `src/discotrade/journal.py` (`recompute`, `span_rows`, `control_span_rows`), decision 2026-10-19-m22
+184 (a), decision 2026-10-12 54, DESIGN 9.4, O-26, O-27 · Found: 2026-10-20, mission 22 U5.
+
+Symptom. U5 built decision 184 as written: on the first trading day of each ISO week the day calls
+`journal.recompute_sample` (the one function `journal recompute` without `--all` now calls), which recomputes 20
+sampled pairs, each subject evaluated once from its first journaled day to its last asked day (decision 54). That
+evaluation spans the whole history, so a Monday's cost grows with the history the state holds. Measured on the
+uncommitted U5 tree (base e4dd5c3, sandbox image discotrade-sandbox:3b7d75c39621), nothing else running:
+- `./scripts/gate M1 G1.3`: PASS, wall 934 s, `G1.3 PASS 10 passed in 932.64s` (U4: 467 s; mission 21 U5: 462 s).
+- Decision 170's three `./scripts/speed --work` runs (each one process, start 2019-06-03), first30 / last30 / ratio /
+  fresh last day, load at start -> end:
+  1. 0.031587 / 0.078634 / 2.489 / 5.618 s; 0.72 0.99 1.09 -> 1.15 1.09 1.09
+  2. 0.032235 / 0.079712 / 2.473 / 5.599 s; 0.97 1.05 1.08 -> 1.25 1.18 1.11
+  3. 0.034274 / 0.078588 / 2.293 / 5.540 s; 1.15 1.16 1.11 -> 1.10 1.10 1.09
+  Median ratio 2.473 (limit 1.25; U4: 1.116).
+- Run 1's `days.jsonl`: a non-Monday day costs about 1.5 s early and 1.8 s late; a Monday about 2.4-3.1 s in June
+  2019 and 14.7-18.8 s in May-June 2020. Mondays: 552 s of the span's 907 s.
+
+No test was weakened and nothing O-26 item 3 forbids was changed. The unit is not committed: its gate fails.
+
+Direction (for the architect). Decision 184 and DESIGN 9.4 (recompute from the stored bars and frozen sources,
+each subject from its first journaled day) and O-26 (a replay day's cost must not grow with history) cannot both
+hold. Say which gives way, for example: the weekly recomputation's span bounded (a fixed window before each sampled
+pair, with what that leaves unproven), the sample drawn from a bounded recent span, the recomputation kept out of
+`replay` days (only `run-day`), or G1.3 and the measurement read with the recomputation's cost excluded.
+
+Status: open
