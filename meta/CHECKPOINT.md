@@ -3,13 +3,14 @@
 Mission: 22 (`meta/BUILDER-22-PROMPT.md`), roadmap step S4.2b. The rest of the daily run; closes no milestone. Base 72400d7.
 Container runtime: docker. Image at mission 21's tip: discotrade-sandbox:3b7d75c39621.
 
-In progress: U5 STOPPED (O-27 item 3). The uncommitted U5 tree (base e4dd5c3) gave G1.3 PASS in 934 s wall (over 15
-minutes) and a median ratio of 2.473 (limit 1.25): decision 184's weekly recomputation recomputes each sampled subject
-from its first journaled day (decision 54), so a Monday's cost grows with history. Finding D-024 filed, committed,
-awaiting the architect. The U5 work is in `git stash` as "wip U5 2026-10-20 (mission 22; D-024: G1.3 934 s, median
-2.473)"; its patch, new test file and every run output are copied under meta/drafts/m22-u5-*. Tree clean. Resume
-U5 only on an answer to D-024 (decisions file); U6 and U7 not started. Correction for the report: U3's body (2ae5c04)
-says three new tests failed on the parent; four did.
+In progress: U5 RESUMES under O-28 (meta/decisions/2026-10-20-owner.md, D-024 decided): each sampled pair's day is
+recomputed over the span the contract bounds it to (approach: history_cap_bars context; random control: from the first
+bar of the draw in force, carry across a redraw from the previous draw; buy-and-hold: the day), carry recomputed, never
+read from the journal; sample, comparison and `--all` unchanged; O-28 item 5's test added to 184 (c). This attempt is
+U5's RETRY: a second failure marks U5 blocked. G1.3 above 15 minutes stops the mission (O-27 item 3). U5's work restored
+from `git stash` "wip U5 2026-10-20 (mission 22; D-024 ...)" (copies under meta/drafts/m22-u5-*). Previous attempt:
+G1.3 PASS 934 s, median ratio 2.473 (decision 184 from the first journaled day). U6 and U7 not started. The report
+names O-28. Correction for the report: U3's body (2ae5c04) says three new tests failed on the parent; four did.
 
 Done: U0 (plan; D-013 times, HF-010, HF-012 lines; decision 187 (b)). U1 41accb7 (digest.py, sinks, render, --issues,
 doctor --live issues; check 3/3, 1014 s). U2 b614465 (digest page, run log line with mode, push,
@@ -18,7 +19,7 @@ RevisedDataError; G1.3 557 s; median 1.143; check 1161/1203/1165 s; body miscoun
 run_failed, catch-up with day_caught_up; D-023 filed; first attempt called begin_day per attempt against 179 (d),
 corrected by the retry 91d1497; G1.3 553 then 467 s; median 1.088 then 1.116; check 1529/1513/1435 then 1414/1357/1119 s).
 
-Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-26, O-27 win, then O-25 and earlier owner items,
+Standing constraints: CLAUDE.md invariants I-1..I-15; owner files O-28, then O-26, O-27 win, then O-25 and earlier owner items,
 then decisions 177-188, then 1-176 where not replaced. No file under tests/gates/, tests/fixtures/rejected/, no record
 under tests/fixtures/config/ but run.toml's new [issues] and [state] tables, no entry of tests/fixtures/config_frozen.json,
 no value of a frozen config file changes; config/run.toml ([issues], [state]) is the one config file that changes.

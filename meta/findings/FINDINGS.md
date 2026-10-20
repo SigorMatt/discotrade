@@ -1094,3 +1094,4 @@ pair, with what that leaves unproven), the sample drawn from a bounded recent sp
 `replay` days (only `run-day`), or G1.3 and the measurement read with the recomputation's cost excluded.
 
 Status: open
+D-024 status: decided meta/decisions/2026-10-20-owner.md (O-28)
