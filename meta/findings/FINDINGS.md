@@ -1095,3 +1095,74 @@ pair, with what that leaves unproven), the sample drawn from a bounded recent sp
 
 Status: open
 D-024 status: decided meta/decisions/2026-10-20-owner.md (O-28)
+
+### D-025 — U5's retry under O-28: the weekly recomputation is bounded, but decision 170's median ratio is 1.295 (limit 1.25) on a machine another project's test runs were loading
+
+Severity: high (fails U5's retry, O-26 item 4; a second failure marks U5 blocked) · Component: `src/discotrade/journal.py`
+(`recompute_sample`, new `recompute_bounded`, `pair_rows`, `_span_start`), `src/discotrade/daily.py` step 6, decision
+2026-10-19-m22 184 as O-28 changes it, decision 170, O-26 item 4 · Found: 2026-10-21, mission 22 U5 retry.
+
+What was built (uncommitted, stashed). `recompute_sample` draws the sample as before (`journal_pairs`, `sample_pairs`
+seeded with `D`) and hands it to `recompute_bounded`, which recomputes each pair with `pair_rows`. A day's rows depend
+on the targets of its bars and of the two stored bars before it (its first row's `prev_position` is `p` two bars back,
+its `position` `p` one bar back; DESIGN 7.1, decision 49). So each instrument's rows are scored from the trading date
+of the second stored bar before the day, never before the subject's first journaled day, that span's first bar flat:
+the carry is recomputed, no stored row is read. An approach's targets on it come from one sandbox job, a buy-and-hold
+control's are 1. A random control's come from its machine run from the first bar of the draw in force at that second
+bar (on a redraw's first day, the previous draw). This reads O-28's "the draw in force that day" as "the draw in force
+at the earliest bar whose target the day's rows use". The two agree except on a draw's second day, where the stored
+`prev_position` comes from the previous draw. `journal recompute --all` still calls `recompute` (decision 54).
+Proven by tests: every one of 1371 pairs of a 24-day `test_mixed` replay with three approaches equals its stored rows
+(scratch run, not a test); O-28 item 5's test (first paper day of an approach admitted 2019-06-20, SYNA's roll of
+2019-06-14 with a non-flat carry, 2019-07-01's redraw for the first rc slot with a non-flat carry) passes.
+Seen to fail, each wrong change made alone and reverted: the carry taken as flat (`_span_start` returning the day) and
+on a redraw's first day the span started at the new draw (`in_force(draws, day)`), both on
+`test_each_bounded_recompute_equals_the_stored_rows`; the second goes red only through the guard that refuses a
+machine span that does not end with the scored one (`JournalError`), not through a hash mismatch.
+Also seen to fail: the generator seeded with the day before (`test_the_pairs_are_the_draw_seeded_with_the_day_and_equal_the_commands`,
+`test_the_sample_is_recomputed_by_the_bounded_function_alone`), replay lines counted as live (`test_a_replay_raises_none`),
+and `--provider` left `none` (`test_run_day_with_no_role_option_and_no_key_prints_the_providers_refusal`,
+`test_run_day_help_names_the_three_live_defaults_and_replay_keeps_its_own`).
+
+Measurements (sandbox image discotrade-sandbox:3b7d75c39621; first30 / last30 / ratio / fresh last day; one process
+each, start 2019-06-03; load at start -> end). Outputs are under `meta/drafts/m22-u5r-*`.
+- Retry, first version (the rows scored over the whole draw span):
+  - `./scripts/check` 3 of 3 green, 1360 / 1383 / 1274 s.
+  - G1.3 PASS, wall 653 s, `G1.3 PASS 10 passed in 651.46s`.
+  - Speed 1: 0.038669 / 0.053955 / 1.395 / 7.988 s; 0.95 1.12 1.22 -> 2.72 1.95 1.52.
+  - Speed 2: 0.039490 / 0.053802 / 1.362 / 7.716 s; 0.57 1.01 1.21 -> 2.35 2.12 1.75.
+  - Its random-control spans were short in the first month only, so a Monday cost about 2.4 s more than other days
+    early and about 4.1 s more late.
+- Retry, final version (the rows scored from the second bar before the day; the machine run from the draw):
+  - The weekly step on the speed state costs 8.53 s at 2019-06-24 and 8.10 s at 2020-06-08 (outside a day run). In
+    the replay a Monday costs about 3.0 s more than other days early and about 3.5 s more late.
+  - G1.3 PASS, wall 694 s, `G1.3 PASS 10 passed in 692.66s` (U4 467 s, mission 21 U5 462 s).
+  - Speed A: 0.043415 / 0.051963 / 1.197 / 7.098 s; 1.29 1.25 1.39 -> 2.33 2.24 1.91.
+  - Speed B: 0.037871 / 0.051021 / 1.347 / 7.355 s; 1.06 1.08 1.30 -> 2.17 1.85 1.54.
+  - Speed C: 0.040672 / 0.052670 / 1.295 / 6.951 s; 1.10 1.33 1.41 -> 2.60 2.40 1.98.
+  - Median ratio 1.295 (limit 1.25). `./scripts/check` was not run three times at this version: the gate failed
+    first. The last change after A to C only refuses a machine span that starts after the scored one, a branch no
+    correct run reaches.
+- Another project's pytest (`/home/msi/git/hands/.venv/bin/pytest`, 4 CPUs here) was running at the end of runs 1, 2,
+  A, B and C (it had been running 1:58 to 4:31). One was also running at the end of the U4 control below (0:42),
+  and its `.pytest_cache` was rewritten at 03:05:05, inside the no-weekly control. None of decision 170's three
+  commands ran meanwhile.
+- Controls, same machine and same hours, not measurements of the unit:
+  - U4's code (`git archive e4dd5c3`, by `PYTHONPATH`): 0.033893 / 0.038184 / 1.127 / 7.503 s; its non-Monday days
+    already cost 1.88 s in the first window, against 1.56-1.69 s in U4's own runs.
+  - This tree with the weekly step switched off (`daily.first_in_iso_week` patched to False):
+    0.028491 / 0.037023 / 1.299 / 5.571 s. Its days of 2020-05-12 to 05-29 cost 2.1-2.6 s, then 1.8-1.9 s from
+    06-01 on. Its other 20-day buckets track U4's (1.57-1.88 s).
+  - The fresh last day (2020-06-10, a fresh process, five alternations on copies of one state): U4
+    6.62 / 7.04 / 7.82 / 7.39 / 7.15 s; this tree 6.66 / 6.94 / 7.57 / 6.88 / 8.11 s.
+
+Not proven: that the ratio exceeds 1.25 on a quiet machine. The controls point to the machine's load, not the step's
+cost, as what moves last30: with the weekly step off the same tree gave 1.299. Equally unproven: that it stays under
+1.25 there. Nothing O-26 item 3 forbids was changed and no test was weakened. The work is stashed as
+`wip U5 retry 2026-10-21 (mission 22; D-025 ...)`, with a copy in `meta/drafts/m22-u5r.patch`.
+
+Direction (for the architect). Either U5's measurement is taken again on a machine with no other test suite running
+(decision 170's condition widened from "the three commands" to any load), with U5 counted as retried, or U5 is
+marked blocked as O-26 item 4 says. The rest of U5 (decisions 185 and 186) is as the stash holds it.
+
+Status: open
