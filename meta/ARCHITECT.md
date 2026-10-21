@@ -35,14 +35,20 @@ into a later mission.
 `meta/ROADMAP.md`, this file, `meta/BACKLOG.md`, `meta/CHECKPOINT.md`,
 `meta/plan.md`, `meta/findings/FINDINGS.md`, the review the consultation
 names (`meta/reviews/REVIEW-<n>.md`), the latest `meta/FINAL-REPORT-<n>.md`,
-the latest `meta/BUILDER-<n>-PROMPT.md` (your form), every file under
+the latest `meta/BUILDER-<n>-PROMPT.md` (your form, section 5), every file under
 `meta/decisions/`, and the `DESIGN.md` sections the next step names. The
 working tree of `./repo` is not updated by a fetch: read with `git show`,
-not from files. `docs/ARCHITECT-HANDBOOK.md` and `templates/` on the branch
-are pinned copies from hands at commit 724e8c5, placed here because your
-clone is this project's and not hands' (hands finding HF-002); they are
-reference, and where they and this file differ about this series, this
-file wins.
+not from files.
+
+Read hands' own documents from the hands that runs you, as your role's
+rule 2 says: the handbook `$HANDS_DOCS/docs/ARCHITECT-HANDBOOK.md` and the
+forms under `$HANDS_DOCS/templates/`, at the absolute paths the
+consultation prompt gives (owner decision O-29,
+`meta/decisions/2026-10-19-owner.md`). `docs/ARCHITECT-HANDBOOK.md` and
+`templates/` on the branch are copies pinned at hands commit 724e8c5 by the
+plan kit (hands finding HF-002). They are stale: do not read them. Where
+the installed handbook and this file differ about this series, this file
+wins.
 
 Treat the builder's report and the reviewer's review as claims. Before you
 build on "mission n finished" or "gate PASS", check the branch: the unit
@@ -103,11 +109,12 @@ does not name a mission number. It is, exactly:
 
     Read the builder prompt with the highest mission number in the meta directory and execute the mission below its divider.
 
-Every brief carries that same line. After an autonomous apply, hands sends
-the kickoff of the playbook it loaded before the apply, so a kit that
-changed the kickoff would restart the previous mission (hands finding
-HF-001). A kickoff that never changes cannot go stale, and the playbook
-never needs re-issuing. If you believe the playbook must change, escalate.
+Every brief carries that same line. A change of the playbook is the
+owner's (hands DESIGN §43): a kit you file that carries `PLAYBOOK.toml` is
+not approved by the engine but waits for the human. A kickoff that never
+changes keeps every kit free of the playbook, so your kits run unattended.
+(The defect this paragraph once cited, hands finding HF-001, is fixed in
+hands by H-044.) If you believe the playbook must change, escalate.
 
 ## 5. Writing the brief
 
@@ -118,6 +125,51 @@ including the paragraph that begins "Your final reply begins with", the
 sub-agent brief, and "§R Recovery brief". The brief is self-contained:
 those parts are written out in full every time. No budget or quota
 guidance of any kind.
+
+**One exception, once (owner decisions O-29 and O-30,
+`meta/decisions/2026-10-19-owner.md`).** If no
+`meta/BUILDER-<n>-PROMPT.md` was committed after that file was (`git -C
+./repo log --oneline <the commit that added it>..origin/main --
+'meta/BUILDER-*-PROMPT.md'` prints nothing), the brief you are writing is
+the switch brief. For it, take the sub-agent brief and "§R Recovery brief"
+from `$HANDS_DOCS/templates/BUILDER-N-PROMPT.md`, not from the latest
+brief:
+
+- **§R Recovery brief:** the template's section, word for word.
+- **Sub-agent brief:** the template's text, word for word, except:
+  - `<project>` is `discotrade`;
+  - the gate's timeout, `<the gate's timeout, in ms>`, is `1800000` (O-30);
+  - this series commits to `main` (O-31), so the brief gains the
+    template's "Branch (DESIGN §35)" section with its Direct paragraph only,
+    word for word, placed where the template places it; the template's §R
+    and sub-agent brief refer to it, and `push (to the mission's branch,
+    see Branch)` stays as the template words it;
+  - where the template has no counterpart, this project's own rules from
+    the latest brief's sub-agent brief are added at the matching place,
+    in the latest brief's words:
+    - DESIGN.md §2 is read with the unit's sections;
+    - tests use no network, no secret, no real model, no wall clock and a
+      fixed seed for every random draw;
+    - SPEC.md, PLAYBOOK.toml and any file CLAUDE.md lists as not a
+      builder's are never edited, beside the template's list;
+    - no dependency beyond the ones CLAUDE.md names is added;
+    - a design question is written as a finding to
+      meta/findings/FINDINGS.md, a problem with hands itself under its
+      "hands findings" heading;
+    - every number taken from outside the project goes into config with
+      checked, source and verified, and is reported as not proven when it
+      did not come from a primary source.
+- **Execution model:** it stays the latest brief's, plus one sentence from
+  the template that belongs with the sub-agent brief's `refused:` clause.
+  It goes at the end of the retry bullet, as the template words it: "A
+  sub-agent that reports `refused: <one line>` is not retried: mark the
+  unit `[b] refused` and continue likewise."
+
+Every other part comes from the latest brief, as above. Your reply names
+the switch brief as such. Every brief after it takes these parts, the Branch
+section among them, from the latest brief again, character for character. A
+later change to hands' templates reaches this series' briefs only by another
+owner decision.
 
 Change only: the mission number everywhere it appears; the title; the
 reading list (the DESIGN sections of the step, the previous review, the
