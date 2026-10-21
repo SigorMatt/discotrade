@@ -1166,3 +1166,93 @@ Direction (for the architect). Either U5's measurement is taken again on a machi
 marked blocked as O-26 item 4 says. The rest of U5 (decisions 185 and 186) is as the stash holds it.
 
 Status: open
+HF-001 status (appended 2026-10-21, owner): fixed in hands by H-044. The builder.done of an apply the engine approved is now decided with the playbook reloaded from the commit (hands DESIGN §36). Since hands mission 27, a kit the role files that carries the playbook is held for the human (§43). Closed by `meta/decisions/2026-10-19-owner.md` (O-29), whose `meta/ARCHITECT.md` §4 now gives that reason. Status: closed
+HF-002 status (appended 2026-10-21, owner): hands gives every role job `HANDS_DOCS`, the installed hands' handbook and templates (hands DESIGN §38). From O-29 (`meta/decisions/2026-10-19-owner.md`) on, `meta/ARCHITECT.md` §2 points the architect role at them. The copies pinned at hands 724e8c5 under `docs/` and `templates/` stay on the branch, unread; removing them is a later owner decision. Status: closed
+HF-016 status (appended 2026-10-21, owner): the cause is proven. On 2026-10-18 at 18:22 the aux probed from /tmp under Claude Code 2.1.302, asking whether the Agent tool's input schema has a `run_in_background` property. Plain `claude -p` answered "yes"; the same call with `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` answered "no". The variable had been added that day to `[roles.builder.env]` and `[roles.aux.env]`. It was removed from both, the two `BASH_*` keys were kept at 2700000, and handsd@discotrade was restarted with no job running; builder job 0mve01xjy-w4iy then ran sub-agents for 46 minutes. The entry above reads the missing property as a change in Claude Code. Its observations stand; its cause, and its direction to pin the Claude Code version, do not. Fixed in hands by H-074 (mission 27): under the variable, the hook admits an omitted flag, and hands sets the variable for builder and aux only when the role's hook is byte-identical to the installed copy. This project's `.claude/hooks/no_background.py` was replaced by the installed hands' copy (hands 4d32d35; the file is unchanged since mission 27) in the owner's commit `meta: .claude/hooks/no_background.py from hands 4d32d35 (owner)`, at the quiet moment of 2026-10-21 to 22; its `--selftest` printed 65/65 and 22/22 ok. Status: open until a builder unit run after that commit dispatches a sub-agent under the variable
+
+### HF-017 — no way to bring an autonomous series to rest at the next job boundary on demand
+
+Severity: medium · Component: the playbook engine's pause (hands `playbook.py`, `Engine.pause`, `Engine.on_event`,
+`Engine.resume`; hands DESIGN §10) · Found: 2026-10-18, by the owner and the project chat, hands at f16d6d1.
+
+Symptom. Three owner commits needed a moment with no job running, queued or held, since each touches the tree the
+builder and the aux share. In an autonomous series no such moment comes on demand:
+- one builder job spans a whole mission;
+- after it, the review, the consultation, the next kit's apply and the kickoff follow each other within moments;
+- at f16d6d1, `pause` drops the event that would start the next step (`playbook: paused (…); <event> fires
+  nothing`), `resume` replays nothing, nothing is published when the pipeline comes to rest, and a restart under the
+  pause leaves an orphaned builder un-resumed.
+
+On 2026-10-18 at about 23:00 an aux prompt guarded on "no job running, queued or held" found builder job
+0mve1pq5x-jej2 running and stopped (`VERDICT: blocked busy 0mve1pq5x-jej2 builder running`).
+
+Direction (for the hands Project). A pause that keeps the next step's event, publishes when nothing runs, and replays
+the event on resume. Handed over as `HF-017-report.md` on 2026-10-19.
+
+What this project does meanwhile: nothing in product code; the commits waited for a quiet moment.
+
+Status: open (fixed in hands by H-078, mission 28, 1acc9e0). Its live test is the quiet moment of 2026-10-20 to 21:
+- `pause` was sent on 2026-10-20 at 22:43, while builder job 0mvh3afqe-h8qj ran;
+- `hands: at rest` came on 2026-10-21 at 03:26, naming that job's kept end, `VERDICT: mission 22 blocked U5`;
+- hands mission 29's install restarted the daemon on 2026-10-22 at about 01:1x, at rest. The pause and the kept end came
+  through unchanged (`paused   yes (phone)`, the same `kept` line, before and after);
+- this commit and the owner's others were made at rest.
+
+It closes when the read-back after `resume` is recorded.
+
+### HF-018 — `progress` reports "no checkpoint" while the checkpoint names the unit in progress
+
+Severity: low · Component: hands `api.py` (`_checkpoint_line`, `_UNIT_IN_PROGRESS_RE`) with the brief template's
+execution model (hands `templates/BUILDER-N-PROMPT.md`) · Found: 2026-10-19, by the owner and the project chat, hands
+at f16d6d1.
+
+Symptom. Two `progress <secret>` answers (2026-10-18 17:44, at tip 3c317f4; 2026-10-19 17:38, at tip c36df23)
+ended `no checkpoint` while `meta/CHECKPOINT.md` named the next or running unit (`Next: U2 —`, `In progress: U5 —`).
+- `progress` takes the first line matching `\bunit in progress\b`, case-insensitively. It returns "no checkpoint"
+  when no line matches, the same answer as for a missing file.
+- The template asks the builder for the checkpoint's contents (unit id, intent, what "done" means, standing
+  constraints) but prescribes no line form.
+- Through mission 19 this builder wrote `Unit in progress: U<n> …`, which matches. From mission 20's U0 (4ed47b4) it
+  writes `Next: U<n> —` or `In progress: U<n> —`, which does not. None of the 15 checkpoint commits from 4ed47b4 to
+  16881ff has a matching line.
+
+Direction (for the hands Project):
+- one prescribed unit line, read by the template, §R and `progress` alike;
+- "no checkpoint" only for a missing file;
+- a test tying the template's form to the matcher.
+
+Handed over as `HF-018-report.md` on 2026-10-19.
+
+What this project does meanwhile: nothing in its own files; the unit in progress is read from the branch.
+
+Status: open
+
+### HF-019 — two projects' role jobs share the laptop, so one project's timing gate is measured under the other's load
+
+Severity: medium · Component: hands running several projects on one machine (one daemon `handsd@<project>` each,
+their role jobs at the same time) with this project's decision 170 and O-26 item 4 · Found: 2026-10-21, mission 22
+U5's retry (D-025), hands at 1acc9e0.
+
+Symptom. Decision 170's three `./scripts/speed` runs of U5's retry gave ratios 1.197, 1.347 and 1.295, a median of
+1.295 against O-26 item 4's limit of 1.25. Another project's pytest (`/home/msi/git/hands/.venv/bin/pytest`) was
+running at the end of every one (it ran from about 01:58 to 04:31); the one-minute load averages at their ends were
+2.33, 2.17 and 2.60 on 4 CPUs.
+- On the same machine in the same hours, the U5 tree with the weekly step switched off gave 1.299, and U4's code gave
+  1.127.
+- The unit failed its gate on the other project's load, and its retry was spent on it.
+- hands ran both projects' builders at once, as designed. Nothing told the discotrade role that the machine was
+  shared during its measurement, and nothing let it ask for the machine to itself.
+
+Direction (for the hands Project): a way for a role to know that another project's role job ran during a step, or
+to hold the machine to itself for a timing-sensitive step, or both. The project's wall-time limits need it even with
+the ratio in CPU time.
+
+What this project does meanwhile: O-32 (`meta/decisions/2026-10-21-owner.md`).
+- The speed ratio is measured in CPU time charged to the run's own cgroup (`systemd-run --user --scope`, `cpu.stat`),
+  not in wall time, with no fallback to wall time.
+- A run is void only when its two windows' average one-minute loads, sampled every 30 s, differ by more than 1.0.
+  A void run is repeated and never counted. Three void runs stop the unit with a question.
+- The wall-time limits stay: the 20-minute cap, and O-27's 15-minute stop. Those remain exposed to another project's
+  load; a 15-minute stop whose samples average more than 2.0 is re-run once before a finding is filed.
+
+Status: open
