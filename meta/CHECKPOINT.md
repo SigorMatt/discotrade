@@ -3,14 +3,14 @@
 Mission: 22 (`meta/BUILDER-22-PROMPT.md`), roadmap step S4.2b. The rest of the daily run; closes no milestone. Base 72400d7.
 Container runtime: docker. Image at mission 21's tip: discotrade-sandbox:3b7d75c39621.
 
-In progress: U5 RESUMES under O-28 (meta/decisions/2026-10-20-owner.md, D-024 decided): each sampled pair's day is
-recomputed over the span the contract bounds it to (approach: history_cap_bars context; random control: from the first
-bar of the draw in force, carry across a redraw from the previous draw; buy-and-hold: the day), carry recomputed, never
-read from the journal; sample, comparison and `--all` unchanged; O-28 item 5's test added to 184 (c). This attempt is
-U5's RETRY: a second failure marks U5 blocked. G1.3 above 15 minutes stops the mission (O-27 item 3). U5's work restored
-from `git stash` "wip U5 2026-10-20 (mission 22; D-024 ...)" (copies under meta/drafts/m22-u5-*). Previous attempt:
-G1.3 PASS 934 s, median ratio 2.473 (decision 184 from the first journaled day). U6 and U7 not started. The report
-names O-28. Correction for the report: U3's body (2ae5c04) says three new tests failed on the parent; four did.
+In progress: none. U5 BLOCKED (O-26 item 4: second failure). The retry under O-28 built the bounded recompute
+(journal.recompute_bounded / pair_rows) and O-28 item 5's test, all five wrong changes seen red; G1.3 PASS 694 s; but
+decision 170's ratios 1.197 / 1.347 / 1.295, median 1.295 (limit 1.25), measured while another project's pytest
+(/home/msi/git/hands) loaded the machine; finding D-025 (11d9134) asks the owner to re-measure on a quiet machine or
+keep U5 blocked. ./scripts/check 3/3 green (1360/1383/1274 s) at an earlier version of the retry, not at the final
+tree. Work in `git stash` "wip U5 retry 2026-10-21 (mission 22; D-025 ...)", copy meta/drafts/m22-u5r.patch, outputs
+meta/drafts/m22-u5r-*. U6 and U7 depend on U5 pushed and are not started. Resume only on an owner decision on D-025.
+Correction for the report: U3's body (2ae5c04) says three new tests failed on the parent; four did.
 
 Done: U0 (plan; D-013 times, HF-010, HF-012 lines; decision 187 (b)). U1 41accb7 (digest.py, sinks, render, --issues,
 doctor --live issues; check 3/3, 1014 s). U2 b614465 (digest page, run log line with mode, push,
