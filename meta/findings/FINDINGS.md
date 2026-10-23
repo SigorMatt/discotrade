@@ -1256,3 +1256,4 @@ What this project does meanwhile: O-32 (`meta/decisions/2026-10-21-owner.md`).
   load; a 15-minute stop whose samples average more than 2.0 is re-run once before a finding is filed.
 
 Status: open
+D-025 status: decided meta/decisions/2026-10-21-owner.md (O-32)

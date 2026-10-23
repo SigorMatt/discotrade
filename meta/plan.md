@@ -28,6 +28,6 @@ Left items:
 - [x] U2 (b614465) The digest, the run log and step 8 in the day (decisions 179, 180; DESIGN 15.4, 16.1 steps 7 and 8, 16.2, 14.3). `daily:` commit. G1.3 and decision 170's three measurements at the commit.
 - [x] U3 (2ae5c04) Step 1 staged (decision 181; DESIGN 16.2, 5.2, 5.4, 5.6). `daily:` commit. G1.3 and the three measurements.
 - [x] U4 (7859488, 91d1497) The retry, `run_failed` and the catch-up (decisions 182, 183; DESIGN 16.1, 16.2, 15.2; SPEC §11). `daily:` commit. G1.3 and the three measurements.
-- [ ] U5 BLOCKED (first attempt stopped on D-024, O-27 item 3; retry under O-28 failed O-26 item 4: median ratio 1.295, D-025; work stashed) The weekly recomputation, the `no_finding` call and the live defaults of `run-day` (decisions 184, 185, 186; DESIGN 9.4, 15.2, 16.1 step 6). `daily:` commit. G1.3 and the three measurements.
+- [ ] U5 retry continues under O-32 (first attempt stopped on D-024, O-27 item 3; retry under O-28 measured 1.295 in wall time, D-025, decided by O-32; those runs do not count) The weekly recomputation, the `no_finding` call and the live defaults of `run-day` (decisions 184, 185, 186; DESIGN 9.4, 15.2, 16.1 step 6). `daily:` commit. G1.3 and the three measurements.
 - [ ] U6 (not run: depends on U5 pushed) The regression gates at the pushed tip (O-2, O-25, O-27; decisions 177 (a), 170; DESIGN §18.2). `meta:` commit (one D-013 times line).
 - [ ] U7 (not run: depends on U5 and U6) The final report (decisions 177-188; O-26, O-27; DESIGN §18.2). `meta/FINAL-REPORT-22.md`.
