@@ -35,3 +35,4 @@ seen red, reverted, named in the body. Each sub-agent runs `discotrade sandbox b
 times, each its own foreground call with a 20-minute timeout; a run moved to the background is waited for with one
 foreground poll call (timeout <= 20 min) then one read of the output, repeated (176); never Monitor or background
 tasks. One commit per unit, files listed, never `git add -A`, push. Sub-agents in the foreground only.
+Owner file meta/decisions/2026-10-19-owner.md (O-29 to O-31) read: no builder steps.
