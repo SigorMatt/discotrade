@@ -1257,3 +1257,30 @@ What this project does meanwhile: O-32 (`meta/decisions/2026-10-21-owner.md`).
 
 Status: open
 D-025 status: decided meta/decisions/2026-10-21-owner.md (O-32)
+
+### HF-020 — the runner now kills a foreground call at the 20-minute cap, and U5's `./scripts/check` needs about 21 to 23 minutes
+
+Severity: high (blocks every unit whose check passes 20 minutes) · Component: hands' builder role environment
+(`CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1`, `BASH_MAX_TIMEOUT_MS=1200000`) with decision 176's wait and HF-006 · Found:
+2026-10-23, mission 22 U5's retry under O-32, at 961dfe0 with U5's retry uncommitted.
+
+Symptom. After `discotrade sandbox build` (discotrade-sandbox:3b7d75c39621, present, nothing built), two
+`./scripts/check` runs, each its own foreground Bash call with the 1200000 ms timeout, were killed at 20 minutes
+("Command timed out after 20m 0s", exit 143), each at the same point of pytest (91 %,
+`tests/test_validation_sequence.py`), with the one-minute load average at 1.02 and 1.09 on 4 CPUs at the kill.
+Outputs: `meta/drafts/m22-u5f-check1.txt`, `meta/drafts/m22-u5f-check2.txt`.
+- The sub-agent's environment holds `CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1` and `BASH_MAX_TIMEOUT_MS=1200000`
+  (HF-016's status line of 2026-10-21 records the `BASH_*` keys at 2700000). With the variable set, the runner no
+  longer moves a call that passes the cap to the background, as decision 176 and HF-006's status lines expect; it kills
+  it, so decision 176's wait cannot be followed and no such run can end.
+- The same tree's three checks under O-28 (2026-10-21, the runner then moving them to the background) took 1360 s,
+  1382 s and 1273 s, all green; the measurement commit 961dfe0, without U5's tests, took 1143, 1136 and 1139 s. U5's
+  tests add about 130 s to 240 s. So U5's check cannot end inside the 20-minute cap on this machine even at low load.
+- Nothing was dropped, shortened or split; no `./scripts/check` run of U5 counted green; nothing was committed.
+  G1.3 and the speed runs were not started, so no O-32 run was taken.
+
+Direction (for the hands Project, then the owner): either restore a call timeout above the check's length for the
+builder role (HF-016's 2700000), or restore the runner's move to the background at the cap together with a sanctioned
+foreground wait; or the owner decides how a check longer than 20 minutes is run and counted (D-013).
+
+Status: open

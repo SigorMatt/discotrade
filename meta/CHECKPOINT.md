@@ -3,14 +3,16 @@
 Mission: 22 (`meta/BUILDER-22-PROMPT.md`), roadmap step S4.2b. The rest of the daily run; closes no milestone. Base 72400d7.
 Container runtime: docker. Image at mission 21's tip: discotrade-sandbox:3b7d75c39621.
 
-In progress: U5, not blocked. D-025 decided by meta/decisions/2026-10-21-owner.md (O-32): U5's retry continues under
-O-32 (speed ratio in CPU time of the run's own cgroup, load backstop, void runs repeated; the median of the first three
-valid runs; a median above 1.25 blocks U5, this retry being its last attempt). Its earlier wall-time runs (1.197 / 1.347 /
-1.295) do not count. Its first commit is the new measurement (`scripts:`, scripts/speed.py and its tests, O-32 item 6),
-then the stash "wip U5 retry 2026-10-21 (mission 22; D-025 ...)" is popped and finished: sandbox build, check 3x, G1.3
-under O-32 item 8, the parent's ratio on 91d1497, U5's three valid runs. The retry built the bounded recompute
-(journal.recompute_bounded / pair_rows) and O-28 item 5's test; G1.3 694 s earlier. Copy meta/drafts/m22-u5r.patch.
-U6 and U7 follow U5, U6's measurement and M1 items under O-32. The report names O-28 and O-32.
+In progress: U5's retry under O-32 (D-025 decided). Measurement committed 961dfe0 (scripts/speed.py, CPU time in its own
+cgroup, load backstop; check 1143/1136/1139 s). The U5 stash popped cleanly 2026-10-23; the finishing sub-agent found the
+U5 tests and the return_readers audit green, but two ./scripts/check runs were killed at the 20-minute cap (exit 143,
+91 %, tests/test_validation_sequence.py; meta/drafts/m22-u5f-check{1,2}.txt): the role's environment now has
+CLAUDE_CODE_DISABLE_BACKGROUND_TASKS=1 and BASH_MAX_TIMEOUT_MS=1200000, so decision 176's wait cannot be followed and
+U5's check (1273-1382 s earlier) cannot end. Finding HF-020. No G1.3, no parent ratio, no O-32 speed run taken (none
+counted). Under §R the work is stashed again: "wip U5 2026-10-23 (mission 22; HF-020 check killed at 20 min)"; tree
+clean. Resume on an answer to HF-020: pop that stash, then sandbox build, check 3x, G1.3 (O-32 item 8), the parent's
+ratio on 91d1497 with 961dfe0's speed.py, U5's first three valid runs. U5's earlier wall-time runs do not count.
+U6 and U7 follow U5 under O-32. The report names O-28 and O-32.
 Correction for the report: U3's body (2ae5c04) says three new tests failed on the parent; four did.
 
 Done: U0 (plan; D-013 times, HF-010, HF-012 lines; decision 187 (b)). U1 41accb7 (digest.py, sinks, render, --issues,
